@@ -1,0 +1,235 @@
+/**
+ * POST /api/attendance/delegations/:id/end
+ *
+ * Leader ends the GD session. Validates scanned attendance records against
+ * group membership and atomically marks the delegation as used.
+ */
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
+import jwt from "jsonwebtoken";
+
+export const runtime = "nodejs";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 200, headers: corsHeaders });
+}
+
+export async function POST(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+  if (!token) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
+  }
+
+  let studentId: string;
+  try {
+    ({ studentId } = verifyStudentAccessToken(token));
+  } catch {
+    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401, headers: corsHeaders });
+  }
+
+  const { id } = await context.params;
+
+  // ── Parse body ────────────────────────────────────────────────────────────
+  let body: {
+    sessionToken: string;
+    unitCode?: string;
+    roomCode?: string;
+    sessionStart?: number;  // Unix ms
+    sessionEnd?: number;    // Unix ms
+  };
+
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400, headers: corsHeaders });
+  }
+
+  const { sessionToken } = body;
+
+  if (!sessionToken) {
+    return NextResponse.json(
+      { error: "sessionToken is required" },
+      { status: 400, headers: corsHeaders },
+    );
+  }
+
+  // ── Fetch delegation ──────────────────────────────────────────────────────
+  const delegation = await prisma.delegation.findUnique({ where: { id } });
+
+  if (!delegation) {
+    return NextResponse.json({ error: "Delegation not found" }, { status: 404, headers: corsHeaders });
+  }
+
+  if (delegation.leaderStudentId !== studentId) {
+    return NextResponse.json(
+      { error: "Forbidden: you are not the assigned leader for this delegation" },
+      { status: 403, headers: corsHeaders },
+    );
+  }
+
+  if (delegation.used) {
+    return NextResponse.json({ error: "Delegation already ended" }, { status: 409, headers: corsHeaders });
+  }
+
+  // ── Validate session token ────────────────────────────────────────────────
+  if (!delegation.sessionToken) {
+    return NextResponse.json(
+      { error: "Session has not been started yet" },
+      { status: 409, headers: corsHeaders },
+    );
+  }
+
+  if (delegation.sessionToken !== sessionToken) {
+    return NextResponse.json(
+      { error: "Session token mismatch" },
+      { status: 403, headers: corsHeaders },
+    );
+  }
+
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    return NextResponse.json({ error: "Server configuration error" }, { status: 500, headers: corsHeaders });
+  }
+
+  try {
+    jwt.verify(sessionToken, jwtSecret);
+  } catch (err: any) {
+    if (err?.name === "TokenExpiredError") {
+      return NextResponse.json({ error: "Session token has expired" }, { status: 410, headers: corsHeaders });
+    }
+    return NextResponse.json({ error: "Invalid session token" }, { status: 403, headers: corsHeaders });
+  }
+
+  // ── Resolve group members ─────────────────────────────────────────────────
+  const groupMembers = await prisma.groupMember.findMany({
+    where: { groupId: delegation.groupId },
+    select: { studentId: true },
+  });
+  const memberIds = new Set(groupMembers.map((m) => m.studentId));
+
+  // ── Find matching attendance records ──────────────────────────────────────
+  // sessionStart from device is Unix ms; DB stores DateTime.
+  // Allow ±30 seconds tolerance.
+  // Fall back to delegation.startedAt if the app didn't send sessionStart.
+  const TOLERANCE_MS = 30_000;
+  const resolvedUnitCode = body.unitCode ?? delegation.unitCode;
+  const resolvedSessionStart = body.sessionStart ?? (delegation.startedAt ? delegation.startedAt.getTime() : Date.now());
+
+  const records = await prisma.offlineAttendanceRecord.findMany({
+    where: {
+      unitCode: resolvedUnitCode,
+      lessonType: "GD",
+      delegationId: null, // not yet claimed by any delegation
+      sessionStart: {
+        gte: new Date(resolvedSessionStart - TOLERANCE_MS),
+        lte: new Date(resolvedSessionStart + TOLERANCE_MS),
+      },
+    },
+    select: { id: true, studentId: true },
+  });
+
+  const acceptedIds: string[] = [];
+  const rejectedIds: string[] = [];
+
+  for (const record of records) {
+    if (memberIds.has(record.studentId)) {
+      acceptedIds.push(record.id);
+    } else {
+      rejectedIds.push(record.id);
+    }
+  }
+
+  // ── Atomic commit: link accepted records + mark delegation used ──────────
+  const endedAt = new Date();
+
+  await prisma.$transaction([
+    // Link BLE-scan records that matched by unitCode/sessionStart to this delegation
+    ...(acceptedIds.length > 0
+      ? [
+          prisma.offlineAttendanceRecord.updateMany({
+            where: { id: { in: acceptedIds } },
+            data: { delegationId: id },
+          }),
+        ]
+      : []),
+
+    // Mark delegation as used
+    prisma.delegation.update({
+      where: { id },
+      data: { used: true, endedAt },
+    }),
+  ]);
+
+  // ── Ensure every group member has an attendance record ────────────────────
+  // Creates records for members who didn't BLE-scan but were present as group
+  // members. ON CONFLICT DO NOTHING (skipDuplicates) makes this idempotent.
+  const sessionStartDate = new Date(resolvedSessionStart);
+  const scannedAtDate = new Date(body.sessionEnd ?? Date.now());
+  const memberIdsArray = [...memberIds];
+
+  await prisma.offlineAttendanceRecord.createMany({
+    data: memberIdsArray.map((sid) => ({
+      studentId: sid,
+      unitCode: delegation.unitCode,
+      lectureRoom: delegation.roomCode,
+      lessonType: "GD",
+      method: "GD",
+      sessionStart: sessionStartDate,
+      scannedAt: scannedAtDate,
+      delegationId: id,
+    })),
+    skipDuplicates: true, // @@unique([studentId, unitCode, lectureRoom, sessionStart])
+  });
+
+  // Link any existing but un-linked records (e.g. BLE scans outside the tolerance
+  // window that weren't picked up above) to this delegation.
+  await prisma.offlineAttendanceRecord.updateMany({
+    where: {
+      studentId: { in: memberIdsArray },
+      unitCode: delegation.unitCode,
+      lectureRoom: delegation.roomCode,
+      sessionStart: {
+        gte: new Date(resolvedSessionStart - TOLERANCE_MS),
+        lte: new Date(resolvedSessionStart + TOLERANCE_MS),
+      },
+      delegationId: null,
+    },
+    data: { delegationId: id },
+  });
+
+  const attendanceCount = await prisma.offlineAttendanceRecord.count({
+    where: { delegationId: id },
+  });
+
+  // ── Optionally notify the lecturer (fire-and-forget) ─────────────────────
+  prisma.notification.create({
+    data: {
+      userId: delegation.createdBy,
+      userType: "lecturer",
+      title: "GD session concluded",
+      message: `Group ${delegation.groupNumber} (${delegation.unitCode}) ended: ${acceptedIds.length} present, ${rejectedIds.length} rejected.`,
+    },
+  }).catch((err) => console.error("[delegations/end] lecturer notify failed:", err));
+
+  return NextResponse.json(
+    {
+      message: "Session ended",
+      accepted: acceptedIds.length,
+      rejected: rejectedIds.length,
+      attendanceCount,
+      endedAt: endedAt.toISOString(),
+    },
+    { headers: corsHeaders },
+  );
+}

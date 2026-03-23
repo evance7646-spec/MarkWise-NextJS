@@ -1,0 +1,181 @@
+import { NextResponse, type NextRequest } from 'next/server';
+import jwt from 'jsonwebtoken';
+import { prisma } from '@/lib/prisma';
+import { verifyLecturerAccessToken } from '@/lib/lecturerAuthJwt';
+import { verifyStudentAccessToken } from '@/lib/studentAuthJwt';
+
+export const runtime = 'nodejs';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+};
+
+export function OPTIONS() {
+  return new NextResponse(null, { status: 200, headers: corsHeaders });
+}
+
+function extractToken(req: NextRequest): string {
+  const header = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim();
+  if (header) return header;
+  return new URL(req.url).searchParams.get('token') ?? '';
+}
+
+/**
+ * Resolve a unitId param (UUID, raw code, stripped code, or display string "Title (CODE)")
+ * to the Unit row. Returns null if not found.
+ */
+async function resolveUnit(param: string) {
+  if (!param) return null;
+  // UUID: return as-is (the caller needs the row too, so look it up)
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(param);
+  if (isUuid) {
+    return prisma.unit.findUnique({ where: { id: param } });
+  }
+  // Extract code from display strings like "ORGANIC CHEMISTRY (SCH 2170)"
+  // Also handles space-stripped variants like "ORGANICCHEMISTRY(SCH2170)"
+  let code = param.trim();
+  const parenMatch = code.match(/\(([^)]+)\)\s*$/);
+  if (parenMatch) code = parenMatch[1].trim();
+  // Case-insensitive match on raw code
+  let unit = await prisma.unit.findFirst({ where: { code: { equals: code, mode: 'insensitive' } } });
+  if (unit) return unit;
+  // Strip spaces from input and try again
+  const normalised = code.replace(/\s+/g, '').toUpperCase();
+  unit = await prisma.unit.findFirst({ where: { code: { equals: normalised, mode: 'insensitive' } } });
+  if (unit) return unit;
+  // Final fallback: strip spaces from DB-side codes too (e.g. "SCH2170" matches stored "SCH 2170")
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT id FROM "Unit" WHERE REPLACE(UPPER(code), ' ', '') = ${normalised} LIMIT 1
+  `;
+  if (rows.length > 0) return prisma.unit.findUnique({ where: { id: rows[0].id } });
+  return null;
+}
+
+/**
+ * Identify the caller's role and ID from the JWT by inspecting payload fields.
+ * Since all tokens share the same JWT_SECRET, we MUST NOT rely on try/catch order —
+ * a lecturer token will successfully verify as a student token too.
+ * Instead we use payload field presence:
+ *   - `lecturerId`                    → new lecturer token
+ *   - `id` + `institutionId`          → legacy lecturer token
+ *   - `studentId`                     → new student token
+ *   - `id` + `admissionNumber`        → legacy student token
+ */
+function identifyToken(token: string): { role: 'student'; actorId: string } | { role: 'lecturer'; actorId: string; institutionId: string | null } | null {
+  let payload: Record<string, any>;
+  try {
+    payload = jwt.verify(token, process.env.JWT_SECRET!) as Record<string, any>;
+  } catch {
+    return null;
+  }
+  // New lecturer token
+  if (payload.lecturerId) {
+    return { role: 'lecturer', actorId: payload.lecturerId, institutionId: payload.institutionId ?? null };
+  }
+  // New student token
+  if (payload.studentId) {
+    return { role: 'student', actorId: payload.studentId };
+  }
+  // Legacy tokens rely on distinguishing fields
+  if (payload.id && payload.institutionId) {
+    // institutionId is a lecturer-specific field — treat as legacy lecturer token
+    return { role: 'lecturer', actorId: payload.id, institutionId: payload.institutionId };
+  }
+  if (payload.id && payload.admissionNumber) {
+    // admissionNumber is a student-specific field
+    return { role: 'student', actorId: payload.id };
+  }
+  // Last resort: fall back by attempting known verify helpers and checking fields
+  try {
+    const l = verifyLecturerAccessToken(token);
+    const id = l.lecturerId ?? (l as any).id;
+    if (id) return { role: 'lecturer', actorId: id, institutionId: (l as any).institutionId ?? null };
+  } catch {}
+  try {
+    const s = verifyStudentAccessToken(token);
+    const id = s.studentId ?? (s as any).id;
+    if (id) return { role: 'student', actorId: id };
+  } catch {}
+  return null;
+}
+
+export async function GET(req: NextRequest) {
+  const token = extractToken(req);
+  const caller = identifyToken(token);
+  if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+
+  const rawUnitId = new URL(req.url).searchParams.get('unitId');
+  let unit: { id: string; code: string } | null = null;
+  if (rawUnitId) {
+    unit = await resolveUnit(decodeURIComponent(rawUnitId));
+    if (!unit) return NextResponse.json({ error: 'Unit not found' }, { status: 404, headers: corsHeaders });
+  }
+
+  // Students must be enrolled in the unit (direct Enrollment row, or via their course's unit list)
+  if (caller.role === 'student' && unit) {
+    const directEnrollment = await prisma.enrollment.findFirst({
+      where: { studentId: caller.actorId, unitId: unit.id },
+    });
+    const courseEnrollment = directEnrollment
+      ? true
+      : !!(await prisma.student.findFirst({
+          where: { id: caller.actorId, course: { units: { some: { id: unit.id } } } },
+        }));
+    if (!courseEnrollment) return NextResponse.json({ error: 'Not enrolled in this unit' }, { status: 403, headers: corsHeaders });
+  }
+
+  // Build a resilient where clause: assignments may store the unit UUID *or* the unit code
+  // (legacy data written before the UUID-resolution fix). Include both to avoid empty results.
+  let whereClause: Record<string, unknown> = {};
+  if (unit) {
+    const variants: string[] = [unit.id, unit.code];
+    const stripped = unit.code.replace(/\s+/g, '').toUpperCase();
+    if (!variants.includes(stripped)) variants.push(stripped);
+    whereClause = { unitId: { in: variants } };
+  }
+
+  const assignments = await prisma.assignment.findMany({
+    where: whereClause,
+    orderBy: { createdAt: 'desc' },
+  });
+  return NextResponse.json(assignments, { headers: corsHeaders });
+}
+
+export async function POST(req: NextRequest) {
+  const token = extractToken(req);
+  let lecturer: ReturnType<typeof verifyLecturerAccessToken>;
+  try { lecturer = verifyLecturerAccessToken(token); }
+  catch { return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders }); }
+
+  // Support legacy tokens that store the lecturer UUID as 'id' instead of 'lecturerId'
+  const lecturerId = lecturer.lecturerId ?? (lecturer as any).id;
+  if (!lecturerId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
+
+  const body = await req.json();
+  const { title, description, unitId: rawUnitId, dueDate, maxScore, rubric, attachments, type } = body;
+  if (!title || !rawUnitId || !dueDate) {
+    return NextResponse.json({ error: 'title, unitId, and dueDate are required' }, { status: 400, headers: corsHeaders });
+  }
+
+  // Resolve the incoming unitId (code or display string) to the canonical unit UUID
+  const unit = await resolveUnit(String(rawUnitId));
+  const resolvedUnitId = unit?.id ?? String(rawUnitId).replace(/\s+/g, '').toUpperCase();
+
+  const assignment = await prisma.assignment.create({
+    data: {
+      title,
+      description: description ?? null,
+      unitId: resolvedUnitId,
+      lecturerId,
+      dueDate: new Date(dueDate),
+      maxScore: maxScore ?? null,
+      rubric: rubric ?? null,
+      attachments: attachments ?? null,
+      type: type ?? 'individual',
+      status: 'active',
+    },
+  });
+  return NextResponse.json(assignment, { status: 201, headers: corsHeaders });
+}

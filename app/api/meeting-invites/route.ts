@@ -1,0 +1,96 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
+
+// POST /api/meeting-invites
+// Auth: Lecturer JWT required
+export async function POST(req: NextRequest) {
+  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+  if (!token) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401, headers: corsHeaders });
+  }
+
+  let lecturerId: string;
+  try {
+    const payload = verifyLecturerAccessToken(token);
+    lecturerId = payload.lecturerId;
+  } catch {
+    return NextResponse.json({ message: "Invalid or expired token" }, { status: 401, headers: corsHeaders });
+  }
+
+  let body: {
+    lecturerId?: string;
+    lecturerName?: string;
+    unitCode?: string;
+    unitName?: string;
+    meetingLink?: string;
+    passcode?: string | null;
+    scheduledAt?: string;
+    message?: string | null;
+  };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ message: "Invalid JSON body" }, { status: 400, headers: corsHeaders });
+  }
+
+  const { lecturerName, unitCode: rawUnitCode, unitName, meetingLink, passcode, scheduledAt, message } = body;
+
+  // Normalize: strip all whitespace and uppercase — same format the app sends
+  const unitCode = String(rawUnitCode ?? "").replace(/\s+/g, "").toUpperCase();
+
+  if (!unitCode) {
+    return NextResponse.json({ message: "unitCode is required" }, { status: 400, headers: corsHeaders });
+  }
+  if (!meetingLink?.trim()) {
+    return NextResponse.json({ message: "meetingLink is required" }, { status: 400, headers: corsHeaders });
+  }
+  if (!scheduledAt || isNaN(Date.parse(scheduledAt))) {
+    return NextResponse.json({ message: "scheduledAt must be a valid ISO-8601 date" }, { status: 400, headers: corsHeaders });
+  }
+
+  // Verify the lecturer actually teaches this unit.
+  // Unit codes in the DB may have spaces (e.g. "BCH 1101") while the app may
+  // send a stripped version ("BCH1101"). Normalize both sides in JS.
+  const lecturerTimetables = await prisma.timetable.findMany({
+    where: { lecturerId },
+    select: { unit: { select: { code: true } } },
+    distinct: ["unitId"],
+  });
+
+  const teaches = lecturerTimetables.some(
+    (entry) => entry.unit.code.replace(/\s+/g, "").toUpperCase() === unitCode
+  );
+
+  if (!teaches) {
+    return NextResponse.json(
+      { message: "You are not assigned to teach this unit" },
+      { status: 403, headers: corsHeaders }
+    );
+  }
+
+  const invite = await prisma.meetingInvite.create({
+    data: {
+      lecturerId,
+      lecturerName: lecturerName?.trim() ?? "",
+      unitCode,
+      unitName: unitName?.trim() ?? "",
+      meetingLink: meetingLink.trim(),
+      passcode: passcode?.trim() || null,
+      scheduledAt: new Date(scheduledAt),
+      message: message?.trim() || null,
+    },
+  });
+
+  return NextResponse.json(invite, { status: 201, headers: corsHeaders });
+}

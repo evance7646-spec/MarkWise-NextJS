@@ -1,0 +1,829 @@
+// prisma/schema.prisma
+
+model Group {
+  id                  String        @id @default(uuid())
+  name                String
+  unitId              String?
+  unitCode            String?       // denormalized for fast lookup
+  groupNumber         Int           @default(0) // 1-indexed per unit; stable BLE delegation byte
+  leaderId            String?
+  locked              Boolean       @default(false)
+  capacity            Int           @default(30)
+  description         String?
+  allowSelfEnroll     Boolean       @default(false)
+  maxGroupsPerStudent Int           @default(1)
+  nextMeeting         DateTime?
+  tags                String[]      @default([])
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  members             GroupMember[]
+  submissions         Submission[]
+  unit                Unit?         @relation(fields: [unitId], references: [id])
+
+  @@index([unitId])
+  @@index([unitCode])
+  @@map("Group")
+}
+
+model GroupMember {
+  id        String    @id @default(uuid())
+  groupId   String
+  studentId String
+  role      String    @default("member") // 'leader' | 'member'
+  joinedAt  DateTime  @default(now())
+  leftAt    DateTime?
+  group     Group     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  student   Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([groupId])
+  @@index([studentId])
+  @@map("GroupMember")
+}
+
+model Assignment {
+  id          String       @id @default(uuid())
+  title       String
+  description String?
+  dueDate     DateTime
+  unitId      String
+  lecturerId  String
+  type        String       @default("individual")
+  maxScore    Int?
+  status      String       @default("active")
+  rubric      Json?
+  attachments Json?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  submissions Submission[]
+
+  @@index([unitId])
+  @@index([lecturerId])
+  @@map("Assignment")
+}
+
+model Submission {
+  id           String           @id @default(uuid())
+  assignmentId String
+  studentId    String?
+  groupId      String?
+  fileUrl      String?
+  linkUrl      String?
+  textContent  String?
+  submittedAt  DateTime         @default(now())
+  version      Int              @default(1)
+  status       SubmissionStatus @default(pending)
+  grade        Float?
+  feedback     String?
+  assignment   Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student      Student?         @relation(fields: [studentId], references: [id])
+  group        Group?           @relation(fields: [groupId], references: [id])
+
+  @@index([assignmentId])
+  @@index([studentId])
+  @@map("Submission")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Material {
+  id          String         @id @default(uuid())
+  unitId      String
+  lecturerId  String
+  title       String
+  description String?
+  type        String         @default("file")
+  fileUrl     String?
+  linkUrl     String?
+  textContent String?
+  mimeType    String?
+  fileSize    Int?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  unit        Unit           @relation(fields: [unitId], references: [id])
+  views       MaterialView[]
+
+  @@index([unitId])
+  @@index([lecturerId])
+  @@map("Material")
+}
+
+model MaterialView {
+  id               String   @id @default(uuid())
+  materialId       String
+  studentId        String
+  viewedAt         DateTime @default(now()) @updatedAt
+  timeSpentSeconds Int?
+  material         Material @relation(fields: [materialId], references: [id], onDelete: Cascade)
+  student          Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([materialId, studentId])
+  @@index([materialId])
+  @@index([studentId])
+  @@map("MaterialView")
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Institution {
+  id          String                  @id @default(uuid())
+  name        String
+  logoUrl     String?
+  metadata    Json?                   @default("{}")
+  settings    Json?                   @default("{}")
+  admins      Admin[]
+  departments Department[]
+  lecturers   Lecturer[]
+  mappingSets InstitutionMappingSet[]
+  roomManager RoomManager?
+  students    Student[]
+
+  @@map("Institution")
+}
+
+model Department {
+  id            String      @id @default(uuid())
+  name          String
+  institutionId String
+  admins          Admin[]
+  courses         Course[]
+  institution     Institution @relation(fields: [institutionId], references: [id])
+  programs        Program[]
+  students        Student[]
+  timetables      Timetable[]
+  units           Unit[]
+  departmentUnits DepartmentUnit[]
+
+  @@unique([name, institutionId])
+  @@index([institutionId])
+  @@map("Department")
+}
+
+model Program {
+  id            String      @id @default(uuid())
+  name          String
+  durationYears Int
+  departmentId  String
+  courses       Course[]
+  department    Department  @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  years         YearBlock[]
+
+  @@index([departmentId])
+  @@map("Program")
+}
+
+model Course {
+  id                String             @id @default(uuid())
+  code              String             @unique
+  name              String
+  departmentId      String
+  programId         String
+  program           Program            @relation(fields: [programId], references: [id], onDelete: Cascade)
+  department        Department         @relation(fields: [departmentId], references: [id])
+  students          Student[]
+  timetables        Timetable[]
+  timetableVersions TimetableVersion[]
+  years             YearBlock[]
+  units             Unit[]             @relation("CourseUnits")
+
+  @@index([departmentId])
+  @@index([programId])
+  @@map("Course")
+}
+
+model YearBlock {
+  id        String     @id @default(uuid())
+  name      String
+  courseId  String
+  programId String
+  semesters Semester[]
+  course    Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  program   Program    @relation(fields: [programId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+  @@index([programId])
+  @@map("YearBlock")
+}
+
+model Semester {
+  id     String    @id @default(uuid())
+  label  String
+  yearId String
+  year   YearBlock @relation(fields: [yearId], references: [id], onDelete: Cascade)
+  units  Unit[]    @relation("SemesterUnits")
+
+  @@index([yearId])
+  @@map("Semester")
+}
+
+model Unit {
+  id              String           @id @default(uuid())
+  bleId           Int?             @unique
+  code            String           @unique
+  title           String
+  departmentId    String
+  bleMetadata     Json?            @default("{}")
+  lastSyncAt      DateTime?
+  syncVersion     Int?             @default(0)
+  bookings        Booking[]
+  enrollments     Enrollment[]
+  timetables      Timetable[]
+  department      Department       @relation(fields: [departmentId], references: [id])
+  semesters       Semester[]       @relation("SemesterUnits")
+  courses         Course[]         @relation("CourseUnits")
+  groups          Group[]
+  materials       Material[]
+  departmentUnits DepartmentUnit[]
+
+  @@index([bleId])
+  @@index([departmentId])
+  @@map("Unit")
+}
+
+model DepartmentUnit {
+  id           String     @id @default(cuid())
+  departmentId String
+  unitId       String
+  department   Department @relation(fields: [departmentId], references: [id], onDelete: Cascade)
+  unit         Unit       @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([departmentId, unitId])
+  @@index([departmentId])
+  @@index([unitId])
+  @@map("DepartmentUnit")
+}
+
+model Admin {
+  id            String               @id @default(uuid())
+  fullName      String
+  email         String               @unique
+  password      String
+  role          String
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  institutionId String?
+  departmentId  String?
+  department    Department?          @relation(fields: [departmentId], references: [id])
+  institution   Institution?         @relation(fields: [institutionId], references: [id])
+  resetTokens   PasswordResetToken[]
+
+  @@index([institutionId])
+  @@index([departmentId])
+  @@map("Admin")
+}
+
+model Lecturer {
+  id            String        @id @default(uuid())
+  fullName      String
+  email         String        @unique
+  phoneNumber   String?
+  passwordHash  String
+  createdAt     DateTime      @default(now())
+  institutionId String
+  bookings      Booking[]
+  holds         BookingHold[]
+  institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  auth          LecturerAuth?
+  timetables    Timetable[]
+  extraSessions ExtraSession[]
+
+  @@index([institutionId])
+  @@map("Lecturer")
+}
+
+model Student {
+  id                String             @id @default(uuid())
+  name              String
+  admissionNumber   String             @unique
+  courseId          String
+  departmentId      String
+  institutionId     String
+  email             String?            @unique
+  year              Int
+  pushToken         String?            @map("push_token")
+  pushTokens        StudentPushToken[]
+  attendanceRecords AttendanceRecord[]
+  enrollments       Enrollment[]
+  materialViews     MaterialView[]
+  course            Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  department        Department         @relation(fields: [departmentId], references: [id])
+  institution       Institution        @relation(fields: [institutionId], references: [id])
+  auth              StudentAuth?
+  groupMemberships  GroupMember[]
+  submissions       Submission[]
+  points            StudentPoints?
+
+  @@index([institutionId])
+  @@index([courseId])
+  @@index([departmentId])
+  @@map("Student")
+}
+
+model StudentPushToken {
+  id         String   @id @default(uuid())
+  studentId  String
+  fcmToken   String
+  updatedAt  DateTime @updatedAt
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, fcmToken])
+  @@index([studentId])
+  @@map("StudentPushToken")
+}
+
+model Room {
+  id                  String                  @id @default(uuid())
+  bleId               Int?                    @unique
+  institutionId       String
+  buildingCode        String
+  roomCode            String
+  name                String
+  capacity            Int
+  type                String
+  floor               Int                     @default(0)
+  status              RoomStatus              @default(free)
+  isActive            Boolean                 @default(true)
+  bleMetadata         Json?                   @default("{}")
+  lastSyncAt          DateTime?
+  syncVersion         Int?                    @default(0)
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+  attendanceRecords   AttendanceRecord[]
+  bookings            Booking[]
+  holds               BookingHold[]
+  timetables          Timetable[]         @relation("TimetableRoom")
+  rescheduledTimetables Timetable[]       @relation("TimetableRescheduledRoom")
+  extraSessions       ExtraSession[]      @relation("ExtraSessionRoom")
+
+  @@unique([institutionId, buildingCode, roomCode])
+  @@index([institutionId, buildingCode])
+  @@index([bleId])
+  @@map("Room")
+}
+
+model BLESyncLog {
+  id            String    @id @default(uuid())
+  institutionId String
+  syncType      String
+  status        String
+  unitsSynced   Int?
+  roomsSynced   Int?
+  errors        Json?
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  triggeredBy   String?
+  deviceInfo    Json?
+
+  @@index([institutionId])
+  @@index([startedAt])
+  @@map("BLESyncLog")
+}
+
+model Booking {
+  id             String        @id @default(uuid())
+  roomId         String
+  lecturerId     String?
+  unitId         String?
+  unitCode       String?
+  holdId         String?
+  startAt        DateTime
+  endAt          DateTime
+  status         BookingStatus
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  idempotencyKey String?
+  lecturer       Lecturer?     @relation(fields: [lecturerId], references: [id])
+  room           Room          @relation(fields: [roomId], references: [id])
+  unit           Unit?         @relation(fields: [unitId], references: [id])
+
+  @@unique([idempotencyKey])
+  @@index([roomId])
+  @@index([lecturerId])
+  @@index([roomId, startAt, endAt])
+  @@map("Booking")
+}
+
+model BookingHold {
+  id         String            @id @default(uuid())
+  roomId     String
+  lecturerId String?
+  status     BookingHoldStatus
+  startAt    DateTime
+  endAt      DateTime
+  expiresAt  DateTime
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  lecturer   Lecturer?         @relation(fields: [lecturerId], references: [id])
+  room       Room              @relation(fields: [roomId], references: [id])
+
+  @@index([roomId])
+  @@index([roomId, status])
+  @@map("BookingHold")
+}
+
+model Timetable {
+  id                  String     @id @default(uuid())
+  courseId            String
+  day                 String
+  startTime           String
+  endTime             String
+  unitId              String
+  venueName           String?    // null when venue is cleared (Online mode)
+  lecturerId          String
+  yearOfStudy         String
+  semester            String
+  status              String     @default("Pending")
+  reason              String?
+  pendingReason       String?
+  rescheduledTo       String?
+  reschedulePermanent Boolean?
+  originalDay         String?
+  originalStartTime   String?
+  originalEndTime     String?
+  originalVenue       String?    // preserved copy of venueName before it is cleared for Online mode
+  lessonType          String     @default("LEC") // LEC|GD|RAT|CAT|LAB|SEM|WRK|TUT
+  updatedBy           String?
+  mergeGroupId        String?    // non-null = shared cross-department lesson group
+  rescheduledRoomId   String?    // room used after reschedule (null = same room or not rescheduled)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  departmentId        String
+  roomId              String
+  course           Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  department       Department @relation(fields: [departmentId], references: [id])
+  lecturer         Lecturer   @relation(fields: [lecturerId], references: [id])
+  room             Room       @relation("TimetableRoom", fields: [roomId], references: [id])
+  rescheduledRoom  Room?      @relation("TimetableRescheduledRoom", fields: [rescheduledRoomId], references: [id])
+  unit             Unit       @relation(fields: [unitId], references: [id])
+
+  @@index([departmentId])
+  @@index([courseId])
+  @@index([unitId])
+  @@index([lecturerId])
+  @@index([roomId])
+  @@index([day, roomId])
+  @@index([day, lecturerId])
+  @@index([rescheduledRoomId])
+  @@map("Timetable")
+}
+
+model OnlineAttendanceSession {
+  id         String                   @id @default(uuid())
+  lecturerId String
+  unitCode   String
+  type       String                   @default("online")
+  status     String                   @default("active")
+  expiresAt  DateTime
+  endedAt    DateTime?
+  createdAt  DateTime                 @default(now())
+  records    OnlineAttendanceRecord[]
+
+  @@index([lecturerId])
+  @@index([status])
+  @@map("OnlineAttendanceSession")
+}
+
+model OnlineAttendanceRecord {
+  id              String                  @id @default(uuid())
+  sessionId       String
+  studentId       String
+  admissionNumber String
+  unitCode        String                  @default("")
+  deviceId        String?
+  markedAt        DateTime                @default(now())
+  session         OnlineAttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, studentId])
+  @@unique([sessionId, deviceId])
+  @@index([sessionId])
+  @@index([studentId])
+  @@map("OnlineAttendanceRecord")
+}
+
+model StudentAuth {
+  id           String   @id @default(uuid())
+  studentId    String   @unique
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  student      Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@map("StudentAuth")
+}
+
+model LecturerAuth {
+  id           String   @id @default(uuid())
+  lecturerId   String   @unique
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  lecturer     Lecturer @relation(fields: [lecturerId], references: [id], onDelete: Cascade)
+
+  @@map("LecturerAuth")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  adminId   String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  admin     Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@map("PasswordResetToken")
+}
+
+model Enrollment {
+  id        String  @id @default(uuid())
+  studentId String
+  unitId    String
+  student   Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  unit      Unit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, unitId])
+  @@map("Enrollment")
+}
+
+model MeetingInvite {
+  id           String   @id @default(uuid())
+  lecturerId   String
+  lecturerName String
+  unitCode     String
+  unitName     String
+  meetingLink  String
+  passcode     String?
+  scheduledAt  DateTime
+  message      String?
+  createdAt    DateTime @default(now())
+
+  @@index([unitCode, scheduledAt])
+  @@map("MeetingInvite")
+}
+
+model AttendanceRecord {
+  id        String   @id @default(uuid())
+  studentId String
+  date      DateTime
+  status    String
+  createdAt DateTime @default(now())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id])
+  student   Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([studentId])
+  @@index([roomId])
+  @@index([studentId, date])
+  @@map("AttendanceRecord")
+}
+
+// Tracks lecturer-initiated class sessions (QR/BLE/Manual PIN attendance windows)
+model ConductedSession {
+  id           String    @id @default(uuid())
+  unitCode     String
+  lectureRoom  String
+  lessonType   String?   // LEC | GD | RAT | CAT | LAB | SEM | WRK | TUT
+  sessionStart DateTime
+  sessionEnd   DateTime?
+  lecturerId   String
+  createdAt    DateTime  @default(now())
+
+  @@unique([unitCode, lectureRoom, sessionStart])
+  @@index([unitCode])
+  @@index([lecturerId])
+  @@map("ConductedSession")
+}
+
+// Offline attendance records (QR, BLE, Manual PIN)
+model OfflineAttendanceRecord {
+  id           String      @id @default(uuid())
+  studentId    String
+  unitCode     String
+  lectureRoom  String
+  lessonType   String?     // inherited from ConductedSession
+  sessionStart DateTime
+  scannedAt    DateTime
+  deviceId     String?
+  rawPayload   String?
+  method       String      // 'qr' | 'ble' | 'manual'
+  delegationId String?     // set if this record came from a GD delegation session
+  createdAt    DateTime    @default(now())
+  delegation   Delegation? @relation(fields: [delegationId], references: [id])
+
+  @@unique([studentId, unitCode, lectureRoom, sessionStart])
+  @@index([studentId])
+  @@index([unitCode])
+  @@index([delegationId])
+  @@map("OfflineAttendanceRecord")
+}
+
+// One row per group per GD delegation event
+model Delegation {
+  id               String                    @id @default(uuid())
+  timetableEntryId String
+  institutionId    String?                   // denormalised for FCM payload / GET response
+  unitCode         String
+  unitId           Int                       // numeric BLE unit id
+  roomCode         String
+  roomId           Int                       // numeric BLE room id
+  groupId          String                    // FK → Group.id
+  groupNumber      Int
+  groupName        String?
+  leaderStudentId  String?                   // nullable — FK → Student.id
+  validFrom        BigInt                    // Unix ms
+  validUntil       BigInt                    // Unix ms
+  sessionToken     String?                   // set on /start
+  used             Boolean                   @default(false)
+  startedAt        DateTime?
+  endedAt          DateTime?
+  createdBy        String                    // lecturer id
+  createdAt        DateTime                  @default(now())
+  attendanceRecords OfflineAttendanceRecord[]
+
+  @@index([leaderStudentId])
+  @@index([timetableEntryId])
+  @@index([unitCode])
+  @@map("Delegation")
+}
+
+model TimetableVersion {
+  id        String   @id @default(uuid())
+  courseId  String   @unique
+  version   Int
+  updatedAt DateTime @default(now())
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@map("TimetableVersion")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  userType  UserType
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, read])
+  @@map("Notification")
+}
+
+model UnitsByCourseYearSemester {
+  id       String @id @default(uuid())
+  courseId String
+  year     Int
+  semester Int
+  unitIds  String
+
+  @@map("UnitsByCourseYearSemester")
+}
+
+model UnitsByYearSemester {
+  id       String @id @default(uuid())
+  year     Int
+  semester Int
+  unitIds  String
+
+  @@map("UnitsByYearSemester")
+}
+
+model GroupSubmission {
+  id        String                @id @default(uuid())
+  groupName String
+  members   String[]
+  status    GroupSubmissionStatus @default(active)
+  createdAt DateTime              @default(now())
+
+  @@map("GroupSubmission")
+}
+
+// Make-up / one-off sessions created by lecturers for a specific calendar date.
+model ExtraSession {
+  id          String    @id @default(uuid())
+  unitCode    String
+  lecturerId  String
+  date        DateTime  @db.Date
+  startTime   String    // "HH:MM" 24-hour
+  endTime     String    // "HH:MM" 24-hour
+  roomCode    String?
+  roomId      String?
+  lessonType  String    @default("LEC")
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime? // soft-delete; NULL = active
+
+  lecturer    Lecturer  @relation(fields: [lecturerId], references: [id], onDelete: Cascade)
+  room        Room?     @relation("ExtraSessionRoom", fields: [roomId], references: [id])
+
+  @@index([unitCode])
+  @@index([lecturerId])
+  @@map("extra_sessions")
+}
+
+// Stores the mobile app's locally-selected enrollment (unit codes + names + year/semester).
+// One row per student — upserted on every sync.
+model StudentEnrollmentSnapshot {
+  id           String   @id @default(uuid())
+  studentId    String   @unique
+  unitCodes    String[]
+  unitNamesMap Json     @default("{}")
+  year         String
+  semester     String
+  updatedAt    DateTime @updatedAt
+
+  @@map("StudentEnrollmentSnapshot")
+}
+
+enum UserType {
+  student
+  lecturer
+  admin
+}
+
+enum RoomStatus {
+  free
+  reserved
+  occupied
+  unavailable
+}
+
+enum BookingStatus {
+  reserved
+  occupied
+  cancelled
+  completed
+}
+
+enum BookingHoldStatus {
+  active
+  expired
+  confirmed
+  cancelled
+}
+
+enum SubmissionStatus {
+  pending
+  submitted
+  graded
+  late
+}
+
+enum GroupSubmissionStatus {
+  active
+  completed
+  cancelled
+}
+
+model RoomManager {
+  id            String      @id @default(uuid())
+  email         String      @unique
+  passwordHash  String
+  fullName      String
+  institutionId String      @unique
+  createdAt     DateTime    @default(now())
+  institution   Institution @relation(fields: [institutionId], references: [id])
+
+  @@index([institutionId])
+  @@map("RoomManager")
+}
+
+model InstitutionMappingSet {
+  id            String      @id @default(uuid())
+  institutionId String
+  version       String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  mappingKey    String
+  metadata      Json?       @default("{}")
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+
+  @@unique([institutionId, version, mappingKey])
+  @@index([institutionId])
+  @@index([createdAt])
+  @@map("InstitutionMappingSet")
+}
+
+model StudentPoints {
+  id             String   @id @default(uuid())
+  studentId      String   @unique
+  courseId        String
+  institutionId  String
+  totalPoints    Int      @default(0)
+  currentStreak  Int      @default(0)
+  longestStreak  Int      @default(0)
+  attendancePct  Float    @default(0)
+  statsJson      Json?
+  breakdownJson  Json?
+  computedAt     DateTime @default(now())
+  student        Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, totalPoints(sort: Desc)])
+  @@index([institutionId, totalPoints(sort: Desc)])
+  @@map("StudentPoints")
+}
