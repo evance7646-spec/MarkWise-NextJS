@@ -55,16 +55,13 @@ export async function POST(
     );
   }
 
-  // ── Already started / used guard ─────────────────────────────────────────
-  if (delegation.used) {
-    return NextResponse.json(
-      { error: "This delegation has already been used" },
-      { status: 409, headers: corsHeaders },
-    );
-  }
-
-  if (delegation.sessionToken) {
-    // Idempotent: already started — return the existing token rather than an error
+  // ── Idempotent guard ─────────────────────────────────────────────────────
+  // If the session was already started (sessionToken set) or fully completed
+  // (used=true), return the stored token instead of an error. This covers the
+  // offline-sync scenario where the client retries /start after connectivity
+  // is restored, or where /start and /end were both queued and /end arrives
+  // out of order then /start is retried.
+  if (delegation.sessionToken || delegation.used) {
     return NextResponse.json(
       { sessionToken: delegation.sessionToken, startedAt: delegation.startedAt?.toISOString() ?? null },
       { headers: corsHeaders },

@@ -77,9 +77,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Normalize codes: trim whitespace, uppercase — consistent with attendance endpoints
   const codes = (unitCodes as unknown[])
     .filter((c) => typeof c === "string" && c.trim() !== "")
-    .map((c) => (c as string).trim());
+    .map((c) => (c as string).replace(/\s+/g, "").toUpperCase());
 
   const namesMap =
     unitNamesMap && typeof unitNamesMap === "object" && !Array.isArray(unitNamesMap)
@@ -87,13 +88,38 @@ export async function POST(req: NextRequest) {
       : {};
 
   try {
-    await prisma.studentEnrollmentSnapshot.upsert({
-      where: { studentId },
-      update: { unitCodes: codes, unitNamesMap: namesMap, year: yearStr, semester: semesterStr },
-      create: { studentId, unitCodes: codes, unitNamesMap: namesMap, year: yearStr, semester: semesterStr },
-    });
+    // Resolve Unit.id for each submitted code (normalize stored codes too)
+    const units = await prisma.$queryRaw<{ id: string; code: string }[]>`
+      SELECT id, code
+      FROM "Unit"
+      WHERE UPPER(REPLACE(code, ' ', '')) = ANY(${codes}::text[])
+    `;
+    const unitIds = units.map((u) => u.id);
+
+    await prisma.$transaction([
+      // 1. Update the snapshot (mobile app cache)
+      prisma.studentEnrollmentSnapshot.upsert({
+        where: { studentId },
+        update: { unitCodes: codes, unitNamesMap: namesMap, year: yearStr, semester: semesterStr },
+        create: { studentId, unitCodes: codes, unitNamesMap: namesMap, year: yearStr, semester: semesterStr },
+      }),
+
+      // 2. Remove enrollment rows for units no longer in the submitted list
+      prisma.enrollment.deleteMany({
+        where: {
+          studentId,
+          ...(unitIds.length > 0 ? { unitId: { notIn: unitIds } } : {}),
+        },
+      }),
+
+      // 3. Insert new enrollment rows (skip duplicates)
+      prisma.enrollment.createMany({
+        data: unitIds.map((unitId) => ({ studentId, unitId })),
+        skipDuplicates: true,
+      }),
+    ]);
   } catch (err) {
-    console.error("[enrollment POST] upsert failed for studentId:", studentId, err);
+    console.error("[enrollment POST] failed for studentId:", studentId, err);
     return NextResponse.json(
       { message: "Failed to save enrollment" },
       { status: 500, headers: corsHeaders }

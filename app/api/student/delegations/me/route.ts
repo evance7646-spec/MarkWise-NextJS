@@ -36,9 +36,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 401, headers: corsHeaders });
   }
 
-  // DEBUG — remove once identity mismatch is confirmed resolved
-  console.log('[delegations/me] JWT payload — studentId:', jwtPayload?.studentId, '| userId:', jwtPayload?.userId, '| sub:', (jwtPayload as any)?.sub);
-
   const nowMs = BigInt(Date.now());
 
   const rows = await prisma.delegation.findMany({
@@ -49,12 +46,6 @@ export async function GET(req: NextRequest) {
     },
     orderBy: { validFrom: "asc" },
   });
-
-  // DEBUG — remove once identity mismatch is confirmed resolved
-  console.log('[delegations/me] rows found:', rows.length, '| queried leaderStudentId:', studentId, '| nowMs:', Date.now());
-  if (rows.length > 0) {
-    rows.forEach(r => console.log(`  row ${r.id}: used=${r.used}, validUntil=${Number(r.validUntil)}, leaderStudentId=${r.leaderStudentId}`));
-  }
 
   const delegations = rows.map((d) => ({
     id: d.id,

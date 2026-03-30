@@ -28,6 +28,8 @@ export function formatGroup(group: any) {
     leader: group.leaderId
       ? { id: group.leaderId, name: leader?.name ?? null }
       : null,
+    capacity: group.capacity ?? 0,
+    memberCount: (group.members ?? []).length,
     locked: group.locked ?? false,
     description: group.description ?? null,
     allowSelfEnroll: group.allowSelfEnroll ?? false,

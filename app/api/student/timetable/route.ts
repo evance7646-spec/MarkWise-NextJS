@@ -275,8 +275,32 @@ export async function GET(request: Request) {
       };
     });
 
+    // extraSessions key — same data the app reads from the dedicated endpoint,
+    // provided here so a single GET /api/student/timetable is enough.
+    const extraSessionsPayload = extraSessions.map((s) => ({
+      id: s.id,
+      sessionId: s.id,
+      unitCode: s.unitCode,
+      unitName: unitTitleMap[s.unitCode] ?? s.unitCode,
+      date: s.date.toISOString().slice(0, 10),
+      startTime: s.startTime,
+      endTime: s.endTime,
+      roomCode: s.roomCode ?? null,
+      lessonType: s.lessonType,
+      lecturerId: null,
+      lecturerName: s.lecturer?.fullName ?? null,
+      isExtraSession: true as const,
+      status: "Confirmed",
+    }));
+
     return NextResponse.json(
-      { courseId, version, updatedAt, timetable: [...timetable, ...extraEntries] },
+      {
+        courseId,
+        version,
+        updatedAt,
+        timetable: [...timetable, ...extraEntries],
+        extraSessions: extraSessionsPayload,
+      },
       {
         headers: {
           ...corsHeaders,

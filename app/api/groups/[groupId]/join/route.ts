@@ -37,15 +37,28 @@ export async function POST(req: NextRequest, context: { params: Promise<{ groupI
 
   // Enforce locked state
   if (group.locked) {
-    return NextResponse.json({ error: 'This group is locked' }, { status: 400, headers: corsHeaders });
+    return NextResponse.json({ error: 'LOCKED', message: 'This group is locked' }, { status: 403, headers: corsHeaders });
   }
 
-  // Enforce maxGroupsPerStudent for this unit
-  const currentMemberships = await prisma.groupMember.count({
-    where: { studentId, leftAt: null, group: { unitId: group.unitId } },
-  });
-  if (currentMemberships >= group.maxGroupsPerStudent) {
-    return NextResponse.json({ error: 'You are already in a group for this unit' }, { status: 400, headers: corsHeaders });
+  // Enforce capacity
+  if (group.members.length >= group.capacity) {
+    return NextResponse.json({ error: 'GROUP_FULL', message: 'This group has reached its maximum capacity.' }, { status: 409, headers: corsHeaders });
+  }
+
+  // Guard against duplicate active membership in this specific group
+  const alreadyMember = group.members.some((m) => m.studentId === studentId);
+  if (alreadyMember) {
+    return NextResponse.json({ error: 'You are already a member of this group' }, { status: 409, headers: corsHeaders });
+  }
+
+  // Enforce maxGroupsPerStudent for this unit (only when unitId is set)
+  if (group.unitId) {
+    const currentMemberships = await prisma.groupMember.count({
+      where: { studentId, leftAt: null, group: { unitId: group.unitId } },
+    });
+    if (currentMemberships >= group.maxGroupsPerStudent) {
+      return NextResponse.json({ error: 'You are already in a group for this unit' }, { status: 400, headers: corsHeaders });
+    }
   }
 
   await prisma.groupMember.create({ data: { groupId, studentId, role: 'member' } });

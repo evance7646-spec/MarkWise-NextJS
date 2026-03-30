@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
+import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+
+export const runtime = "nodejs";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -15,15 +18,11 @@ export function OPTIONS() {
 /**
  * GET /api/attendance/conducted-sessions/counts?unitCodes=CS301,CS302[&byType=true]
  *
- * Returns COUNT(DISTINCT sessionStart) per unit code, independent of the
- * requesting student's own attendance.
- *
- * With byType=true, also returns a per-lesson-type breakdown under "byType".
- *
- * Auth: student Bearer JWT
+ * Returns COUNT(DISTINCT sessionStart) per unit code.
+ * Auth: student OR lecturer Bearer JWT.
  */
 export async function GET(req: NextRequest) {
-  // ── Auth ────────────────────────────────────────────────────────────────
+  // ── Auth — accept either student or lecturer JWT ───────────────────────
   const token = (req.headers.get("authorization") ?? "")
     .replace(/^Bearer\s+/i, "")
     .trim();
@@ -33,9 +32,18 @@ export async function GET(req: NextRequest) {
       { status: 401, headers: corsHeaders },
     );
   }
+  let authenticated = false;
   try {
     verifyStudentAccessToken(token);
-  } catch {
+    authenticated = true;
+  } catch { /* try lecturer below */ }
+  if (!authenticated) {
+    try {
+      verifyLecturerAccessToken(token);
+      authenticated = true;
+    } catch { /* fall through to 401 */ }
+  }
+  if (!authenticated) {
     return NextResponse.json(
       { message: "Unauthorized" },
       { status: 401, headers: corsHeaders },

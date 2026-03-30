@@ -58,6 +58,11 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ assignm
 
   const body = await req.json();
   const { title, description, dueDate, maxScore, rubric, attachments, type, status } = body;
+  const rawIsGroup = body.isGroup ?? body.is_group;
+  const rawAllowedTypes = body.allowedTypes ?? body.allowed_types;
+  const rawBlockLate = body.blockLate ?? body.block_late;
+  const rawAllowResub = body.allowResub ?? body.allow_resub;
+  const rawAttemptsAllowed = body.attemptsAllowed ?? body.attempts_allowed;
   const updated = await prisma.assignment.update({
     where: { id: assignmentId },
     data: {
@@ -65,6 +70,11 @@ export async function PUT(req: NextRequest, context: { params: Promise<{ assignm
       ...(description !== undefined && { description }),
       ...(dueDate !== undefined && { dueDate: new Date(dueDate) }),
       ...(maxScore !== undefined && { maxScore }),
+      ...(rawIsGroup !== undefined && { isGroup: Boolean(rawIsGroup) }),
+      ...(rawAllowedTypes !== undefined && { allowedTypes: rawAllowedTypes }),
+      ...(rawBlockLate !== undefined && { blockLate: Boolean(rawBlockLate) }),
+      ...(rawAllowResub !== undefined && { allowResub: Boolean(rawAllowResub) }),
+      ...(rawAttemptsAllowed !== undefined && { attemptsAllowed: Number(rawAttemptsAllowed) }),
       ...(rubric !== undefined && { rubric }),
       ...(attachments !== undefined && { attachments }),
       ...(type !== undefined && { type }),

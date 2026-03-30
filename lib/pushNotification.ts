@@ -96,7 +96,7 @@ export async function sendPushNotification(payload: PushPayload): Promise<boolea
     if (res.status === 404 || status === 'UNREGISTERED' || status === 'NOT_FOUND') {
       console.warn('[pushNotification] Stale token, deleting:', payload.token.slice(-12));
       await prisma.studentPushToken
-        .delete({ where: { fcmToken: payload.token } as any })
+        .deleteMany({ where: { fcmToken: payload.token } })
         .catch(() => {/* already gone */});
     } else {
       console.error('[pushNotification] FCM error', res.status, JSON.stringify(errorBody));

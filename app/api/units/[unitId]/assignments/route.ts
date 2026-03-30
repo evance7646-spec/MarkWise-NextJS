@@ -34,12 +34,12 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ unit
 
   const assignments = await prisma.assignment.findMany({
     where: { unitId },
-    orderBy: { dueAt: 'asc' },
+    orderBy: { dueDate: 'asc' },
     select: {
       id: true,
       title: true,
       description: true,
-      dueAt: true,
+      dueDate: true,
       lecturerId: true,
       // Add allowedSubmissionTypes and status if needed
     },
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ uni
       unitId,
       title,
       description,
-      dueAt: new Date(dueAt),
+      dueDate: new Date(dueAt),
       lecturerId: lecturer.lecturerId,
       // allowedSubmissionTypes, rules
     },

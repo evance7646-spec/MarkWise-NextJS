@@ -140,7 +140,10 @@ export async function GET(req: NextRequest) {
     where: whereClause,
     orderBy: { createdAt: 'desc' },
   });
-  return NextResponse.json(assignments, { headers: corsHeaders });
+  return NextResponse.json(
+    assignments.map(a => ({ ...a, unitId: unit?.code ?? a.unitId })),
+    { headers: corsHeaders }
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -159,6 +162,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'title, unitId, and dueDate are required' }, { status: 400, headers: corsHeaders });
   }
 
+  const isGroup = Boolean(body.isGroup ?? body.is_group ?? false);
+  const allowedTypes: string[] = body.allowedTypes ?? body.allowed_types ?? [];
+  const blockLate = Boolean(body.blockLate ?? body.block_late ?? false);
+  const allowResub: boolean = body.allowResub ?? body.allow_resub ?? true;
+  const attemptsAllowed = Number(body.attemptsAllowed ?? body.attempts_allowed ?? 1);
+
   // Resolve the incoming unitId (code or display string) to the canonical unit UUID
   const unit = await resolveUnit(String(rawUnitId));
   const resolvedUnitId = unit?.id ?? String(rawUnitId).replace(/\s+/g, '').toUpperCase();
@@ -171,11 +180,16 @@ export async function POST(req: NextRequest) {
       lecturerId,
       dueDate: new Date(dueDate),
       maxScore: maxScore ?? null,
+      isGroup,
+      allowedTypes,
+      blockLate,
+      allowResub,
+      attemptsAllowed,
       rubric: rubric ?? null,
       attachments: attachments ?? null,
-      type: type ?? 'individual',
+      type: isGroup ? 'group' : (type ?? 'individual'),
       status: 'active',
     },
   });
-  return NextResponse.json(assignment, { status: 201, headers: corsHeaders });
+  return NextResponse.json({ ...assignment, unitId: unit?.code ?? assignment.unitId }, { status: 201, headers: corsHeaders });
 }

@@ -87,10 +87,10 @@ export async function POST(req: NextRequest) {
   let body: {
     unitCode?: string;
     lectureRoom?: string;
-    sessionStart?: number;
-    scannedAt?: number;
-    deviceId?: string;
-    rawPayload?: string;
+    sessionStart?: number | string;
+    scannedAt?: number | string;
+    deviceId?: string | null;
+    rawPayload?: string | null;
   };
   try {
     body = await req.json();
@@ -101,30 +101,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { rawPayload, deviceId } = body;
+  // rawPayload and deviceId are optional — store NULL in DB when absent
+  const rawPayload  = (body.rawPayload ?? null) || null;
+  const deviceId    = body.deviceId || null;
 
-  // Diagnostic — remove after debugging
-  console.log("[offline/submit] body received:", JSON.stringify({ ...body, rawPayload: body.rawPayload?.substring(0, 100) }));
-
-  if (!rawPayload) {
-    return NextResponse.json(
-      { message: "rawPayload is required", reason: "MISSING_PAYLOAD" },
-      { status: 422, headers: corsHeaders }
-    );
-  }
+  // method is never sent by the client — default to 'ble' server-side
+  const method: Method = rawPayload ? detectMethod(rawPayload) : "ble";
 
   // --- Step 1: Normalise inputs ---
-  // Primary: use explicit body fields (per spec).
-  // Fallback: parse from rawPayload for QR/BLE if body fields are absent.
-  const method = detectMethod(rawPayload);
-  let unitCode = normaliseCode(String(body.unitCode ?? ""));
-  let lectureRoom = (body.lectureRoom ?? "").trim().toUpperCase();
-  let sessionStart = body.sessionStart ? Number(body.sessionStart) : 0;
-  // Guard: if scannedAt is 0, null, undefined, or NaN, fall back to now.
-  const scannedAtRaw = Number(body.scannedAt);
-  const scannedAt = scannedAtRaw > 0 ? scannedAtRaw : Date.now();
+  // Primary: use explicit body fields. Fallback: parse from rawPayload for QR/BLE.
+  let unitCode     = normaliseCode(String(body.unitCode ?? ""));
+  let lectureRoom  = (body.lectureRoom ?? "").trim().toUpperCase();
+  let sessionStart = Number(body.sessionStart ?? 0) || 0;
+  const scannedAt  = Number(body.scannedAt ?? 0) || 0;
 
-  if (!unitCode || !lectureRoom || !sessionStart || isNaN(sessionStart)) {
+  if (rawPayload && (!unitCode || !lectureRoom || !sessionStart)) {
     if (method === "qr") {
       // Format: "UNITCODE@ROOM;sessionStart;sessionEnd"
       const parts = rawPayload.split(";");
@@ -146,8 +137,8 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  if (!unitCode || !lectureRoom || !sessionStart || isNaN(sessionStart)) {
-    console.log("[offline/submit] MISSING_FIELDS after parse:", { unitCode, lectureRoom, sessionStart, method });
+  // Validate the four required fields — all other fields default server-side.
+  if (!unitCode || !lectureRoom || !sessionStart || !scannedAt) {
     return NextResponse.json(
       { message: "Missing or invalid session fields", reason: "MISSING_FIELDS" },
       { status: 422, headers: corsHeaders }
@@ -209,7 +200,7 @@ export async function POST(req: NextRequest) {
     const canonicalLectureRoom = session.lectureRoom;
 
     // --- Step 3: Validate Manual PIN ---
-    if (method === "manual") {
+    if (method === "manual" && rawPayload) {
       const pin = rawPayload.replace(/^MANUAL:/i, "").trim();
       const valid = verifyManualPin(pin, unitCode, lectureRoom, sessionStart);
       if (!valid) {
@@ -262,7 +253,7 @@ export async function POST(req: NextRequest) {
         sessionStart: canonicalSessionStart, // already truncated to second precision above
         scannedAt: scannedAtDate,
         deviceId: deviceId ?? null,
-        rawPayload,
+        rawPayload: rawPayload ?? null,
         method,
       },
       select: { id: true },

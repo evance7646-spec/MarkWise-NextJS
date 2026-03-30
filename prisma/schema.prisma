@@ -10,7 +10,7 @@ model Group {
   locked              Boolean       @default(false)
   capacity            Int           @default(30)
   description         String?
-  allowSelfEnroll     Boolean       @default(false)
+  allowSelfEnroll     Boolean       @default(true)
   maxGroupsPerStudent Int           @default(1)
   nextMeeting         DateTime?
   tags                String[]      @default([])
@@ -41,20 +41,25 @@ model GroupMember {
 }
 
 model Assignment {
-  id          String       @id @default(uuid())
-  title       String
-  description String?
-  dueDate     DateTime
-  unitId      String
-  lecturerId  String
-  type        String       @default("individual")
-  maxScore    Int?
-  status      String       @default("active")
-  rubric      Json?
-  attachments Json?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
-  submissions Submission[]
+  id           String       @id @default(uuid())
+  title        String
+  description  String?
+  dueDate      DateTime
+  unitId       String
+  lecturerId   String
+  type         String       @default("individual")
+  isGroup      Boolean      @default(false)
+  allowedTypes String[]     @default([])
+  blockLate    Boolean      @default(false)
+  allowResub      Boolean      @default(true)
+  attemptsAllowed Int          @default(1)
+  maxScore        Int?
+  status       String       @default("active")
+  rubric       Json?
+  attachments  Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  submissions  Submission[]
 
   @@index([unitId])
   @@index([lecturerId])
@@ -62,21 +67,23 @@ model Assignment {
 }
 
 model Submission {
-  id           String           @id @default(uuid())
-  assignmentId String
-  studentId    String?
-  groupId      String?
-  fileUrl      String?
-  linkUrl      String?
-  textContent  String?
-  submittedAt  DateTime         @default(now())
-  version      Int              @default(1)
-  status       SubmissionStatus @default(pending)
-  grade        Float?
-  feedback     String?
-  assignment   Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  student      Student?         @relation(fields: [studentId], references: [id])
-  group        Group?           @relation(fields: [groupId], references: [id])
+  id              String           @id @default(uuid())
+  assignmentId    String
+  studentId       String?
+  groupId         String?
+  fileUrl         String?
+  fileName        String?
+  linkUrl         String?
+  textContent     String?
+  submittedByName String?
+  submittedAt     DateTime         @default(now())
+  version         Int              @default(1)
+  status          SubmissionStatus @default(pending)
+  grade           Float?
+  feedback        String?
+  assignment      Assignment       @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  student         Student?         @relation(fields: [studentId], references: [id])
+  group           Group?           @relation(fields: [groupId], references: [id])
 
   @@index([assignmentId])
   @@index([studentId])
@@ -327,6 +334,7 @@ model StudentPushToken {
   id         String   @id @default(uuid())
   studentId  String
   fcmToken   String
+  platform   String?  // 'android' | 'ios'
   updatedAt  DateTime @updatedAt
   student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
@@ -601,24 +609,28 @@ model ConductedSession {
 
 // Offline attendance records (QR, BLE, Manual PIN)
 model OfflineAttendanceRecord {
-  id           String      @id @default(uuid())
-  studentId    String
-  unitCode     String
-  lectureRoom  String
-  lessonType   String?     // inherited from ConductedSession
-  sessionStart DateTime
-  scannedAt    DateTime
-  deviceId     String?
-  rawPayload   String?
-  method       String      // 'qr' | 'ble' | 'manual'
-  delegationId String?     // set if this record came from a GD delegation session
-  createdAt    DateTime    @default(now())
-  delegation   Delegation? @relation(fields: [delegationId], references: [id])
+  id                   String      @id @default(uuid())
+  studentId            String
+  unitCode             String
+  lectureRoom          String
+  lessonType           String?     // inherited from ConductedSession
+  sessionStart         DateTime
+  scannedAt            DateTime
+  deviceId             String?
+  rawPayload           String?
+  method               String      // 'qr' | 'ble' | 'manual' | 'manual_lecturer'
+  delegationId         String?     // set if this record came from a GD delegation session
+  admissionNumber      String?     // populated for manual_lecturer records
+  markedByLecturerId   String?     // audit trail — populated for manual_lecturer records
+  institutionId        String?     // denormalised for scoping/analytics
+  createdAt            DateTime    @default(now())
+  delegation           Delegation? @relation(fields: [delegationId], references: [id])
 
   @@unique([studentId, unitCode, lectureRoom, sessionStart])
   @@index([studentId])
   @@index([unitCode])
   @@index([delegationId])
+  @@index([markedByLecturerId])
   @@map("OfflineAttendanceRecord")
 }
 
@@ -673,6 +685,23 @@ model Notification {
   @@index([userId])
   @@index([userId, read])
   @@map("Notification")
+}
+
+model LecturerNotification {
+  id         String   @id @default(uuid())
+  lecturerId String
+  type       String
+  title      String
+  message    String
+  recipients String[]
+  category   String?
+  severity   String?
+  sentBy     String?
+  sentCount  Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@index([lecturerId])
+  @@map("LecturerNotification")
 }
 
 model UnitsByCourseYearSemester {
@@ -765,6 +794,18 @@ enum BookingHoldStatus {
   expired
   confirmed
   cancelled
+}
+
+// One row per invalidated JWT (jti). TTL = token's original expiry.
+// Checked during token verification to block deleted-account tokens.
+model TokenBlocklist {
+  id        String   @id @default(uuid())
+  jti       String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("TokenBlocklist")
 }
 
 enum SubmissionStatus {
