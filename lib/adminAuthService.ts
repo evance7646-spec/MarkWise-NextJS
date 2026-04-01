@@ -227,8 +227,9 @@ export async function handleAdminSignup(request: Request) {
     );
   } catch (error) {
     console.error("Admin signup error:", error);
+    const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json(
-      { error: "Failed to create admin account." },
+      { error: message },
       { status: 500, headers: adminAuthCorsHeaders },
     );
   }
