@@ -48,6 +48,12 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'fcmToken is required' }, { status: 422, headers: corsHeaders });
   }
 
+  // ── Verify student exists ─────────────────────────────────────────────────
+  const studentExists = await prisma.student.findUnique({ where: { id: studentId }, select: { id: true } });
+  if (!studentExists) {
+    return NextResponse.json({ error: 'Student not found' }, { status: 404, headers: corsHeaders });
+  }
+
   // ── Upsert into StudentPushToken (composite unique: studentId + fcmToken) ───────
   await prisma.studentPushToken.upsert({
     where: { studentId_fcmToken: { studentId, fcmToken } },

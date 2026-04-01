@@ -14,10 +14,15 @@ type AdminSignupBody = {
   fullName?: string;
   email?: string;
   password?: string;
-  institutionId?: string;
-  departmentId?: string;
-  departmentName?: string;
-  role?: string; // 'institution_admin' or 'department_admin'
+  role?: string;
+  // institution_admin fields
+  institutionId?: string;   // existing institution — skip creation when provided
+  institutionName?: string; // new institution name — used when institutionId is absent
+  logoUrl?: string;
+  logo?: string;            // legacy alias for logoUrl (multipart upload filename)
+  // department_admin fields
+  departmentId?: string;    // existing department — skip creation when provided
+  departmentName?: string;  // new/existing department name — find-or-create when departmentId absent
 };
 
 type AdminSigninBody = {
@@ -25,16 +30,33 @@ type AdminSigninBody = {
   password?: string;
 };
 
-
 export async function handleAdminSignup(request: Request) {
   try {
     const body = (await request.json()) as AdminSignupBody;
-    let { fullName, institutionId, departmentId, departmentName, role } = body;
+    let { institutionId, departmentId, departmentName, role } = body;
+    const fullName = body.fullName?.trim() ?? "";
     const email = normalizeEmail(body.email ?? "");
     const password = body.password ?? "";
 
-
-    // Strict role validation
+    // ── Input validation ─────────────────────────────────────────────────────
+    if (!fullName) {
+      return NextResponse.json(
+        { error: "Full name is required." },
+        { status: 400, headers: adminAuthCorsHeaders },
+      );
+    }
+    if (!email) {
+      return NextResponse.json(
+        { error: "Email is required." },
+        { status: 400, headers: adminAuthCorsHeaders },
+      );
+    }
+    if (!password || password.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters." },
+        { status: 400, headers: adminAuthCorsHeaders },
+      );
+    }
     if (role !== "institution_admin" && role !== "department_admin") {
       return NextResponse.json(
         { error: "Role must be either 'institution_admin' or 'department_admin'." },
@@ -42,89 +64,8 @@ export async function handleAdminSignup(request: Request) {
       );
     }
 
-    // Institution admin: must NOT have departmentId or departmentName, must have institutionId
-    if (role === "institution_admin") {
-      if (!institutionId) {
-        return NextResponse.json(
-          { error: "Institution ID is required for institution admin." },
-          { status: 400, headers: adminAuthCorsHeaders },
-        );
-      }
-      if (departmentId || departmentName) {
-        return NextResponse.json(
-          { error: "Institution admin cannot have departmentId or departmentName." },
-          { status: 400, headers: adminAuthCorsHeaders },
-        );
-      }
-    }
-
-    // Department admin: must have institutionId and (departmentId or departmentName)
-    if (role === "department_admin") {
-      if (!institutionId) {
-        return NextResponse.json(
-          { error: "Institution ID is required for department admin." },
-          { status: 400, headers: adminAuthCorsHeaders },
-        );
-      }
-      if (departmentName && departmentName.trim().length > 0) {
-        // Try to create department, but handle unique constraint error gracefully
-        try {
-          const newDept = await prisma.department.create({
-            data: {
-              name: departmentName.trim(),
-              institutionId,
-            },
-          });
-          departmentId = newDept.id;
-          departmentName = newDept.name;
-        } catch (error: any) {
-          if (error.code === 'P2002') {
-            // Department already exists, fetch it
-            const existingDept = await prisma.department.findFirst({
-              where: {
-                name: { equals: departmentName.trim(), mode: 'insensitive' },
-                institutionId,
-              },
-            });
-            if (existingDept) {
-              departmentId = existingDept.id;
-              departmentName = existingDept.name;
-            } else {
-              return NextResponse.json(
-                { error: "Department already exists but could not be found." },
-                { status: 500, headers: adminAuthCorsHeaders },
-              );
-            }
-          } else {
-            return NextResponse.json(
-              { error: error.message || "Failed to create department." },
-              { status: 500, headers: adminAuthCorsHeaders },
-            );
-          }
-        }
-      } else if (departmentId) {
-        // Validate department exists
-        const department = await prisma.department.findUnique({ where: { id: departmentId } });
-        if (!department) {
-          return NextResponse.json(
-            { error: "Department does not exist. Please select or create a valid department." },
-            { status: 400, headers: adminAuthCorsHeaders },
-          );
-        }
-        departmentName = department.name;
-      } else {
-        return NextResponse.json(
-          { error: "Department ID or department name is required for department admin." },
-          { status: 400, headers: adminAuthCorsHeaders },
-        );
-      }
-    }
-
-    // Check if admin already exists
-    const existingAdmin = await prisma.admin.findUnique({
-      where: { email },
-    });
-
+    // ── Email uniqueness check FIRST — before creating any related records ───
+    const existingAdmin = await prisma.admin.findUnique({ where: { email } });
     if (existingAdmin) {
       return NextResponse.json(
         { error: "An admin with this email already exists." },
@@ -132,20 +73,141 @@ export async function handleAdminSignup(request: Request) {
       );
     }
 
-    // Hash password and create admin
     const hashedPassword = await hashPassword(password);
-    const adminData: any = {
-      fullName,
-      email,
-      password: hashedPassword,
-      institutionId: institutionId ?? undefined,
-      role,
-    };
-    if (typeof departmentId === "string" && departmentId.length > 0) {
-      adminData.departmentId = departmentId;
+    let admin: Awaited<ReturnType<typeof prisma.admin.create>>;
+
+    // ── institution_admin ─────────────────────────────────────────────────────
+    if (role === "institution_admin") {
+      const institutionName = body.institutionName?.trim() || `${fullName} Institution`;
+      const logoUrl = body.logoUrl || body.logo || null;
+
+      // Create institution + admin atomically so a failed admin creation
+      // never leaves an orphaned institution row.
+      if (institutionId) {
+        // Registering against an existing institution
+        const institutionExists = await prisma.institution.findUnique({
+          where: { id: institutionId },
+          select: { id: true },
+        });
+        if (!institutionExists) {
+          return NextResponse.json(
+            { error: "Institution not found." },
+            { status: 404, headers: adminAuthCorsHeaders },
+          );
+        }
+        admin = await prisma.admin.create({
+          data: { fullName, email, password: hashedPassword, institutionId, role },
+        });
+      } else {
+        // Creating a brand-new institution alongside the admin
+        admin = await prisma.$transaction(async (tx) => {
+          const institution = await tx.institution.create({
+            data: { name: institutionName, logoUrl },
+          });
+          return tx.admin.create({
+            data: {
+              fullName,
+              email,
+              password: hashedPassword,
+              institutionId: institution.id,
+              role,
+            },
+          });
+        });
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          admin: {
+            id: admin.id,
+            fullName: admin.fullName,
+            email: admin.email,
+            role: admin.role,
+            institutionId: admin.institutionId,
+            departmentId: null,
+            departmentName: null,
+          },
+        },
+        { status: 201, headers: adminAuthCorsHeaders },
+      );
     }
-    const admin = await prisma.admin.create({
-      data: adminData,
+
+    // ── department_admin ──────────────────────────────────────────────────────
+    if (!institutionId) {
+      return NextResponse.json(
+        { error: "Institution ID is required for department admin." },
+        { status: 400, headers: adminAuthCorsHeaders },
+      );
+    }
+
+    // Resolve department: prefer departmentId → find-or-create by name
+    if (departmentId) {
+      const dept = await prisma.department.findUnique({ where: { id: departmentId } });
+      if (!dept) {
+        return NextResponse.json(
+          { error: "Department not found." },
+          { status: 404, headers: adminAuthCorsHeaders },
+        );
+      }
+      departmentName = dept.name;
+    } else if (departmentName?.trim()) {
+      const trimmedName = departmentName.trim();
+      // Find existing (case-insensitive) or create
+      const existing = await prisma.department.findFirst({
+        where: {
+          name: { equals: trimmedName, mode: "insensitive" },
+          institutionId,
+        },
+      });
+      if (existing) {
+        departmentId = existing.id;
+        departmentName = existing.name;
+      } else {
+        try {
+          const newDept = await prisma.department.create({
+            data: { name: trimmedName, institutionId },
+          });
+          departmentId = newDept.id;
+          departmentName = newDept.name;
+        } catch (err: any) {
+          if (err.code === "P2002") {
+            // Created concurrently — fetch the winner
+            const concurrent = await prisma.department.findFirst({
+              where: {
+                name: { equals: trimmedName, mode: "insensitive" },
+                institutionId,
+              },
+            });
+            if (!concurrent) {
+              return NextResponse.json(
+                { error: "Department creation failed. Please try again." },
+                { status: 500, headers: adminAuthCorsHeaders },
+              );
+            }
+            departmentId = concurrent.id;
+            departmentName = concurrent.name;
+          } else {
+            throw err;
+          }
+        }
+      }
+    } else {
+      return NextResponse.json(
+        { error: "Department ID or department name is required for department admin." },
+        { status: 400, headers: adminAuthCorsHeaders },
+      );
+    }
+
+    admin = await prisma.admin.create({
+      data: {
+        fullName,
+        email,
+        password: hashedPassword,
+        institutionId,
+        departmentId,
+        role,
+      },
     });
 
     return NextResponse.json(
@@ -158,7 +220,7 @@ export async function handleAdminSignup(request: Request) {
           role: admin.role,
           institutionId: admin.institutionId,
           departmentId: admin.departmentId,
-          departmentName: departmentName,
+          departmentName,
         },
       },
       { status: 201, headers: adminAuthCorsHeaders },
