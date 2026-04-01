@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       }
       
       // Normalize semester labels
-      year.semesters = year.semesters.map((semester, index) => {
+      year.semesters = year.semesters.map((semester: { id: string; label: string; units: unknown[] }, index: number) => {
         if (!semester.id || !semester.label || !Array.isArray(semester.units)) {
           throw new Error(`Invalid semester structure for semester: ${semester?.label || semester?.id}`);
         }

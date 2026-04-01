@@ -42,9 +42,9 @@ export async function POST(req: NextRequest) {
   let studentIds: string[] = [];
 
   if (recipients === "all") {
-    // Notify all students taught by this lecturer — find units by lecturerId and get enrolled students
+    // Notify all students taught by this lecturer — find units via timetable and get enrolled students
     const units = await prisma.unit.findMany({
-      where: { liveSessions: { some: { lecturerId: lecturer.lecturerId } } },
+      where: { timetables: { some: { lecturerId: lecturer.lecturerId } } },
       select: { id: true },
     });
     const unitIds = units.map(u => u.id);
