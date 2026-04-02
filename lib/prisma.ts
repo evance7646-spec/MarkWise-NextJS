@@ -11,6 +11,6 @@ export const prisma =
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
-}
+// Always cache on globalThis to prevent multiple instances
+// (handles HMR in dev AND module re-evaluation edge cases in serverless)
+globalForPrisma.prisma ??= prisma;
