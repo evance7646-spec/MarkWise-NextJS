@@ -6,10 +6,13 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 /**
- * Ensures the DATABASE_URL always uses the transaction pooler (port 6543)
- * and has pgbouncer=true + connection_limit=1.
- * This guards against Vercel env vars accidentally using the session pooler (port 5432),
- * which causes "MaxClientsInSessionMode: max clients reached".
+ * Ensures the DATABASE_URL always uses the transaction pooler (port 6543),
+ * pgbouncer=true, a reasonable connection_limit, and a generous pool_timeout.
+ *
+ * - Switches port 5432 → 6543 on the pooler host (prevents MaxClientsInSessionMode)
+ * - connection_limit=5 per instance allows concurrent requests without exhausting the DB
+ * - pool_timeout=30 gives enough headroom for cold starts / slow queries (default was 10s)
+ * - pgbouncer=true disables Prisma advisory locks incompatible with PgBouncer transaction mode
  */
 function getPoolerUrl(): string | undefined {
   const url = process.env.DATABASE_URL;
@@ -21,8 +24,13 @@ function getPoolerUrl(): string | undefined {
       parsed.port = "6543";
     }
     parsed.searchParams.set("pgbouncer", "true");
+    // Allow 5 concurrent connections per instance (not 1) to handle concurrent requests
     if (!parsed.searchParams.has("connection_limit")) {
-      parsed.searchParams.set("connection_limit", "1");
+      parsed.searchParams.set("connection_limit", "5");
+    }
+    // Increase pool acquisition timeout from 10s default to 30s
+    if (!parsed.searchParams.has("pool_timeout")) {
+      parsed.searchParams.set("pool_timeout", "30");
     }
     return parsed.toString();
   } catch {
