@@ -1001,6 +1001,13 @@ export default function DepartmentTimetablePage() {
                 </motion.div>
               )}
 
+              {/* Inline error when Add Schedule is blocked */}
+              {modalError && !isAddModalOpen && (
+                <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm">
+                  <AlertCircle className="h-4 w-4 shrink-0" />{modalError}
+                </div>
+              )}
+
               {/* Timetable grid */}
               <div className="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-xl shadow-sm border border-white/50 dark:border-slate-700/50 overflow-hidden">
                 {!selectedCourse || !selectedYear || !selectedSemester ? (
