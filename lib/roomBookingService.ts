@@ -149,7 +149,7 @@ export async function expireHolds(actorId: string | null = "system") {
     for (const roomId of affectedRoomIds) {
       await recomputeRoomStatus(tx, roomId, "hold.expired", actorId);
     }
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 async function assertNoConflicts(
@@ -242,7 +242,7 @@ export async function createHold(input: { roomId: string; lecturerId: string; st
 
     console.log('Hold created:', hold); // Debug log
     return hold;
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 // FIXED: Added missing startAt and endAt parameters
@@ -398,7 +398,7 @@ export async function confirmHold(input: {
       booking,
       idempotentReplay: false,
     };
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 export async function cancelBooking(input: { bookingId: string; actorId: string; actorRole: "admin" | "lecturer" }) {
@@ -466,7 +466,7 @@ export async function cancelBooking(input: { bookingId: string; actorId: string;
     await recomputeRoomStatus(tx, updated.roomId, "booking.cancelled", input.actorId);
 
     return updated;
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 export async function getBookingById(bookingId: string) {
@@ -498,7 +498,7 @@ export async function refreshRoomStatuses() {
     for (const room of rooms) {
       await recomputeRoomStatus(tx, room.id, "room.refresh", "system");
     }
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 export async function markRoomUnavailable(roomId: string, actorId: string) {
@@ -509,7 +509,7 @@ export async function markRoomUnavailable(roomId: string, actorId: string) {
     }
 
     return setRoomStatus(tx, roomId, RoomStatus.unavailable, "room.unavailable", actorId);
-  });
+  }, { maxWait: 10000, timeout: 30000 });
 }
 
 export function canReadBooking(booking: { lecturerId: string }, scope: { role: "admin" | "lecturer"; userId: string }) {
