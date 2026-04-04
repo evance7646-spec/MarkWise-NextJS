@@ -36,7 +36,7 @@ export default function LecturersPage() {
   const [page, setPage] = useState(1);
 
   const fetchLecturers = useCallback(async () => {
-    if (!admin?.institutionId) return;
+    if (!admin?.institutionId) { setLoading(false); return; }
     setLoading(true);
     const r = await fetch(`/api/lecturers?institutionId=${admin.institutionId}`, { credentials: "include" });
     if (r.ok) {

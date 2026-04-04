@@ -23,7 +23,7 @@ export default function ProgramsPage() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const fetchData = useCallback(async () => {
-    if (!admin?.institutionId) return;
+    if (!admin?.institutionId) { setLoading(false); return; }
     setLoading(true);
     const dRes = await fetch(`/api/departments?institutionId=${admin.institutionId}`, { credentials: "include" });
     if (!dRes.ok) { setLoading(false); return; }

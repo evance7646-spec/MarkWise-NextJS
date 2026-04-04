@@ -61,7 +61,7 @@ export default function AdminsPage() {
   const [addOk, setAddOk] = useState(false);
 
   const fetchData = useCallback(async () => {
-    if (!admin?.institutionId) return;
+    if (!admin?.institutionId) { setLoading(false); return; }
     const iid = admin.institutionId;
     setLoading(true);
     const [aRes, dRes] = await Promise.all([

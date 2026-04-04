@@ -31,7 +31,7 @@ export default function DepartmentsPage() {
   const [deleting, setDeleting] = useState(false);
 
   const fetchDepts = useCallback(async () => {
-    if (!admin?.institutionId) return;
+    if (!admin?.institutionId) { setLoading(false); return; }
     setLoading(true);
     const r = await fetch(`/api/departments?institutionId=${admin.institutionId}`, { credentials: "include" });
     if (r.ok) {

@@ -31,7 +31,7 @@ export default function AnalyticsPage() {
   const [loading, setLoading] = useState(true);
 
   const fetchAnalytics = useCallback(async () => {
-    if (!admin?.institutionId) return;
+    if (!admin?.institutionId) { setLoading(false); return; }
     const iid = admin.institutionId;
     setLoading(true);
 

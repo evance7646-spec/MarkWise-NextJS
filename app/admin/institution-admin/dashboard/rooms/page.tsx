@@ -41,7 +41,7 @@ export default function RoomsPage() {
   const [page, setPage] = useState(1);
 
   const fetchRooms = useCallback(async () => {
-    if (!admin?.institutionId) return;
+    if (!admin?.institutionId) { setLoading(false); return; }
     setLoading(true);
     const r = await fetch(`/api/rooms?institutionId=${admin.institutionId}`, { credentials: "include" });
     if (r.ok) {

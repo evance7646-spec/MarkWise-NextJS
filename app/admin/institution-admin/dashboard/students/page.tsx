@@ -32,7 +32,7 @@ export default function StudentsPage() {
   const [page, setPage] = useState(1);
 
   const fetchData = useCallback(async () => {
-    if (!admin?.institutionId) return;
+    if (!admin?.institutionId) { setLoading(false); return; }
     const iid = admin.institutionId;
     setLoading(true);
     const [sRes, dRes] = await Promise.all([
