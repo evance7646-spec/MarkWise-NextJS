@@ -435,14 +435,14 @@ export default function DepartmentTimetablePage() {
   }, [apiFetch]);
 
   const loadCurriculum = useCallback(async (deptId: string) => {
-    // Primary: fetch Course entities ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â timetable entries require a valid Course.id FK
+    // Primary: fetch Course entities  —  timetable entries require a valid Course.id FK
     const res = await apiFetch(`/api/courses?departmentId=${deptId}`);
     if (!res.ok) throw new Error("Failed to load curriculum");
     const data = await res.json();
     let allCourses: Course[] = Array.isArray(data) ? data : (data.courses ?? []);
 
     // Fallback: if no Course records exist yet, map Programs from the curriculum API
-    // Note: program IDs can't be used as courseId FK ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â this only provides read-only display
+    // Note: program IDs can't be used as courseId FK  —  this only provides read-only display
     if (allCourses.length === 0) {
       try {
         const cr = await apiFetch(`/api/curriculum?departmentId=${deptId}`);
@@ -485,7 +485,7 @@ export default function DepartmentTimetablePage() {
         setDepartmentId(deptId);
         setInstitutionId(instId);
 
-        // Step 2: ALL data in parallel ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â no sequential waterfalls
+        // Step 2: ALL data in parallel  —  no sequential waterfalls
         const [currResult, lectResult, roomResult, entryResult] = await Promise.allSettled([
           loadCurriculum(deptId),
           loadLecturers(deptId, false),
@@ -496,13 +496,13 @@ export default function DepartmentTimetablePage() {
         if (!alive) return;
 
         if (currResult.status === "rejected") console.error("[Timetable] Curriculum load failed:", currResult.reason);
-        else console.log("[Timetable] Curriculum OK ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â deptId:", deptId);
+        else console.log("[Timetable] Curriculum OK  —  deptId:", deptId);
         if (lectResult.status === "rejected") console.error("[Timetable] Lecturers load failed:", lectResult.reason);
-        else console.log("[Timetable] Lecturers OK ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â deptId:", deptId);
+        else console.log("[Timetable] Lecturers OK  —  deptId:", deptId);
         if (roomResult.status === "rejected") console.error("[Timetable] Rooms load failed:", roomResult.reason);
-        else console.log("[Timetable] Rooms OK ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â instId:", instId);
+        else console.log("[Timetable] Rooms OK  —  instId:", instId);
         if (entryResult.status === "rejected") console.error("[Timetable] Entries load failed:", entryResult.reason);
-        else console.log("[Timetable] Entries OK ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â deptId:", deptId);
+        else console.log("[Timetable] Entries OK  —  deptId:", deptId);
       } catch (err: any) {
         if (alive) setPageError(err.message || "Failed to initialize. Please refresh.");
       } finally {
@@ -664,7 +664,7 @@ export default function DepartmentTimetablePage() {
           className="rounded-full bg-gradient-to-r from-indigo-500 to-purple-600 p-4 shadow-xl">
           <Calendar className="h-10 w-10 text-white" />
         </motion.div>
-        <p className="text-lg font-semibold text-slate-600 dark:text-slate-300">Loading timetable dataÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦</p>
+        <p className="text-lg font-semibold text-slate-600 dark:text-slate-300">Loading timetable data — ¦</p>
         <p className="text-sm text-slate-400 dark:text-slate-500">Fetching curriculum, lecturers, rooms &amp; entries in parallel</p>
       </div>
     );
@@ -704,7 +704,7 @@ export default function DepartmentTimetablePage() {
                 <button onClick={handleRefresh} disabled={refreshing}
                   className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/20 hover:bg-white/30 text-white text-sm font-medium backdrop-blur-sm transition-colors disabled:opacity-60">
                   <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-                  {refreshing ? "RefreshingÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦" : "Refresh"}
+                  {refreshing ? "Refreshing — ¦" : "Refresh"}
                 </button>
               </div>
             </div>
@@ -768,7 +768,7 @@ export default function DepartmentTimetablePage() {
                   <div className="relative flex-1 max-w-xs">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
                     <input type="text" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
-                      placeholder="Search unit, lecturer, venueÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦"
+                      placeholder="Search unit, lecturer, venue — ¦"
                       className="w-full pl-9 pr-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -903,7 +903,7 @@ export default function DepartmentTimetablePage() {
                               </span>
                             </td>
                             <td className="px-4 py-3 text-slate-600 dark:text-slate-300 whitespace-nowrap">
-                              <Clock className="inline h-3.5 w-3.5 mr-1 opacity-60" />{entry.startTime}ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“{entry.endTime}
+                              <Clock className="inline h-3.5 w-3.5 mr-1 opacity-60" />{entry.startTime} — Å“{entry.endTime}
                             </td>
                             <td className="px-4 py-3 font-medium text-slate-800 dark:text-white max-w-[180px] truncate">{entry.unitTitle}</td>
                             <td className="px-4 py-3 font-mono text-slate-500 dark:text-slate-400">{entry.unitCode}</td>
@@ -956,17 +956,17 @@ export default function DepartmentTimetablePage() {
                   <FormSelect label="Course" value={selectedCourseId} onChange={setSelectedCourseId} disabled={courses.length === 0}>
                     {courses.length === 0
                       ? <option value="">No courses available</option>
-                      : <><option value="">ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Choose a course ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â</option>{courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</>}
+                      : <><option value=""> —  Choose a course  — </option>{courses.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</>}
                   </FormSelect>
                   <FormSelect label="Year of Study" value={selectedYear} onChange={setSelectedYear} disabled={!selectedCourseId || availableYears.length === 0}>
                     {!selectedCourseId ? <option value="">Select course first</option>
                       : availableYears.length === 0 ? <option value="">No years available</option>
-                      : <><option value="">ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Choose year ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â</option>{availableYears.map((y) => <option key={y} value={y}>Year {y}</option>)}</>}
+                      : <><option value=""> —  Choose year  — </option>{availableYears.map((y) => <option key={y} value={y}>Year {y}</option>)}</>}
                   </FormSelect>
                   <FormSelect label="Semester" value={selectedSemester} onChange={setSelectedSemester} disabled={!selectedYear || semestersForYear.length === 0}>
                     {!selectedYear ? <option value="">Select year first</option>
                       : semestersForYear.length === 0 ? <option value="">No semesters available</option>
-                      : <><option value="">ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â Choose semester ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â</option>{semestersForYear.map((s) => <option key={s.id} value={s.id}>{formatSemesterLabel(s.label)}</option>)}</>}
+                      : <><option value=""> —  Choose semester  — </option>{semestersForYear.map((s) => <option key={s.id} value={s.id}>{formatSemesterLabel(s.label)}</option>)}</>}
                   </FormSelect>
                 </div>
               </div>
@@ -977,10 +977,10 @@ export default function DepartmentTimetablePage() {
                   className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-indigo-950/40 dark:to-purple-950/40 rounded-xl px-5 py-4 border border-indigo-100 dark:border-indigo-800">
                   <div>
                     <p className="font-semibold text-indigo-800 dark:text-indigo-200">
-                      {selectedCourse.name} Ãƒâ€šÃ‚Â· Year {selectedYear} Ãƒâ€šÃ‚Â· {semesterDisplay}
+                      {selectedCourse.name} "š· Year {selectedYear} "š· {semesterDisplay}
                     </p>
                     <p className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
-                      {unitsForSelection.length} unit{unitsForSelection.length !== 1 ? "s" : ""} Ãƒâ€šÃ‚Â· {filteredEntries.length} scheduled
+                      {unitsForSelection.length} unit{unitsForSelection.length !== 1 ? "s" : ""} "š· {filteredEntries.length} scheduled
                     </p>
                   </div>
                   <button onClick={openAddModal}
@@ -1074,7 +1074,7 @@ export default function DepartmentTimetablePage() {
               <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-6 py-4 flex items-center justify-between">
                 <div>
                   <h2 className="text-lg font-bold text-white">Add Schedule Entry</h2>
-                  <p className="text-white/75 text-xs mt-0.5">{selectedCourse?.name} Ãƒâ€šÃ‚Â· Year {selectedYear} Ãƒâ€šÃ‚Â· {semesterDisplay}</p>
+                  <p className="text-white/75 text-xs mt-0.5">{selectedCourse?.name} "š· Year {selectedYear} "š· {semesterDisplay}</p>
                 </div>
                 <button onClick={() => setIsAddModalOpen(false)} className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white">
                   <X className="h-5 w-5" />
@@ -1094,7 +1094,7 @@ export default function DepartmentTimetablePage() {
                 </FormSelect>
                 <FormSelect label="Room" value={formData.roomId}
                   onChange={(v) => { const r = rooms.find((rm) => rm.id === v); setFormData((p) => ({ ...p, roomId: v, venueName: r?.roomCode || r?.name || p.venueName })); }} required>
-                  {rooms.map((r) => <option key={r.id} value={r.id}>{r.roomCode ? `${r.roomCode} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â ${r.name}` : r.name}{r.capacity ? ` (cap. ${r.capacity})` : ""}</option>)}
+                  {rooms.map((r) => <option key={r.id} value={r.id}>{r.roomCode ? `${r.roomCode}  —  ${r.name}` : r.name}{r.capacity ? ` (cap. ${r.capacity})` : ""}</option>)}
                 </FormSelect>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Venue Name <span className="text-red-500">*</span></label>
@@ -1122,7 +1122,7 @@ export default function DepartmentTimetablePage() {
                 </div>
                 <button type="submit" disabled={savingEntry}
                   className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:opacity-90 text-white font-semibold py-3 rounded-xl transition-opacity disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                  {savingEntry ? <><Loader2 className="h-4 w-4 animate-spin" />SavingÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦</> : <><Zap className="h-4 w-4" />Save Schedule</>}
+                  {savingEntry ? <><Loader2 className="h-4 w-4 animate-spin" />Saving — ¦</> : <><Zap className="h-4 w-4" />Save Schedule</>}
                 </button>
               </form>
             </motion.div>
@@ -1153,11 +1153,11 @@ export default function DepartmentTimetablePage() {
               <div className="p-6 space-y-3">
                 {[
                   { icon: CalendarDays, label: "Day", value: viewEntry.day },
-                  { icon: Clock, label: "Time", value: `${viewEntry.startTime} ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ ${viewEntry.endTime}` },
+                  { icon: Clock, label: "Time", value: `${viewEntry.startTime}  — Å“ ${viewEntry.endTime}` },
                   { icon: UserCircle, label: "Lecturer", value: viewEntry.lecturerName },
                   { icon: MapPin, label: "Venue", value: viewEntry.venueName },
-                  { icon: BookOpen, label: "Course", value: viewEntry.courseName ?? "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â" },
-                  { icon: Tag, label: "Semester", value: viewEntry.semesterLabel ?? viewEntry.semester ?? "ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â" },
+                  { icon: BookOpen, label: "Course", value: viewEntry.courseName ?? " — " },
+                  { icon: Tag, label: "Semester", value: viewEntry.semesterLabel ?? viewEntry.semester ?? " — " },
                 ].map(({ icon: Icon, label, value }) => (
                   <div key={label} className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center shrink-0">
@@ -1193,7 +1193,7 @@ export default function DepartmentTimetablePage() {
               </div>
               <h2 className="text-lg font-bold text-center text-slate-800 dark:text-white mb-1">Delete Schedule?</h2>
               <p className="text-sm text-center text-slate-500 dark:text-slate-400 mb-2">
-                <span className="font-medium text-slate-700 dark:text-slate-200">{slotToDelete.unitTitle}</span> on {slotToDelete.day} ({slotToDelete.startTime}ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“{slotToDelete.endTime})
+                <span className="font-medium text-slate-700 dark:text-slate-200">{slotToDelete.unitTitle}</span> on {slotToDelete.day} ({slotToDelete.startTime} — Å“{slotToDelete.endTime})
               </p>
               <p className="text-xs text-center text-slate-400 dark:text-slate-500 mb-6">This action cannot be undone.</p>
               <div className="flex gap-3">
@@ -1203,7 +1203,7 @@ export default function DepartmentTimetablePage() {
                 </button>
                 <button onClick={handleDelete} disabled={savingEntry}
                   className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                  {savingEntry ? <><Loader2 className="h-4 w-4 animate-spin" />DeletingÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦</> : "Delete"}
+                  {savingEntry ? <><Loader2 className="h-4 w-4 animate-spin" />Deleting — ¦</> : "Delete"}
                 </button>
               </div>
             </motion.div>
@@ -1230,7 +1230,7 @@ export default function DepartmentTimetablePage() {
                 </button>
                 <button onClick={handleMerge} disabled={savingEntry}
                   className="flex-1 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold disabled:opacity-50 flex items-center justify-center gap-2">
-                  {savingEntry ? <><Loader2 className="h-4 w-4 animate-spin" />MergingÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦</> : "Merge"}
+                  {savingEntry ? <><Loader2 className="h-4 w-4 animate-spin" />Merging — ¦</> : "Merge"}
                 </button>
               </div>
             </motion.div>
