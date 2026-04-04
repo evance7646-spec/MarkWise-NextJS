@@ -57,9 +57,17 @@ export async function handleAdminSignup(request: Request) {
         { status: 400, headers: adminAuthCorsHeaders },
       );
     }
-    if (role !== "institution_admin" && role !== "department_admin") {
+    const REGISTERABLE_ROLES = [
+      "institution_admin",
+      "department_admin",
+      "compliance_admin",
+      "faculty_admin",
+      "registry_admin",
+      "space_admin",
+    ];
+    if (!REGISTERABLE_ROLES.includes(role ?? "")) {
       return NextResponse.json(
-        { error: "Role must be either 'institution_admin' or 'department_admin'." },
+        { error: "Invalid role for self-registration." },
         { status: 400, headers: adminAuthCorsHeaders },
       );
     }
@@ -125,6 +133,45 @@ export async function handleAdminSignup(request: Request) {
             email: admin.email,
             role: admin.role,
             institutionId: admin.institutionId,
+            departmentId: null,
+            departmentName: null,
+          },
+        },
+        { status: 201, headers: adminAuthCorsHeaders },
+      );
+    }
+
+    // ── institution-level roles (no department) ───────────────────────────────
+    const INSTITUTION_LEVEL_ROLES = ["compliance_admin", "faculty_admin", "registry_admin", "space_admin"];
+    if (INSTITUTION_LEVEL_ROLES.includes(role!)) {
+      if (!institutionId) {
+        return NextResponse.json(
+          { error: "Institution ID is required for this role." },
+          { status: 400, headers: adminAuthCorsHeaders },
+        );
+      }
+      const institutionExists = await prisma.institution.findUnique({
+        where: { id: institutionId },
+        select: { id: true },
+      });
+      if (!institutionExists) {
+        return NextResponse.json(
+          { error: "Institution not found." },
+          { status: 404, headers: adminAuthCorsHeaders },
+        );
+      }
+      const newAdmin = await prisma.admin.create({
+        data: { fullName, email, password: hashedPassword, institutionId, role },
+      });
+      return NextResponse.json(
+        {
+          success: true,
+          admin: {
+            id: newAdmin.id,
+            fullName: newAdmin.fullName,
+            email: newAdmin.email,
+            role: newAdmin.role,
+            institutionId: newAdmin.institutionId,
             departmentId: null,
             departmentName: null,
           },

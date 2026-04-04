@@ -489,16 +489,39 @@ export async function getBookingById(bookingId: string) {
   return booking;
 }
 
-export async function refreshRoomStatuses() {
-  await prisma.$transaction(async (tx) => {
-    const rooms = await tx.room.findMany({
-      select: { id: true },
-    });
+// Cooldown: only refresh once per 30 s per institution to avoid saturating the connection pool.
+const _lastRefresh = new Map<string, number>();
+const REFRESH_COOLDOWN_MS = 30_000;
 
-    for (const room of rooms) {
-      await recomputeRoomStatus(tx, room.id, "room.refresh", "system");
-    }
-  }, { maxWait: 10000, timeout: 30000 });
+export async function refreshRoomStatuses(institutionId?: string) {
+  const key = institutionId ?? "__all__";
+  const now = Date.now();
+  if ((now - (_lastRefresh.get(key) ?? 0)) < REFRESH_COOLDOWN_MS) return;
+  _lastRefresh.set(key, now);
+
+  // Fetch room IDs outside any transaction — no cross-room atomicity is needed.
+  const rooms = await prisma.room.findMany({
+    select: { id: true },
+    where: {
+      isActive: true,
+      ...(institutionId ? { institutionId } : {}),
+    },
+  });
+
+  // Small batches to avoid saturating the Supabase connection pooler.
+  // Each room gets its own short transaction so one slow room can't block others.
+  const BATCH_SIZE = 3;
+  for (let i = 0; i < rooms.length; i += BATCH_SIZE) {
+    const batch = rooms.slice(i, i + BATCH_SIZE);
+    await Promise.allSettled(
+      batch.map((room) =>
+        prisma.$transaction(
+          (tx) => recomputeRoomStatus(tx, room.id, "room.refresh", "system"),
+          { maxWait: 3_000, timeout: 5_000 },
+        )
+      )
+    );
+  }
 }
 
 export async function markRoomUnavailable(roomId: string, actorId: string) {

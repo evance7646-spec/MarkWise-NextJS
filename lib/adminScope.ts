@@ -65,6 +65,8 @@ export async function resolveAdminScope(request: Request | NextRequest): Promise
     return { ok: false, status: 401, error: 'Invalid or expired token.' };
   }
 
+  const INSTITUTION_LEVEL_ROLES = ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'];
+
   // Fast path: new tokens embed departmentId/institutionId/role — skip DB entirely
   if (payload.departmentId !== undefined || payload.institutionId !== undefined) {
     return {
@@ -73,7 +75,7 @@ export async function resolveAdminScope(request: Request | NextRequest): Promise
       role: payload.role ?? 'admin',
       institutionId: payload.institutionId ?? null,
       departmentId: payload.departmentId ?? null,
-      isInstitutionAdmin: payload.role === 'institution_admin',
+      isInstitutionAdmin: INSTITUTION_LEVEL_ROLES.includes(payload.role ?? ''),
     };
   }
 
@@ -86,13 +88,14 @@ export async function resolveAdminScope(request: Request | NextRequest): Promise
     return { ok: false, status: 401, error: 'Admin account not found.' };
   }
 
+  const INSTITUTION_LEVEL_ROLES_SLOW = ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'];
   return {
     ok: true,
     adminId: admin.id,
     role: admin.role,
     institutionId: admin.institutionId,
     departmentId: admin.departmentId,
-    isInstitutionAdmin: admin.role === 'institution_admin',
+    isInstitutionAdmin: INSTITUTION_LEVEL_ROLES_SLOW.includes(admin.role),
   };
 }
 
@@ -108,7 +111,7 @@ export function getAdminScopeFromJWT(req: NextRequest): AdminScopeResult {
       institutionId: payload.institutionId ?? null,
       departmentId: payload.departmentId ?? null,
       role: payload.role || 'admin',
-      isInstitutionAdmin: (payload.role || '') === 'institution_admin',
+      isInstitutionAdmin: ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'].includes(payload.role || ''),
     };
   } catch {
     return { ok: false, status: 401, error: 'Invalid or expired token' };

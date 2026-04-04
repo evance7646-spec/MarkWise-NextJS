@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 import { Building2, Calendar, BarChart3, Zap, CalendarClock, X } from "lucide-react";
 
 const defaultNavItems = [
-  { name: "Rooms",        href: "/room-manager",              icon: Building2 },
-  { name: "Bookings",     href: "/room-manager/bookings",     icon: Calendar  },
-  { name: "Reservations", href: "/room-manager/reservations", icon: CalendarClock },
-  { name: "Analytics",    href: "/room-manager/analytics",    icon: BarChart3 },
-  { name: "Optimizer",    href: "/room-manager/optimizer",    icon: Zap, highlight: true },
+  { name: "Rooms",        href: "/admin/space-admin",              icon: Building2 },
+  { name: "Bookings",     href: "/admin/space-admin/bookings",     icon: Calendar  },
+  { name: "Reservations", href: "/admin/space-admin/reservations", icon: CalendarClock },
+  { name: "Analytics",    href: "/admin/space-admin/analytics",    icon: BarChart3 },
+  { name: "Optimizer",    href: "/admin/space-admin/optimizer",    icon: Zap, highlight: true },
 ];
 
 function NavLinks({ navItems, pathname, onNavigate }: { navItems: typeof defaultNavItems; pathname: string; onNavigate?: () => void }) {
@@ -19,7 +19,7 @@ function NavLinks({ navItems, pathname, onNavigate }: { navItems: typeof default
       {navItems.map((item) => {
         const isActive =
           pathname === item.href ||
-          (item.href !== "/room-manager" && pathname.startsWith(item.href + "/"));
+          (item.href !== "/admin/space-admin" && pathname.startsWith(item.href + "/"));
 
         return (
           <Link

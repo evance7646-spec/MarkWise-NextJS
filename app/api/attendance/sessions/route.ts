@@ -1,6 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAdminOrLecturerScope } from "@/lib/adminLecturerAuth";
+import { resolveAdminScope } from "@/lib/adminScope";
+
+/**
+ * GET /api/attendance/sessions?institutionId=xxx
+ *
+ * Returns ConductedSession records for all units belonging to the given institution.
+ * Auth: admin cookie/Bearer (institution-level role required).
+ */
+export async function GET(req: NextRequest) {
+  const scope = await resolveAdminScope(req);
+  if (!scope.ok) {
+    return NextResponse.json({ error: scope.error }, { status: scope.status });
+  }
+
+  const institutionId = scope.institutionId;
+  if (!institutionId) {
+    return NextResponse.json({ error: 'Your account is not linked to an institution.' }, { status: 403 });
+  }
+
+  // Find all unit codes that belong to departments in this institution
+  const units = await prisma.unit.findMany({
+    where: { department: { institutionId } },
+    select: { code: true },
+  });
+  const unitCodes = units.map(u => u.code);
+
+  const sessions = await prisma.conductedSession.findMany({
+    where: unitCodes.length > 0 ? { unitCode: { in: unitCodes } } : { unitCode: 'NONE_MATCH' },
+    orderBy: { sessionStart: 'desc' },
+    take: 500,
+  });
+
+  return NextResponse.json({ sessions });
+}
 
 // POST /api/attendance/sessions — create a new online attendance session
 export async function POST(req: NextRequest) {

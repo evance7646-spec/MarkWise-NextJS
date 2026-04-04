@@ -28,20 +28,59 @@ type TimetableBody = {
   unitCode?: string;
 };
 
-// GET /api/timetable?departmentId=xxx
+// GET /api/timetable?departmentId=xxx  OR  ?institutionId=xxx
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const departmentId = searchParams.get('departmentId');
+  const institutionId = searchParams.get('institutionId');
 
-  if (!departmentId) {
-    return NextResponse.json({ error: 'departmentId is required' }, { status: 400, headers: corsHeaders });
+  if (!departmentId && !institutionId) {
+    return NextResponse.json({ error: 'departmentId or institutionId is required' }, { status: 400, headers: corsHeaders });
   }
 
-  // Verify the caller is authenticated and belongs to this department (or parent institution)
+  // Verify the caller is authenticated
   const scope = await resolveAdminScope(req);
   if (!scope.ok) {
     return NextResponse.json({ error: scope.error }, { status: scope.status, headers: corsHeaders });
   }
+
+  // Institution-wide path: institution-level admins only
+  if (institutionId && !departmentId) {
+    if (!scope.isInstitutionAdmin || scope.institutionId !== institutionId) {
+      return NextResponse.json({ error: 'Access denied.' }, { status: 403, headers: corsHeaders });
+    }
+    try {
+      const entries = await prisma.timetable.findMany({
+        where: { department: { institutionId } },
+        select: {
+          id: true, courseId: true, unitId: true, roomId: true, lecturerId: true,
+          day: true, startTime: true, endTime: true, venueName: true,
+          yearOfStudy: true, semester: true, status: true, createdAt: true, updatedAt: true, departmentId: true,
+          course: { select: { name: true } },
+          unit: { select: { code: true, title: true } },
+          lecturer: { select: { fullName: true } },
+          room: { select: { name: true, roomCode: true } },
+          department: { select: { id: true, name: true } },
+        },
+        orderBy: { startTime: 'asc' },
+      });
+      const result = entries.map(item => ({
+        id: item.id, courseId: item.courseId, courseName: item.course?.name,
+        yearOfStudy: item.yearOfStudy, semester: item.semester, semesterLabel: item.semester,
+        unitId: item.unitId, unitCode: item.unit?.code, unitTitle: item.unit?.title,
+        roomId: item.roomId, roomName: item.room?.name, roomCode: item.room?.roomCode ?? '',
+        venueName: item.venueName, lecturerId: item.lecturerId, lecturerName: item.lecturer?.fullName,
+        day: item.day, startTime: item.startTime, endTime: item.endTime, status: item.status,
+        createdAt: item.createdAt, updatedAt: item.updatedAt,
+        department: item.department ? { id: item.department.id, name: item.department.name } : null,
+      }));
+      return NextResponse.json(result, { headers: { ...corsHeaders, 'Cache-Control': 'private, max-age=30, stale-while-revalidate=300' } });
+    } catch (error) {
+      console.error('Failed to fetch timetable entries:', error);
+      return NextResponse.json({ error: 'Failed to fetch timetable entries' }, { status: 500, headers: corsHeaders });
+    }
+  }
+
   // Department admins may only read their own department's timetable
   if (!scope.isInstitutionAdmin && scope.departmentId && scope.departmentId !== departmentId) {
     return NextResponse.json({ error: 'Access denied to this department.' }, { status: 403, headers: corsHeaders });

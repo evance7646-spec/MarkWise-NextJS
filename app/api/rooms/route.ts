@@ -18,10 +18,16 @@ export async function GET(request: Request) {
     // Only refresh DB statuses when no explicit time window is provided
     // (window queries compute availability on-the-fly instead)
     const { searchParams } = new URL(request.url);
+    const institutionId = searchParams.get("institutionId") ?? undefined;
     await expireHolds();
     const needsDbRefresh = !searchParams.get("startAt") || !searchParams.get("endAt");
     if (needsDbRefresh) {
-      await refreshRoomStatuses();
+      // Refresh is best-effort — a DB blip or pool exhaustion should not fail the whole request.
+      try {
+        await refreshRoomStatuses(institutionId);
+      } catch (refreshErr) {
+        console.warn("[rooms] refreshRoomStatuses skipped:", (refreshErr as Error).message);
+      }
     }
 
     const queryPayload = {

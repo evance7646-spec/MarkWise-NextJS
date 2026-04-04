@@ -137,6 +137,30 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
 
     const { id } = await context.params;
     const body = await request.json();
+
+    // ── Lecturer substitution shortcut: PUT { lecturerId } with no status ──
+    if ('lecturerId' in body && !body.status) {
+      const { lecturerId: newLecturerId } = body as { lecturerId: string };
+      if (!newLecturerId || typeof newLecturerId !== 'string') {
+        return NextResponse.json({ message: 'lecturerId is required' }, { status: 400, headers: corsHeaders });
+      }
+      const existing = await prisma.timetable.findUnique({ where: { id } });
+      if (!existing) {
+        return NextResponse.json({ message: 'Timetable entry not found.' }, { status: 404, headers: corsHeaders });
+      }
+      const lecturer = await prisma.lecturer.findUnique({ where: { id: newLecturerId }, select: { id: true } });
+      if (!lecturer) {
+        return NextResponse.json({ message: 'Lecturer not found.' }, { status: 404, headers: corsHeaders });
+      }
+      const updated = await prisma.timetable.update({
+        where: { id },
+        data: { lecturerId: newLecturerId, updatedBy: 'admin' },
+        include: { unit: true, course: true, room: true },
+      });
+      bumpTimetableVersion(updated.courseId).catch(() => {});
+      return NextResponse.json({ timetable: formatEntry(updated) }, { headers: corsHeaders });
+    }
+
     const {
       status,
       reason,

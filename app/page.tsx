@@ -16,24 +16,12 @@ import {
   BarChart3,
   Users,
   Sparkles,
-  Menu,
-  X
 } from "lucide-react";
+import AppHeader from "@/app/components/app-header";
+import AppFooter from "@/app/components/app-footer";
 
 function LandingPageContent() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
-  const [scrolled, setScrolled] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
-
-  useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 20);
-    };
-    
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
 
   // Intersection Observer hooks for scroll animations
   const heroRef = useRef(null);
@@ -121,159 +109,7 @@ function LandingPageContent() {
         <div className="absolute -bottom-8 left-20 w-48 h-48 sm:w-72 sm:h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
       </div>
 
-      {/* Header */}
-      <header className={`sticky top-0 z-50 w-full transition-all duration-300 ${
-        scrolled ? 'bg-white/95 dark:bg-slate-950/95 backdrop-blur-md shadow-lg' : 'bg-transparent'
-      }`}>
-        <div className="mx-auto flex h-20 w-full max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ duration: 0.5 }}
-            className="flex items-center gap-2"
-          >
-            <div className="relative">
-              <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 flex items-center justify-center">
-                <Sparkles className="h-5 w-5 text-white" />
-              </div>
-              <div className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-green-500 animate-pulse" />
-            </div>
-            <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
-              MarkWise
-            </span>
-          </motion.div>
-
-          {/* Desktop Navigation */}
-          <nav className="hidden items-center gap-8 md:flex">
-            {['Features', 'How It Works', 'Testimonials', 'Pricing', 'For Institutions'].map((item, i) => (
-              <motion.a
-                key={item}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: i * 0.1 }}
-                href={`#${item.toLowerCase().replace(/\s+/g, '-')}`}
-                className="text-sm font-medium text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-300 transition-colors relative group"
-              >
-                {item}
-                <span className="absolute inset-x-0 -bottom-1 h-0.5 bg-gradient-to-r from-indigo-600 to-cyan-600 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left" />
-              </motion.a>
-            ))}
-          </nav>
-
-          <div className="flex items-center gap-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-              className="hidden sm:flex items-center gap-3"
-            >
-              {/* Unified Dropdown for both buttons */}
-              <div className="relative">
-                <button
-                  className="btn-green px-5 py-2 text-sm rounded-xl flex items-center gap-2"
-                  onClick={() => setDropdownOpen(dropdownOpen === 'signin' ? null : 'signin')}
-                >
-                  Sign In
-                  <svg className="inline ml-2 h-4 w-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                </button>
-                {dropdownOpen === 'signin' && (
-                  <div className="absolute right-0 mt-2 w-56 rounded-2xl shadow-2xl border-2 border-indigo-200 dark:border-indigo-600 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 dark:from-slate-900 dark:via-indigo-950 dark:to-cyan-950 z-50 animate-dropdown-fade">
-                    <button
-                      className="flex items-center gap-2 w-full text-left px-5 py-3 text-base font-semibold text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-800 rounded-t-2xl transition-colors duration-200"
-                      onClick={() => { window.location.href = "/institution/login"; }}
-                    >
-                      <svg className="h-5 w-5 text-cyan-500 dark:text-cyan-300" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2h5" /><circle cx="12" cy="7" r="4" /></svg>
-                      Institution
-                    </button>
-                    <button
-                      className="flex items-center gap-2 w-full text-left px-5 py-3 text-base font-semibold text-purple-700 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-800 rounded-b-2xl transition-colors duration-200 border-t border-indigo-100 dark:border-indigo-800"
-                      onClick={() => { router.push("/department/login"); setDropdownOpen(null); }}
-                    >
-                      <svg className="h-5 w-5 text-purple-500 dark:text-purple-300" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7v4a4 4 0 004 4h10a4 4 0 004-4V7" /><circle cx="12" cy="7" r="4" /></svg>
-                      Department
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button
-                  className="btn-green relative px-6 py-2.5 text-sm rounded-xl flex items-center gap-2 overflow-hidden"
-                  onClick={() => setDropdownOpen(dropdownOpen === 'getstarted' ? null : 'getstarted')}
-                >
-                  <span className="relative z-10">Get Started</span>
-                  <svg className="inline ml-2 h-4 w-4 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
-                </button>
-                {dropdownOpen === 'getstarted' && (
-                  <div className="absolute right-0 mt-2 w-56 rounded-2xl shadow-2xl border-2 border-indigo-200 dark:border-indigo-600 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 dark:from-slate-900 dark:via-indigo-950 dark:to-cyan-950 z-50 animate-dropdown-fade">
-                    <button
-                      className="flex items-center gap-2 w-full text-left px-5 py-3 text-base font-semibold text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-800 rounded-t-2xl transition-colors duration-200"
-                      onClick={() => { window.location.href = "/institution/login"; }}
-                    >
-                      <svg className="h-5 w-5 text-cyan-500 dark:text-cyan-300" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2h5" /><circle cx="12" cy="7" r="4" /></svg>
-                      Institution
-                    </button>
-                    <button
-                      className="flex items-center gap-2 w-full text-left px-5 py-3 text-base font-semibold text-purple-700 dark:text-purple-200 hover:bg-purple-100 dark:hover:bg-purple-800 rounded-b-2xl transition-colors duration-200 border-t border-indigo-100 dark:border-indigo-800"
-                      onClick={() => { router.push("/department/login"); setDropdownOpen(null); }}
-                    >
-                      <svg className="h-5 w-5 text-purple-500 dark:text-purple-300" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 7v4a4 4 0 004 4h10a4 4 0 004-4V7" /><circle cx="12" cy="7" r="4" /></svg>
-                      Department
-                    </button>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-
-            {/* Mobile menu button */}
-            <button
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="md:hidden p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Navigation */}
-        <AnimatePresence>
-          {mobileMenuOpen && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-              className="md:hidden bg-white dark:bg-slate-950 border-t dark:border-slate-800"
-            >
-              <div className="px-4 py-4 space-y-3">
-                {['Features', 'How It Works', 'Testimonials', 'Pricing', 'For Institutions'].map((item) => (
-                  <a
-                    key={item}
-                    href={`#${item.toLowerCase().replace(/\s+/g, '-')}`}
-                    className="block py-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
-                    onClick={() => setMobileMenuOpen(false)}
-                  >
-                    {item}
-                  </a>
-                ))}
-                <div className="pt-4 border-t dark:border-slate-800 flex flex-col gap-3">
-                  <Link
-                    href="/institution/login"
-                    className="w-full px-4 py-2 text-center text-sm font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    Sign In
-                  </Link>
-                  <button
-                    className="w-full px-4 py-2 text-center text-sm font-medium text-white bg-gradient-to-r from-indigo-600 to-cyan-600 rounded-lg"
-                    onClick={() => { router.push("/department/login"); setMobileMenuOpen(false); }}
-                  >
-                    Get Started
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </header>
+      <AppHeader />
 
       {/* Hero Section */}
       <section ref={heroRef} className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-24">
@@ -305,7 +141,7 @@ function LandingPageContent() {
 
             <motion.div variants={fadeInUp} className="flex flex-col sm:flex-row gap-4 pt-4">
               <Link
-                href="/institution/login"
+                href="/admin/institution-admin/login"
                 className="group relative px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-indigo-600 to-cyan-600 rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
               >
                 <span className="relative z-10 flex items-center justify-center gap-2">
@@ -316,13 +152,13 @@ function LandingPageContent() {
               </Link>
               <button
                 className="group px-8 py-4 text-base font-semibold text-indigo-700 dark:text-indigo-300 border-2 border-indigo-200 dark:border-indigo-500/30 rounded-2xl hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
-                onClick={() => router.push("/department/login")}
+                onClick={() => router.push("/admin/department-admin/login")}
               >
                 Department Portal
                 <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </button>
               <Link
-                href="/room-manager/login"
+                href="/admin/space-admin/login"
                 className="group px-8 py-4 text-base font-semibold text-green-700 dark:text-green-300 border-2 border-green-200 dark:border-green-500/30 rounded-2xl hover:bg-green-50 dark:hover:bg-green-500/10 transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
               >
                 Room Manager
@@ -843,7 +679,7 @@ function LandingPageContent() {
               className="flex flex-col sm:flex-row justify-center gap-4"
             >
               <Link
-                href="/institution/login"
+                href="/admin/institution-admin/login"
                 className="group px-8 py-4 bg-white text-indigo-600 rounded-2xl font-semibold text-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
               >
                 Institution Portal
@@ -851,7 +687,7 @@ function LandingPageContent() {
               </Link>
               
               <Link
-                href="/department/login"
+                href="/admin/department-admin/login"
                 className="group px-8 py-4 bg-transparent border-2 border-white text-white rounded-2xl font-semibold text-lg hover:bg-white/10 transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
               >
                 Department Portal
@@ -862,76 +698,7 @@ function LandingPageContent() {
         </motion.div>
       </section>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950">
-        <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8 lg:gap-12">
-            <div className="md:col-span-2 space-y-4">
-              <div className="flex items-center gap-2">
-                <div className="h-10 w-10 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 flex items-center justify-center">
-                  <Sparkles className="h-5 w-5 text-white" />
-                </div>
-                <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
-                  MarkWise
-                </span>
-              </div>
-              <p className="text-slate-600 dark:text-slate-300 max-w-sm">
-                A unified platform for verified attendance, classroom coordination,
-                assignments, and group workflows in modern higher education.
-              </p>
-              
-              {/* Social links */}
-              <div className="flex gap-4 pt-4">
-                {['Twitter', 'LinkedIn', 'GitHub'].map((social) => (
-                  <Link
-                    key={social}
-                    href="#"
-                    className="h-10 w-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300 hover:bg-indigo-600 hover:text-white transition-colors duration-300"
-                  >
-                    <span className="sr-only">{social}</span>
-                    <div className="h-5 w-5" />
-                  </Link>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-lg mb-4 text-slate-900 dark:text-white">Administration</h4>
-              <nav className="flex flex-col space-y-3">
-                {['Institution', 'Department', 'Faculty', 'Students'].map((item) => (
-                  <Link
-                    key={item}
-                    href={`/${item.toLowerCase()}/login`}
-                    className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
-                  >
-                    {item}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-
-            <div>
-              <h4 className="font-semibold text-lg mb-4 text-slate-900 dark:text-white">Company</h4>
-              <nav className="flex flex-col space-y-3">
-                {['About Us', 'Contact', 'Privacy Policy', 'Terms of Service'].map((item) => (
-                  <Link
-                    key={item}
-                    href="#"
-                    className="text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
-                  >
-                    {item}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-          </div>
-
-          <div className="mt-12 pt-8 border-t border-slate-200 dark:border-slate-800 text-center text-sm text-slate-500 dark:text-slate-400">
-            <p>© {new Date().getFullYear()} MarkWise. All rights reserved.</p>
-            <p className="mt-2">Made with ❤️ for modern education</p>
-          </div>
-        </div>
-      </footer>
+      <AppFooter />
     </div>
   );
 }

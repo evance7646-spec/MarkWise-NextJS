@@ -18,6 +18,41 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const requestedDeptId = (searchParams.get("departmentId") ?? "").trim();
+  const requestedInstId = (searchParams.get("institutionId") ?? "").trim();
+
+  // Institution-wide path: return courses across all departments
+  if (scope.isInstitutionAdmin && requestedInstId && !requestedDeptId) {
+    if (!scope.institutionId || scope.institutionId !== requestedInstId) {
+      return NextResponse.json({ error: "Access denied." }, { status: 403, headers: corsHeaders });
+    }
+    const courses = await prisma.course.findMany({
+      where: { department: { institutionId: requestedInstId } },
+      include: {
+        program: {
+          include: {
+            years: { include: { semesters: { include: { units: true } } } },
+          },
+        },
+      },
+    });
+    const mapped = courses.map((course) => {
+      const program = course.program;
+      let years: any[] = [];
+      let durationYears = 4;
+      if (program) {
+        durationYears = program.durationYears || 4;
+        years = (program.years || []).map((year) => ({
+          id: year.id, name: year.name,
+          semesters: (year.semesters || []).map((semester) => ({
+            id: semester.id, label: semester.label,
+            units: (semester.units || []).map((unit) => ({ id: unit.id, title: unit.title, code: unit.code })),
+          })),
+        }));
+      }
+      return { id: course.id, code: course.code, name: course.name, departmentId: course.departmentId, programId: course.programId, durationYears, years };
+    });
+    return NextResponse.json({ courses: mapped }, { headers: { ...corsHeaders, 'Cache-Control': 'private, max-age=30, stale-while-revalidate=300' } });
+  }
 
   let departmentId: string;
   if (scope.isInstitutionAdmin) {

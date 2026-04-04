@@ -12,7 +12,24 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const requestedDeptId = (searchParams.get('departmentId') ?? '').trim();
+  const requestedInstId = (searchParams.get('institutionId') ?? '').trim();
   const courseId = searchParams.get('courseId');
+
+  // Institution-wide path: return all students across the institution
+  if (scope.isInstitutionAdmin && requestedInstId && !requestedDeptId) {
+    const instId = scope.institutionId ?? '';
+    if (!instId || (requestedInstId !== instId)) {
+      return NextResponse.json({ error: 'Access denied.' }, { status: 403 });
+    }
+    try {
+      const where: any = { institutionId: instId };
+      if (courseId) where.courseId = courseId;
+      const students = await prisma.student.findMany({ where, orderBy: { name: 'asc' } });
+      return NextResponse.json({ students });
+    } catch {
+      return NextResponse.json({ error: 'Failed to fetch students' }, { status: 500 });
+    }
+  }
 
   // Determine which departmentId to query
   // - dept_admin: must use their own departmentId (ignore or validate the param)
