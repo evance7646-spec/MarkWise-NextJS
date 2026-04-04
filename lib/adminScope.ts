@@ -65,6 +65,7 @@ export async function resolveAdminScope(request: Request | NextRequest): Promise
     return { ok: false, status: 401, error: 'Invalid or expired token.' };
   }
 
+  // Institution-level roles can see all departments/data within their institution.
   const INSTITUTION_LEVEL_ROLES = ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'];
 
   // Fast path: new tokens embed departmentId/institutionId/role — skip DB entirely
@@ -72,7 +73,7 @@ export async function resolveAdminScope(request: Request | NextRequest): Promise
     return {
       ok: true,
       adminId,
-      role: payload.role ?? 'admin',
+      role: payload.role ?? 'institution_admin',
       institutionId: payload.institutionId ?? null,
       departmentId: payload.departmentId ?? null,
       isInstitutionAdmin: INSTITUTION_LEVEL_ROLES.includes(payload.role ?? ''),
@@ -88,14 +89,13 @@ export async function resolveAdminScope(request: Request | NextRequest): Promise
     return { ok: false, status: 401, error: 'Admin account not found.' };
   }
 
-  const INSTITUTION_LEVEL_ROLES_SLOW = ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'];
   return {
     ok: true,
     adminId: admin.id,
     role: admin.role,
     institutionId: admin.institutionId,
     departmentId: admin.departmentId,
-    isInstitutionAdmin: INSTITUTION_LEVEL_ROLES_SLOW.includes(admin.role),
+    isInstitutionAdmin: INSTITUTION_LEVEL_ROLES.includes(admin.role),
   };
 }
 
@@ -105,13 +105,14 @@ export function getAdminScopeFromJWT(req: NextRequest): AdminScopeResult {
   if (!token) return { ok: false, status: 401, error: 'Missing Authorization header' };
   try {
     const payload = verify(token, getJwtSecret()) as any;
+    const INSTITUTION_LEVEL_ROLES = ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'];
     return {
       ok: true,
       adminId: payload.adminId || payload.id,
       institutionId: payload.institutionId ?? null,
       departmentId: payload.departmentId ?? null,
-      role: payload.role || 'admin',
-      isInstitutionAdmin: ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'].includes(payload.role || ''),
+      role: payload.role || 'institution_admin',
+      isInstitutionAdmin: INSTITUTION_LEVEL_ROLES.includes(payload.role || ''),
     };
   } catch {
     return { ok: false, status: 401, error: 'Invalid or expired token' };

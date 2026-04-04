@@ -1,12 +1,21 @@
 import { prisma } from "@/lib/prisma";
 import path from "node:path";
 
+export type AdminRole =
+  | "super_admin"
+  | "institution_admin"
+  | "department_admin"
+  | "space_admin"
+  | "faculty_admin"
+  | "compliance_admin"
+  | "registry_admin";
+
 export type AdminUser = {
   id: string;
   fullName: string;
   email: string;
   passwordHash: string;
-  role: "department_admin" | "institution_admin";
+  role: AdminRole;
   createdAt: string;
 };
 
@@ -14,6 +23,16 @@ const dataDir = path.join(process.cwd(), "data");
 const dataFilePath = path.join(dataDir, "adminUsers.json");
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
+const ADMIN_ROLES: AdminRole[] = [
+  "super_admin",
+  "institution_admin",
+  "department_admin",
+  "space_admin",
+  "faculty_admin",
+  "compliance_admin",
+  "registry_admin",
+];
 
 const isAdminUser = (value: unknown): value is AdminUser => {
   if (!value || typeof value !== "object") return false;
@@ -23,7 +42,7 @@ const isAdminUser = (value: unknown): value is AdminUser => {
     typeof item.fullName === "string" &&
     typeof item.email === "string" &&
     typeof item.passwordHash === "string" &&
-    (item.role === "department_admin" || item.role === "institution_admin") &&
+    ADMIN_ROLES.includes(item.role as AdminRole) &&
     typeof item.createdAt === "string"
   );
 };
@@ -36,7 +55,7 @@ export async function readAdminUsers(): Promise<AdminUser[]> {
     fullName: item.fullName,
     email: item.email,
     passwordHash: item.password, // Prisma model uses 'password'
-    role: item.role as 'department_admin' | 'institution_admin',
+    role: item.role as AdminRole,
     createdAt: item.createdAt.toISOString(),
   }));
 }
