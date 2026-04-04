@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { useAdmin } from "../../context";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar,
@@ -260,8 +261,9 @@ const EntryCard = ({
 
 export default function DepartmentTimetablePage() {
   const router = useRouter();
+  const admin = useAdmin();
 
-  // --- Core identity ------------------------------------------------------------
+  // --- Core identity (sourced from AdminContext, set in parallel init) ----------
   const [departmentId, setDepartmentId] = useState("");
   const [institutionId, setInstitutionId] = useState("");
 
@@ -467,26 +469,13 @@ export default function DepartmentTimetablePage() {
     let alive = true;
     abortRef.current = new AbortController();
 
+    if (!admin) return;
     const boot = async () => {
       setInitializing(true);
       try {
-        // Step 1: identify ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Å“ check sessionStorage first, then API
-        let deptId: string;
-        let instId: string;
-        const cached = readIdentityCache();
-        if (cached) {
-          deptId = cached.deptId;
-          instId = cached.instId;
-          console.log("[Timetable] Identity from cache ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â deptId:", deptId, "| instId:", instId);
-        } else {
-          const meRes = await apiFetch("/api/auth/me", {}, 5000);
-          if (!meRes.ok) throw new Error("Unauthorized");
-          const me = await meRes.json();
-          deptId = me.department?.id || me.departmentId || "";
-          instId = me.institution?.id || me.institutionId || "";
-          console.log("[Timetable] Auth OK ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â deptId:", deptId, "| instId:", instId);
-          if (deptId) writeIdentityCache(deptId, instId);
-        }
+        // Step 1: identity from AdminContext
+        const deptId = admin.departmentId ?? "";
+        const instId = admin.institutionId ?? "";
         if (!deptId) {
           setPageError("Please sign in to access timetable management.");
           setTimeout(() => router.push("/admin/department-admin/login"), 2000);
@@ -524,7 +513,7 @@ export default function DepartmentTimetablePage() {
     boot();
     return () => { alive = false; abortRef.current?.abort(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [admin]);
 
   // Auto-select first year when course changes
   useEffect(() => {
