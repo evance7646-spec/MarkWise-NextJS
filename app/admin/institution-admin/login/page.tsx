@@ -39,13 +39,7 @@ export default function InstitutionLoginPage() {
         return;
       }
 
-      localStorage.setItem("adminLoggedIn", "true");
-      localStorage.setItem("adminId", payload.admin.id);
-      localStorage.setItem("adminEmail", payload.admin.email);
-      localStorage.setItem("adminName", payload.admin.fullName);
-      localStorage.setItem("adminRole", payload.admin.role);
-
-      router.push("/admin/institution-admin");
+      router.push("/admin/institution-admin/dashboard");
     } catch {
       setError("Network error. Please try again.");
     } finally {

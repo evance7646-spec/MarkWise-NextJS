@@ -83,6 +83,13 @@ function SidebarContent({ pathname, onClose }: { pathname: string; onClose?: () 
   );
 }
 
+const PUBLIC_PATHS_INSTITUTION = [
+  "/admin/institution-admin/login",
+  "/admin/institution-admin/register",
+  "/admin/institution-admin/forgot-password",
+  "/admin/institution-admin/reset-password",
+];
+
 export default function InstitutionAdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -90,7 +97,10 @@ export default function InstitutionAdminLayout({ children }: { children: ReactNo
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const isPublicPath = PUBLIC_PATHS_INSTITUTION.some(p => pathname.startsWith(p));
+
   useEffect(() => {
+    if (isPublicPath) { setLoading(false); return; }
     fetch("/api/auth/me", { credentials: "include" })
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
@@ -106,7 +116,9 @@ export default function InstitutionAdminLayout({ children }: { children: ReactNo
         setLoading(false);
       })
       .catch(() => router.push("/admin/institution-admin/login"));
-  }, [router]);
+  }, [router, isPublicPath]);
+
+  if (isPublicPath) return <>{children}</>;
 
   if (loading) {
     return (

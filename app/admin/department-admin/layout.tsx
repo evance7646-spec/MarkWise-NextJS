@@ -79,6 +79,13 @@ function SidebarContent({ pathname, onClose }: { pathname: string; onClose?: () 
   );
 }
 
+const PUBLIC_PATHS_DEPARTMENT = [
+  "/admin/department-admin/login",
+  "/admin/department-admin/register",
+  "/admin/department-admin/forgot-password",
+  "/admin/department-admin/reset-password",
+];
+
 export default function DepartmentAdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -86,7 +93,10 @@ export default function DepartmentAdminLayout({ children }: { children: ReactNod
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const isPublicPath = PUBLIC_PATHS_DEPARTMENT.some(p => pathname.startsWith(p));
+
   useEffect(() => {
+    if (isPublicPath) { setLoading(false); return; }
     fetch("/api/auth/me", { credentials: "include" })
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -103,7 +113,9 @@ export default function DepartmentAdminLayout({ children }: { children: ReactNod
         setLoading(false);
       })
       .catch(() => router.push("/admin/department-admin/login"));
-  }, [router]);
+  }, [router, isPublicPath]);
+
+  if (isPublicPath) return <>{children}</>;
 
   const pageLabel = NAV.find(n =>
     pathname === n.href || (n.href !== "/admin/department-admin/dashboard" && pathname.startsWith(n.href))
