@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     const result = await registerStudentAccount(body);
 
     if (!result.ok) {
-      return NextResponse.json({ error: result.error }, { status: result.status, headers: corsHeaders });
+      return NextResponse.json({ error: result.error, message: result.error }, { status: result.status, headers: corsHeaders });
     }
 
     return NextResponse.json(result.payload, { status: result.status, headers: corsHeaders });
@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(
-      { error: "Failed to register." },
+      { error: "Failed to register.", message: "Failed to register." },
       { status: 500, headers: corsHeaders },
     );
   }

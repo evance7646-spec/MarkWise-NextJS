@@ -11,7 +11,7 @@ const corsHeaders = {
 };
 
 const DEFAULT_TIMEOUT_MS = 5_000;
-const admissionFormatPattern = /^[A-Z0-9][A-Z0-9/-]{4,31}$/;
+const admissionFormatPattern = /^[A-Z0-9][A-Z0-9/\-]{1,31}$/;
 
 class RequestTimeoutError extends Error {
   constructor(message: string) {
@@ -77,7 +77,7 @@ export async function GET(request: Request) {
       failureReason: "missing_admission_number",
     });
     return NextResponse.json(
-      { error: "admissionNumber query parameter is required." },
+      { exists: false, message: "admissionNumber query parameter is required." },
       { status: 400, headers: corsHeaders },
     );
   }
@@ -89,7 +89,7 @@ export async function GET(request: Request) {
       failureReason: "missing_institution_id",
     });
     return NextResponse.json(
-      { error: "institutionId query parameter is required." },
+      { exists: false, message: "institutionId query parameter is required." },
       { status: 400, headers: corsHeaders },
     );
   }
@@ -101,17 +101,13 @@ export async function GET(request: Request) {
       failureReason: "invalid_format",
     });
     return NextResponse.json(
-      {
-        error:
-          "Invalid admissionNumber format. Use uppercase letters/numbers and optional '/' or '-' characters.",
-      },
+      { exists: false, message: "Invalid admission number format." },
       { status: 400, headers: corsHeaders },
     );
   }
   try {
     const timeoutMs = getTimeoutMs();
-    // Pass institutionId to verification logic if needed (not yet used in service, but available)
-    const result = await withTimeout(verifyStudentByAdmission(admissionNumber), timeoutMs);
+    const result = await withTimeout(verifyStudentByAdmission(admissionNumber, institutionId), timeoutMs);
     logVerification({
       admissionNumber,
       latencyMs: Date.now() - startedAt,
@@ -119,7 +115,6 @@ export async function GET(request: Request) {
       lookupSource: result.lookupSource,
       exists: result.payload.exists,
     });
-    // Optionally, add institutionId to response
     return NextResponse.json({ ...result.payload, institutionId }, { headers: corsHeaders });
   } catch (error) {
     if (error instanceof RequestTimeoutError) {
@@ -130,7 +125,7 @@ export async function GET(request: Request) {
         failureReason: "timeout",
       });
       return NextResponse.json(
-        { error: "Verification request timed out. Please retry." },
+        { exists: false, message: "Verification request timed out. Please retry." },
         { status: 504, headers: corsHeaders },
       );
     }
@@ -141,7 +136,7 @@ export async function GET(request: Request) {
       failureReason: "internal_error",
     });
     return NextResponse.json(
-      { error: "Failed to verify student. Please retry." },
+      { exists: false, message: "Failed to verify student. Please retry." },
       { status: 500, headers: corsHeaders },
     );
   }

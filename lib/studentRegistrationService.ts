@@ -10,6 +10,8 @@ export type StudentRegistrationInput = {
 	admissionNumber?: string;
 	email?: string;
 	password?: string;
+	institutionId?: string;
+	courseId?: string;
 };
 
 type RegistrationErrorCode = "BAD_REQUEST" | "NOT_FOUND" | "CONFLICT" | "SERVER_ERROR";
@@ -82,10 +84,22 @@ export async function registerStudentAccount(
 		};
 	}
 
-	const students = await readStudents();
-	const student = students.find(
-		(item) => normalizeAdmission(item.admissionNumber) === admissionNumber,
-	);
+	const whereClause: Record<string, string> = { admissionNumber };
+	if (input.institutionId) whereClause.institutionId = input.institutionId;
+	const studentRow = await prisma.student.findFirst({
+		where: whereClause,
+		include: { auth: true },
+	});
+	const student = studentRow
+		? {
+			id: studentRow.id,
+			name: studentRow.name,
+			admissionNumber: studentRow.admissionNumber,
+			courseId: studentRow.courseId ?? "",
+			institutionId: studentRow.institutionId,
+			email: studentRow.auth?.email ?? undefined,
+		}
+		: null;
 
 	if (!student) {
 		return {

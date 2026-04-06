@@ -36,10 +36,11 @@ const asCoursePayload = (course: CourseRecord | null) => {
   };
 };
 
-export async function verifyStudentByAdmission(admissionNumber: string): Promise<VerificationResult> {
+export async function verifyStudentByAdmission(admissionNumber: string, institutionId: string): Promise<VerificationResult> {
   const normalizedAdmission = normalizeAdmission(admissionNumber);
+  const cacheKey = `${institutionId}:${normalizedAdmission}`;
 
-  const cached = verificationCache.get(normalizedAdmission);
+  const cached = verificationCache.get(cacheKey);
   const now = Date.now();
   if (cached && cached.expiresAtMs > now) {
     return {
@@ -48,7 +49,7 @@ export async function verifyStudentByAdmission(admissionNumber: string): Promise
     };
   }
 
-  const lookup = await findStudentByAdmissionIndexed(normalizedAdmission);
+  const lookup = await findStudentByAdmissionIndexed(normalizedAdmission, institutionId);
   if (!lookup.student) {
     const payload: VerificationPayload = {
       exists: false,
@@ -57,7 +58,7 @@ export async function verifyStudentByAdmission(admissionNumber: string): Promise
       course: null,
     };
 
-    verificationCache.set(normalizedAdmission, {
+    verificationCache.set(cacheKey, {
       payload,
       expiresAtMs: now + VERIFICATION_CACHE_TTL_MS,
     });
@@ -76,7 +77,7 @@ export async function verifyStudentByAdmission(admissionNumber: string): Promise
     course: asCoursePayload(course),
   };
 
-  verificationCache.set(normalizedAdmission, {
+  verificationCache.set(cacheKey, {
     payload,
     expiresAtMs: now + VERIFICATION_CACHE_TTL_MS,
   });

@@ -1,9 +1,24 @@
-export async function findStudentByAdmissionIndexed(normalizedAdmission: string): Promise<{ student: StudentRecord | null }> {
-  const students = await readStudents();
-  const student = students.find(
-    (item) => normalizeAdmission(item.admissionNumber) === normalizedAdmission
-  );
-  return { student: student ?? null };
+export async function findStudentByAdmissionIndexed(
+  normalizedAdmission: string,
+  institutionId?: string
+): Promise<{ student: StudentRecord | null }> {
+  const where: Record<string, string> = { admissionNumber: normalizedAdmission };
+  if (institutionId) where.institutionId = institutionId;
+  const item = await prisma.student.findFirst({
+    where,
+    include: { auth: true },
+  });
+  if (!item) return { student: null };
+  return {
+    student: {
+      id: item.id,
+      name: item.name,
+      admissionNumber: item.admissionNumber,
+      courseId: item.courseId,
+      institutionId: item.institutionId,
+      email: item.auth?.email ?? undefined,
+    },
+  };
 }
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 import { prisma } from "@/lib/prisma";
