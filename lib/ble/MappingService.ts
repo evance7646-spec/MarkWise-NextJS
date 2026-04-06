@@ -1,6 +1,7 @@
 // lib/ble/MappingService.ts
 import { prisma } from "@/lib/prisma";
 import { BLEIdManager, ContextInfo } from './BLEIdManager';
+import { normalizeUnitCode } from '@/lib/unitCode';
 
 export interface MappingSet {
   version: string;
@@ -77,30 +78,51 @@ export class MappingService {
       // Format ID as 3-digit string with optional prefix
       const formattedId = BLEIdManager.formatId(u.bleId, 'unit', context || undefined);
 
+      // Always normalise rawCode at read time — safety net in case the DB still
+      // has a legacy non-canonical code (e.g. "SCH2170" instead of "SCH 2170").
+      const canonicalCode = normalizeUnitCode(u.code);         // e.g. "SCH 2170"
+      const unitTitle     = (u.title ?? "").trim();             // e.g. "Organic Chemistry"
+
+      // Normalised forms of the title — used for the disambiguation block in the
+      // mobile app when it receives a BLE/QR payload that carries the display name
+      // instead of the code (e.g. "ORGANICCHEMISTRY").
+      const titleStripped = unitTitle.replace(/\s+/g, "").toUpperCase();
+
       unitMappings[formattedId] = {
         id: formattedId,
         numericId: u.bleId,
-        rawCode: u.code,
-        displayName: u.title,
+        rawCode: canonicalCode,       // ← ALWAYS the unit code  (e.g. "SCH 2170")
+        displayName: unitTitle,        // ← ALWAYS the human label (e.g. "Organic Chemistry")
         department: u.department?.name,
         context: context,
         variations: [
-          u.code,
-          u.code.replace(/\s+/g, ''),
-          u.code.toUpperCase(),
-          u.code.replace(/\s+/g, '').toUpperCase(),
-          u.code.toLowerCase()
-        ]
+          canonicalCode,
+          canonicalCode.replace(/\s+/g, ''),
+          canonicalCode.toUpperCase(),
+          canonicalCode.replace(/\s+/g, '').toUpperCase(),
+          canonicalCode.toLowerCase(),
+          // Title variants — let the app find the mapping by display-name form too.
+          unitTitle,
+          titleStripped,
+          unitTitle.toLowerCase(),
+        ].filter(Boolean)
       };
 
-      reverseUnit[formattedId] = u.code;
+      reverseUnit[formattedId] = canonicalCode;
 
-      // Add normalized variations
-      const normalized = u.code.replace(/\s+/g, '').toUpperCase();
-      normalizedUnit[normalized] = u.code;
-      normalizedUnit[u.code.toLowerCase()] = u.code;
-      normalizedUnit[u.code.replace(/\s+/g, '')] = u.code;
-      normalizedUnit[u.code.replace(/\s+/g, '').toLowerCase()] = u.code;
+      // Code-based lookup variants → canonical code
+      const normalizedCode = canonicalCode.replace(/\s+/g, '').toUpperCase();
+      normalizedUnit[normalizedCode]                                    = canonicalCode;
+      normalizedUnit[canonicalCode.toLowerCase()]                       = canonicalCode;
+      normalizedUnit[canonicalCode.replace(/\s+/g, '')]                = canonicalCode;
+      normalizedUnit[canonicalCode.replace(/\s+/g, '').toLowerCase()]  = canonicalCode;
+
+      // Title-based lookup variants → canonical code
+      // Allows the app's disambiguation block to resolve "ORGANICCHEMISTRY" → "SCH 2170".
+      if (titleStripped) {
+        normalizedUnit[titleStripped]              = canonicalCode;
+        normalizedUnit[unitTitle.toLowerCase().replace(/\s+/g, '')] = canonicalCode;
+      }
     }
 
     const roomMappings: Record<string, any> = {};
