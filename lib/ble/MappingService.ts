@@ -72,16 +72,31 @@ export class MappingService {
     const reverseUnit: Record<string, string> = {};
     const normalizedUnit: Record<string, string> = {};
 
+    // A well-formed unit code has 2-6 letters immediately followed by digits
+    // (with or without a space), e.g. "SCH 2170", "sch2170", "ENG 101".
+    // We use this to detect (and silently correct) cases where the DB rows have
+    // code ↔ title swapped at data-entry time.
+    const CODE_PATTERN = /^[A-Za-z]{2,6}\s*\d+/;
+
     for (const u of units) {
       if (u.bleId == null) continue;
 
       // Format ID as 3-digit string with optional prefix
       const formattedId = BLEIdManager.formatId(u.bleId, 'unit', context || undefined);
 
-      // Always normalise rawCode at read time — safety net in case the DB still
-      // has a legacy non-canonical code (e.g. "SCH2170" instead of "SCH 2170").
-      const canonicalCode = normalizeUnitCode(u.code);         // e.g. "SCH 2170"
-      const unitTitle     = (u.title ?? "").trim();             // e.g. "Organic Chemistry"
+      // Detect if DB fields are swapped:
+      //   correct:  code="SCH 2170",        title="Organic Chemistry"
+      //   swapped:  code="Organic Chemistry", title="SCH 2170"
+      const dbCodeLooksLikeCode  = CODE_PATTERN.test(u.code  ?? '');
+      const dbTitleLooksLikeCode = CODE_PATTERN.test(u.title ?? '');
+      const fieldsAreSwapped = !dbCodeLooksLikeCode && dbTitleLooksLikeCode;
+
+      const codeSource  = fieldsAreSwapped ? (u.title ?? u.code) : u.code;
+      const titleSource = fieldsAreSwapped ? u.code : (u.title ?? u.code);
+
+      // Canonicalise to "LETTERS SPACE DIGITS" ("SCH2170" → "SCH 2170"), idempotent.
+      const canonicalCode = normalizeUnitCode(codeSource);
+      const unitTitle     = titleSource.trim();
 
       // Normalised forms of the title — used for the disambiguation block in the
       // mobile app when it receives a BLE/QR payload that carries the display name
