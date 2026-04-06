@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -58,9 +59,10 @@ export async function GET(
   }
 
   // Resolve unit name and lecturer name in parallel
+  const canonicalCode = normalizeUnitCode(session.unitCode);
   const [unit, lecturer] = await Promise.all([
-    prisma.unit.findUnique({
-      where: { code: session.unitCode },
+    prisma.unit.findFirst({
+      where: { OR: [{ code: canonicalCode }, { code: session.unitCode }] },
       select: { title: true },
     }),
     prisma.lecturer.findUnique({
@@ -72,8 +74,8 @@ export async function GET(
   return NextResponse.json(
     {
       sessionId: session.id,
-      unitCode: session.unitCode,
-      unitName: unit?.title ?? session.unitCode,
+      unitCode: canonicalCode,
+      unitName: unit?.title ?? canonicalCode,
       lecturerName: lecturer?.fullName ?? "",
       status: effectiveStatus,
       expiresAt: session.expiresAt.getTime(),

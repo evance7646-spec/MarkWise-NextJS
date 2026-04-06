@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -46,8 +47,8 @@ export async function POST(req: NextRequest) {
 
   const { lecturerName, unitCode: rawUnitCode, unitName, meetingLink, passcode, scheduledAt, message } = body;
 
-  // Normalize: strip all whitespace and uppercase — same format the app sends
-  const unitCode = String(rawUnitCode ?? "").replace(/\s+/g, "").toUpperCase();
+  // Normalize to canonical format (e.g. "BCH1101" → "BCH 1101")
+  const unitCode = normalizeUnitCode(String(rawUnitCode ?? ""));
 
   if (!unitCode) {
     return NextResponse.json({ message: "unitCode is required" }, { status: 400, headers: corsHeaders });
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
   });
 
   const teaches = lecturerTimetables.some(
-    (entry) => entry.unit.code.replace(/\s+/g, "").toUpperCase() === unitCode
+    (entry) => normalizeUnitCode(entry.unit.code) === unitCode
   );
 
   if (!teaches) {

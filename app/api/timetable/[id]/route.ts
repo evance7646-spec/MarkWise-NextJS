@@ -58,6 +58,7 @@ import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { emitToRoom } from "@/lib/emitSignal";
 import { cancelTimetableBookings, createTimetableBookings, createNextOccurrenceBooking } from "@/lib/timetableBookingSync";
 import { publishTimetableUpdatedEvent } from "@/lib/timetableEvents";
+import { normalizeUnitCode } from "@/lib/unitCode";
 import { bumpTimetableVersion } from "@/lib/timetableSyncStore";
 
 export const runtime = "nodejs";
@@ -82,7 +83,7 @@ function formatEntry(e: any) {
   return {
     id: e.id,
     unitId: e.unitId,
-    unitCode: e.unit?.code ?? "",
+    unitCode: normalizeUnitCode(e.unit?.code ?? ""),
     unitTitle: e.unit?.title ?? "",
     courseId: e.courseId,
     courseName: e.course?.name ?? "",
@@ -371,9 +372,9 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
     );
 
     // Emit real-time socket event (fire-and-forget)
-    const unitCode = updated.unit?.code ?? "";
+    const unitCode = normalizeUnitCode(updated.unit?.code ?? "");
     if (unitCode) {
-      emitToRoom(`unit:${unitCode.trim().toUpperCase()}`, "timetable:status-changed", {
+      emitToRoom(`unit:${unitCode}`, "timetable:status-changed", {
         entryId: updated.id,
         unitCode,
         day: updated.day,

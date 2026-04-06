@@ -7,6 +7,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -55,7 +56,7 @@ export async function GET(
 
   const units = enrollments.map((e) => ({
     unitId: e.unit.id,
-    unit_code: e.unit.code,
+    unit_code: normalizeUnitCode(e.unit.code),
     unit_name: e.unit.title,
   }));
 

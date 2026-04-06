@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
     // Normalize each code: strip all internal whitespace, uppercase
     unitCodes = rawUnits
       .split(",")
-      .map((u) => u.replace(/\s+/g, "").toUpperCase())
+      .map((u) => normalizeUnitCode(u))
       .filter(Boolean);
   } else {
     // Fallback: derive from the student's enrollment records
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
       where: { studentId },
       select: { unit: { select: { code: true } } },
     });
-    unitCodes = enrollments.map((e) => e.unit.code.replace(/\s+/g, "").toUpperCase());
+    unitCodes = enrollments.map((e) => normalizeUnitCode(e.unit.code));
   }
 
   if (unitCodes.length === 0) {

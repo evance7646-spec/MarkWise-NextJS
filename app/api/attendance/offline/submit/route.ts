@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,7 +23,7 @@ function detectMethod(rawPayload: string): Method {
 }
 
 function normaliseCode(code: string): string {
-  return code.replace(/\s+/g, "").toUpperCase();
+  return normalizeUnitCode(code);
 }
 
 // digestToPin: mix 8-hex-char chunks via uint32 Fibonacci hashing, mod 10^6, zero-pad to 6 digits
@@ -179,14 +180,16 @@ export async function POST(req: NextRequest) {
 
     const session = await prisma.conductedSession.findFirst({
       where: {
-        unitCode,
+        // Accept both canonical ("SCH 2170") and legacy stripped ("SCH2170") forms
+        // during the transition period before the migration script is run.
+        unitCode: { in: [unitCode, unitCode.replace(/\s+/g, "")] },
         lectureRoom: { in: Array.from(roomCandidates) },
         sessionStart: {
           gte: new Date(normalisedSessionStart - WINDOW_MS),
           lte: new Date(normalisedSessionStart + WINDOW_MS),
         },
       },
-      select: { id: true, sessionStart: true, lectureRoom: true, lessonType: true },
+      select: { id: true, sessionStart: true, lectureRoom: true, lessonType: true, unitCode: true },
       orderBy: { sessionStart: "asc" },
     });
     if (!session) {
@@ -198,6 +201,8 @@ export async function POST(req: NextRequest) {
     // Use the canonical values from the DB for all downstream checks
     const canonicalSessionStart = new Date(Math.floor(session.sessionStart.getTime() / 1000) * 1000);
     const canonicalLectureRoom = session.lectureRoom;
+    // Prefer the unitCode stored in the session (already canonical post-migration)
+    const canonicalUnitCode = normalizeUnitCode(session.unitCode);
 
     // --- Step 3: Validate Manual PIN ---
     if (method === "manual" && rawPayload) {
@@ -217,7 +222,7 @@ export async function POST(req: NextRequest) {
       where: {
         studentId_unitCode_lectureRoom_sessionStart: {
           studentId,
-          unitCode,
+          unitCode: canonicalUnitCode,
           lectureRoom: canonicalLectureRoom,
           sessionStart: canonicalSessionStart,
         },
@@ -247,7 +252,7 @@ export async function POST(req: NextRequest) {
     const record = await prisma.offlineAttendanceRecord.create({
       data: {
         studentId,
-        unitCode,
+        unitCode: canonicalUnitCode,
         lectureRoom: canonicalLectureRoom,
         lessonType: session.lessonType ?? null,
         sessionStart: canonicalSessionStart, // already truncated to second precision above

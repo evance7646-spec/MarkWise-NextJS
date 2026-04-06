@@ -8,6 +8,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { resolveAdminOrLecturerScope } from "@/lib/adminLecturerAuth";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -66,7 +67,7 @@ export async function GET(
 
   const units = timetableRows.map((r) => ({
     unitId: r.unit.id,
-    unit_code: r.unit.code,
+    unit_code: normalizeUnitCode(r.unit.code),
     unit_name: r.unit.title,
   }));
 

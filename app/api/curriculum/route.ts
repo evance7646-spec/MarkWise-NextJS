@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { MappingService } from '@/lib/ble/MappingService';
 import { BLEIdManager } from '@/lib/ble/BLEIdManager';
+import { normalizeUnitCode } from '@/lib/unitCode';
 
 // GET /api/curriculum?departmentId=xxx
 export async function GET(req: NextRequest) {
@@ -185,12 +186,14 @@ export async function POST(req: NextRequest) {
           // Upsert units and connect
           for (const unit of semester.units) {
             try {
+              // Normalise code to canonical format (e.g. "sch2170" → "SCH 2170")
+              const unitCode = normalizeUnitCode(unit.code);
               // Check if a unit with the same code exists
-              const existingUnit = await prisma.unit.findUnique({ where: { code: unit.code } });
+              const existingUnit = await prisma.unit.findUnique({ where: { code: unitCode } });
               if (existingUnit) {
                 // Update the existing unit
                 await prisma.unit.update({
-                  where: { code: unit.code },
+                  where: { code: unitCode },
                   data: {
                     title: unit.title,
                     departmentId,
@@ -198,7 +201,7 @@ export async function POST(req: NextRequest) {
                 });
                 // Connect unit to course if not already connected
                 await prisma.unit.update({
-                  where: { code: existingUnit.code },
+                  where: { code: unitCode },
                   data: {
                     courses: {
                       connect: [{ id: course.id }],
@@ -214,7 +217,7 @@ export async function POST(req: NextRequest) {
                 await prisma.unit.create({
                   data: {
                     id: unit.id,
-                    code: unit.code,
+                    code: unitCode,
                     title: unit.title,
                     departmentId,
                     bleId: nextBleId,

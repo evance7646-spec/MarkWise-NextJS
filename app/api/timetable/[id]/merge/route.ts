@@ -28,6 +28,7 @@ import { verifyAdminAuthToken } from "@/lib/adminAuthJwt";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { createTimetableBookings } from "@/lib/timetableBookingSync";
 import { randomUUID } from "crypto";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -193,11 +194,7 @@ export async function POST(
     roomId: newEntry.roomId,
     lecturerId: newEntry.lecturerId,
     unitId: newEntry.unitId,
-    unitCode: newEntry.unit?.code ?? null,
-    day: newEntry.day,
-    startTime: newEntry.startTime,
-    endTime: newEntry.endTime,
-  }).catch((err) => console.error("[timetable/merge] booking sync failed:", err));
+    unitCode: newEntry.unit?.code ? normalizeUnitCode(newEntry.unit.code) : null,
 
   return NextResponse.json(
     {
@@ -207,7 +204,7 @@ export async function POST(
         id: newEntry.id,
         courseId: newEntry.courseId,
         unitId: newEntry.unitId,
-        unitCode: newEntry.unit?.code,
+        unitCode: newEntry.unit?.code ? normalizeUnitCode(newEntry.unit.code) : undefined,
         unitTitle: newEntry.unit?.title,
         roomId: newEntry.roomId,
         roomName: newEntry.room?.name,

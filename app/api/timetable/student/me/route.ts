@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
 import { prisma } from "@/lib/prisma";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -95,12 +96,14 @@ export async function GET(request: Request) {
         if (dayDelta !== 0) return dayDelta;
         return a.startTime.localeCompare(b.startTime);
       })
-      .map((e) => ({
+      .map((e) => {
+        const code = normalizeUnitCode(e.unit?.code ?? "");
+        return ({
         id: e.id,
         unitId: e.unitId,
-        unitCode: e.unit?.code ?? "",
+        unitCode: code,
         unitTitle: e.unit?.title ?? "",
-        unit: `${e.unit?.title ?? ""} (${e.unit?.code ?? ""})`,
+        unit: `${e.unit?.title ?? ""} (${code})`,
         courseId: e.courseId,
         courseName: e.course?.name ?? "",
         day: e.day,
@@ -132,7 +135,7 @@ export async function GET(request: Request) {
         semester: e.semester ?? "",
         departmentId: e.departmentId,
         department: e.department ? { id: e.department.id, name: e.department.name } : null,
-      }));
+      });});
 
     return NextResponse.json(result, { headers: corsHeaders });
   } catch (err) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -88,7 +89,7 @@ export async function GET(req: NextRequest) {
           const key = `${yearNum}-${semNum}`;
           if (!map[key]) map[key] = [];
           for (const unit of semester.units) {
-            map[key].push(`${unit.title} (${unit.code})`);
+            map[key].push(`${unit.title} (${normalizeUnitCode(unit.code)})`);
           }
         });
       });

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { prisma } from "@/lib/prisma";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -102,7 +103,7 @@ export async function GET(request: Request) {
           courseName: item.course?.name ?? "",
           yearOfStudy: item.yearOfStudy,
           semester: item.semester,
-          unitCode: item.unit?.code ?? "",
+          unitCode: normalizeUnitCode(item.unit?.code ?? ""),
           unitTitle: item.unit?.title ?? "",
           venueName: wasReset ? (effectiveVenue ?? "") : (item.venueName ?? null),
           venue: wasReset ? (effectiveVenue ?? "TBA") : effectiveVenue,
@@ -137,7 +138,7 @@ export async function GET(request: Request) {
     for (const row of rows) {
       if (row.unit && !seenUnitIds.has(row.unit.id)) {
         seenUnitIds.add(row.unit.id);
-        units.push({ unitCode: row.unit.code, unitTitle: row.unit.title });
+        units.push({ unitCode: normalizeUnitCode(row.unit.code), unitTitle: row.unit.title });
       }
     }
     units.sort((a, b) => a.unitCode.localeCompare(b.unitCode));

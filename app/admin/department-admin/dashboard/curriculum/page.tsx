@@ -121,7 +121,7 @@ export default function DeptCurriculumPage() {
 
   const addUnit = (programId: string, yearId: string, semesterId: string) => {
     if (!unitCode.trim() || !unitTitle.trim()) return;
-    const newUnit: Unit = { id: crypto.randomUUID(), code: unitCode.trim(), title: unitTitle.trim() };
+    const newUnit: Unit = { id: crypto.randomUUID(), code: unitCode.trim().toUpperCase(), title: unitTitle.trim() };
     const newPrograms = programs.map(p => p.id !== programId ? p : {
       ...p, years: p.years.map(y => y.id !== yearId ? y : {
         ...y, semesters: y.semesters.map(sm => sm.id !== semesterId ? sm : {
@@ -140,7 +140,7 @@ export default function DeptCurriculumPage() {
       .map(row => {
         const commaIdx = row.indexOf(",");
         if (commaIdx === -1) return null;
-        const code = row.slice(0, commaIdx).trim();
+        const code = row.slice(0, commaIdx).trim().toUpperCase();
         const title = row.slice(commaIdx + 1).trim();
         if (!code || !title) return null;
         return { id: crypto.randomUUID(), code, title };

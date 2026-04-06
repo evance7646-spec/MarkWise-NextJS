@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { buildPayloadsForStudents, sendPushNotificationBatch } from "@/lib/pushNotification";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -118,8 +119,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Validate unitCode exists
-  const unit = await prisma.unit.findUnique({
-    where: { code: unitCode.trim().toUpperCase() },
+  const normalisedCode = normalizeUnitCode(unitCode);
+  const unit = await prisma.unit.findFirst({
+    where: { OR: [{ code: normalisedCode }, { code: unitCode.trim().toUpperCase() }] },
     select: { id: true, title: true, code: true },
   });
   if (!unit) {
@@ -129,7 +131,7 @@ export async function POST(req: NextRequest) {
   // ── Create ──────────────────────────────────────────────────────────────────
   const session = await prisma.extraSession.create({
     data: {
-      unitCode: unit.code,
+      unitCode: normalizeUnitCode(unit.code),
       lecturerId,
       date: sessionDate,
       startTime: startTime.trim(),

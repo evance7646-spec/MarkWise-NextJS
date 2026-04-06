@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { resolveAdminScope } from '@/lib/adminScope';
+import { normalizeUnitCode } from '@/lib/unitCode';
 
 export const runtime = 'nodejs';
 
@@ -58,8 +59,8 @@ export async function GET(req: NextRequest) {
       : 0;
 
     return {
-      id: g.unitCode,
-      unitCode: g.unitCode,
+      id: normalizeUnitCode(g.unitCode),
+      unitCode: normalizeUnitCode(g.unitCode),
       unitTitle: unit?.title ?? g.unitCode,
       departmentId: unit?.departmentId ?? null,
       present: presentCount,

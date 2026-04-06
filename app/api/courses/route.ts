@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAdminScope } from '@/lib/adminScope';
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
           id: year.id, name: year.name,
           semesters: (year.semesters || []).map((semester) => ({
             id: semester.id, label: semester.label,
-            units: (semester.units || []).map((unit) => ({ id: unit.id, title: unit.title, code: unit.code })),
+            units: (semester.units || []).map((unit) => ({ id: unit.id, title: unit.title, code: normalizeUnitCode(unit.code) })),
           })),
         }));
       }
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
           units: (semester.units || []).map((unit) => ({
             id: unit.id,
             title: unit.title,
-            code: unit.code,
+            code: normalizeUnitCode(unit.code),
           })),
         })),
       }));

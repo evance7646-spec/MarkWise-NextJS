@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAdminOrLecturerScope } from "@/lib/adminLecturerAuth";
 import { resolveAdminScope } from "@/lib/adminScope";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 /**
  * GET /api/attendance/sessions?institutionId=xxx
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const normalisedUnitCode = unitCode.replace(/\s+/g, "").toUpperCase();
+  const normalisedUnitCode = normalizeUnitCode(unitCode);
   const expiresAt = new Date(Date.now() + durationMs);
 
   const session = await prisma.onlineAttendanceSession.create({

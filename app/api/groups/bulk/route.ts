@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyLecturerAccessToken } from '@/lib/lecturerAuthJwt';
 import { formatGroup } from '@/lib/formatGroup';
+import { normalizeUnitCode } from '@/lib/unitCode';
 
 export const runtime = 'nodejs';
 
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
         data: {
           name: g.name || `Group ${groupNum}`,
           unitId: unit.id,
-          unitCode: unit.code,
+          unitCode: normalizeUnitCode(unit.code),
           groupNumber: groupNum,
           leaderId,
           description: g.description ?? null,

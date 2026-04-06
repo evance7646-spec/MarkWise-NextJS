@@ -5,6 +5,7 @@ import { verifyLecturerAccessToken } from '../../../lib/lecturerAuthJwt';
 import { createTimetableBookings } from '@/lib/timetableBookingSync';
 import { resolveAdminScope } from '@/lib/adminScope';
 import { bumpTimetableVersion } from '@/lib/timetableSyncStore';
+import { normalizeUnitCode } from '@/lib/unitCode';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -67,7 +68,7 @@ export async function GET(req: NextRequest) {
       const result = entries.map(item => ({
         id: item.id, courseId: item.courseId, courseName: item.course?.name,
         yearOfStudy: item.yearOfStudy, semester: item.semester, semesterLabel: item.semester,
-        unitId: item.unitId, unitCode: item.unit?.code, unitTitle: item.unit?.title,
+        unitId: item.unitId, unitCode: item.unit?.code ? normalizeUnitCode(item.unit.code) : undefined, unitTitle: item.unit?.title,
         roomId: item.roomId, roomName: item.room?.name, roomCode: item.room?.roomCode ?? '',
         venueName: item.venueName, lecturerId: item.lecturerId, lecturerName: item.lecturer?.fullName,
         day: item.day, startTime: item.startTime, endTime: item.endTime, status: item.status,
@@ -130,7 +131,7 @@ export async function GET(req: NextRequest) {
       semester: item.semester,
       semesterLabel: item.semester, // Add this if your frontend expects it
       unitId: item.unitId,
-      unitCode: item.unit?.code,
+      unitCode: item.unit?.code ? normalizeUnitCode(item.unit.code) : undefined,
       unitTitle: item.unit?.title,
       roomId: item.roomId,
       roomName: item.room?.name,
@@ -208,6 +209,7 @@ export async function POST(req: NextRequest) {
     status,
     unitCode 
   } = data;
+  const normalisedUnitCode = unitCode ? normalizeUnitCode(unitCode) : undefined;
 
   // Only allow admin or lecturer to create entries for themselves
   if (adminId == null && lecturerIdFromToken == null) {
@@ -311,7 +313,7 @@ export async function POST(req: NextRequest) {
       const existingUnitCode = existingBooking.unit?.code;
       
       // If it's the same unit, suggest merge
-      if (existingUnitCode === unitCode) {
+      if (existingUnitCode === normalisedUnitCode) {
         return NextResponse.json({
           mergePrompt: true,
           conflictId: existingBooking.id,
@@ -369,7 +371,7 @@ export async function POST(req: NextRequest) {
       roomId: entry.roomId,
       lecturerId: entry.lecturerId,
       unitId: entry.unitId,
-      unitCode: unitCode ?? null,
+      unitCode: normalisedUnitCode ?? null,
       day: entry.day,
       startTime: entry.startTime,
       endTime: entry.endTime,

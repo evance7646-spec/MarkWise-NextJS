@@ -17,6 +17,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -154,7 +155,7 @@ export async function GET(req: NextRequest) {
             : 0;
 
         return {
-          unitCode: unit.code,
+          unitCode: normalizeUnitCode(unit.code),
           unitName: unit.title,
           enrolledStudents,
           conductedSessions,

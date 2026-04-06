@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { verifyAdminAuthToken } from '@/lib/adminAuthJwt';
 import { MappingService } from '@/lib/ble/MappingService';
 import { BLEIdManager } from '@/lib/ble/BLEIdManager';
+import { normalizeUnitCode } from '@/lib/unitCode';
 
 // GET /api/units?departmentId=xxx  OR  ?institutionId=xxx
 export async function GET(req: NextRequest) {
@@ -50,7 +51,8 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await req.json();
-  const { code, title, courseId } = data;
+  const { code: rawCode, title, courseId } = data;
+  const code = normalizeUnitCode(rawCode);
 
   // Server-side departmentId: dept admin always uses their own; institution admin may specify
   const departmentId: string = scope.isInstitutionAdmin

@@ -1,8 +1,10 @@
 
 import { prisma } from "@/lib/prisma";
+import { normalizeUnitCode as _normalizeUnitCode } from "@/lib/unitCode";
 export type EnrollmentMap = Record<string, string[]>;
 
-export const normalizeUnitCode = (value: string) => value.replace(/\s+/g, "").trim().toUpperCase();
+// Re-export canonical normaliser so callers don't need two imports.
+export const normalizeUnitCode = (value: string) => _normalizeUnitCode(value);
 
 const isEnrollmentMap = (value: unknown): value is EnrollmentMap => {
   if (!value || typeof value !== "object") return false;
@@ -39,10 +41,11 @@ export async function isStudentEnrolledForUnit(studentId: string, unitCodeOrId: 
     let unit = await prisma.unit.findFirst({
       where: { code: { equals: normalized, mode: 'insensitive' } },
     });
-    // Raw SQL fallback: strip spaces from DB side too (SCH2170 matches stored SCH 2170)
+    // Raw SQL fallback: strip spaces from both sides so "SCH2170" ↔ "SCH 2170" always match.
     if (!unit) {
+      const normalizedStripped = normalized.replace(/ /g, "");
       const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-        SELECT id FROM "Unit" WHERE REPLACE(UPPER(code), ' ', '') = ${normalized} LIMIT 1
+        SELECT id FROM "Unit" WHERE REPLACE(UPPER(code), ' ', '') = ${normalizedStripped} LIMIT 1
       `;
       if (rows.length > 0) {
         unit = await prisma.unit.findUnique({ where: { id: rows[0].id } });

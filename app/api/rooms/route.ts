@@ -7,6 +7,7 @@ import { resolveRoomScope } from "@/lib/roomAuth";
 import { createRoomSchema, roomsQuerySchema } from "@/lib/roomValidation";
 import { expireHolds, refreshRoomStatuses, toRoomStatusPayload } from "@/lib/roomBookingService";
 import { MappingService } from "@/lib/ble/MappingService";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -194,13 +195,15 @@ export async function GET(request: Request) {
 
       let bookingStartTime = currentBooking?.startAt?.toISOString();
       let bookingEndTime = currentBooking?.endAt?.toISOString();
-      let bookingUnitCode = currentBooking?.unitCode || currentBooking?.unit?.code;
+      let bookingUnitCode = (currentBooking?.unitCode || currentBooking?.unit?.code) ?? undefined;
+      if (bookingUnitCode) bookingUnitCode = normalizeUnitCode(bookingUnitCode);
       let bookingLecturerName = currentBooking?.lecturer?.fullName || currentBooking?.lecturer?.email;
 
       if (room.status === "reserved" && !currentBooking && nextBooking) {
         bookingStartTime = nextBooking.startAt?.toISOString();
         bookingEndTime = nextBooking.endAt?.toISOString();
-        bookingUnitCode = nextBooking.unitCode || nextBooking.unit?.code;
+        const rawNext = nextBooking.unitCode || nextBooking.unit?.code;
+        bookingUnitCode = rawNext ? normalizeUnitCode(rawNext) : undefined;
         bookingLecturerName = nextBooking.lecturer?.fullName || nextBooking.lecturer?.email;
       }
 

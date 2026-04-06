@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -214,7 +215,7 @@ export async function GET(request: Request) {
         day: capitaliseDay(e.day),
         startTime: e.startTime,
         endTime: e.endTime,
-        unitCode: e.unit?.code ?? "",
+        unitCode: normalizeUnitCode(e.unit?.code ?? ""),
         unitName: e.unit?.title ?? "",
         type: (e as any).lessonType ?? "LEC",
         lessonType: (e as any).lessonType ?? "LEC",
@@ -236,7 +237,7 @@ export async function GET(request: Request) {
     const unitTitleMap: Record<string, string> = {};
     for (const e of entries) {
       if (e.unit?.code && e.unit?.title) {
-        unitTitleMap[e.unit.code] = e.unit.title;
+        unitTitleMap[normalizeUnitCode(e.unit.code)] = e.unit.title;
       }
     }
 
@@ -245,7 +246,8 @@ export async function GET(request: Request) {
     const extraEntries = extraSessions.map((s) => {
       const dateStr = s.date.toISOString().slice(0, 10);
       const dayName = DAYS[s.date.getDay()];
-      const unitTitle = unitTitleMap[s.unitCode] ?? s.unitCode;
+      const canonicalCode = normalizeUnitCode(s.unitCode);
+      const unitTitle = unitTitleMap[canonicalCode] ?? canonicalCode;
       const venue = s.roomCode ?? "TBA";
       return {
         id: `extra-${s.id}`,
@@ -255,8 +257,8 @@ export async function GET(request: Request) {
         time: `${s.startTime} - ${s.endTime}`,
         startTime: s.startTime,
         endTime: s.endTime,
-        unit: `${unitTitle} (${s.unitCode})`,
-        unitCode: s.unitCode,
+        unit: `${unitTitle} (${canonicalCode})`,
+        unitCode: canonicalCode,
         unitName: unitTitle,
         type: s.lessonType,
         lessonType: s.lessonType,
@@ -280,8 +282,8 @@ export async function GET(request: Request) {
     const extraSessionsPayload = extraSessions.map((s) => ({
       id: s.id,
       sessionId: s.id,
-      unitCode: s.unitCode,
-      unitName: unitTitleMap[s.unitCode] ?? s.unitCode,
+      unitCode: normalizeUnitCode(s.unitCode),
+      unitName: unitTitleMap[normalizeUnitCode(s.unitCode)] ?? normalizeUnitCode(s.unitCode),
       date: s.date.toISOString().slice(0, 10),
       startTime: s.startTime,
       endTime: s.endTime,
