@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { useAcademicRegistrar } from "../context";
 
-const BASE = "/admin/registry-admin/dashboard";
+const BASE = "/admin/academic-registrar/dashboard";
 
 const QUICK_ACTIONS = [
   { label: "Admit Student",      href: `${BASE}/students`,      icon: UserPlus,      color: "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20" },
