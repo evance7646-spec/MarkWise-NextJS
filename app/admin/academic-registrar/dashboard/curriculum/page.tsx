@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAcademicRegistrar } from "../../context";
 
 // Utility to save curriculum for department
 async function saveCurriculum(programs: Program[], departmentId: string) {
@@ -74,6 +75,7 @@ type Program = {
 };
 
 export default function DepartmentCurriculumPage() {
+  const admin = useAcademicRegistrar();
   const [saveStatus, setSaveStatus] = useState<string>("");
   const [programs, setPrograms] = useState<Program[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -88,6 +90,8 @@ export default function DepartmentCurriculumPage() {
   const [unitCode, setUnitCode] = useState("");
   const [bulkUnitText, setBulkUnitText] = useState("");
   const [departmentId, setDepartmentId] = useState<string>("");
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  const [isInstitutionLevel, setIsInstitutionLevel] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -97,7 +101,17 @@ export default function DepartmentCurriculumPage() {
         // Academic registrar is institution-level (departmentId is null);
         // fall back gracefully to the flat departmentId field.
         const deptId = data.departmentId || data.department?.id;
-        if (!deptId) throw new Error("No department assigned to this account — please contact your system administrator.");
+        if (!deptId) {
+          // Institution-level admin: load departments and show selector
+          setIsInstitutionLevel(true);
+          const instId = data.institutionId;
+          if (instId) {
+            const depts = await fetch(`/api/departments?institutionId=${instId}`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as any;
+            setDepartments(depts.departments ?? depts.data ?? []);
+          }
+          setIsLoading(false);
+          return;
+        }
         setDepartmentId(deptId);
         const curriculum = await fetchCurriculum(deptId);
         
@@ -124,6 +138,30 @@ export default function DepartmentCurriculumPage() {
       }
     })();
   }, []);
+
+  const handleDepartmentSelect = async (deptId: string) => {
+    if (!deptId) return;
+    setDepartmentId(deptId);
+    setIsLoading(true);
+    setAuthError("");
+    try {
+      const curriculum = await fetchCurriculum(deptId);
+      const sortedPrograms = (curriculum.programs || []).sort((a: Program, b: Program) =>
+        a.name.localeCompare(b.name)
+      );
+      setPrograms(sortedPrograms);
+      setOpenPrograms(sortedPrograms.map((p: Program) => p.id));
+      setOpenYears(
+        sortedPrograms.flatMap((p: Program) =>
+          p.years.map((y: YearBlock) => `${p.id}-${y.id}`)
+        )
+      );
+    } catch (err: any) {
+      setAuthError(err?.message || "Failed to load curriculum.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Save curriculum handler (kept for internal use but button removed from UI)
   const handleSaveCurriculum = async () => {
@@ -578,13 +616,15 @@ export default function DepartmentCurriculumPage() {
   };
 
   const exportData = () => {
-    const blob = new Blob([JSON.stringify({ department: "Department of Botany", programs }, null, 2)], {
+    const deptName = departments.find(d => d.id === departmentId)?.name ?? "curriculum";
+    const safeName = deptName.toLowerCase().replace(/\s+/g, "_");
+    const blob = new Blob([JSON.stringify({ department: deptName, programs }, null, 2)], {
       type: "application/json",
     });
     const objectUrl = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = objectUrl;
-    anchor.download = `department_of_botany_curriculum_${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.download = `${safeName}_curriculum_${new Date().toISOString().slice(0, 10)}.json`;
     document.body.appendChild(anchor);
     anchor.click();
     document.body.removeChild(anchor);
@@ -756,12 +796,33 @@ export default function DepartmentCurriculumPage() {
 
   return (
     <div className="space-y-6">
+      {isInstitutionLevel && !departmentId && (
+        <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-sky-50 p-6">
+          <h2 className="text-2xl font-bold tracking-tight text-gray-900">Curriculum Management</h2>
+          <p className="mt-2 text-sm text-zinc-600">Select a department to view and edit its curriculum.</p>
+          <div className="mt-5">
+            {departments.length === 0 ? (
+              <p className="text-sm text-gray-400">No departments found for this institution.</p>
+            ) : (
+              <select
+                defaultValue=""
+                onChange={e => { if (e.target.value) handleDepartmentSelect(e.target.value); }}
+                className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 min-w-[260px]"
+              >
+                <option value="" disabled>Select a department…</option>
+                {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            )}
+          </div>
+        </div>
+      )}
+      {(!isInstitutionLevel || departmentId) && (<>
       <div className="rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-sky-50 p-6 dark:border-indigo-500/30 dark:from-indigo-500/10 dark:to-sky-500/10">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold tracking-tight text-foreground">Curriculum Management</h2>
             <p className="mt-2 text-sm text-zinc-600">
-              Manage academic programs and course structure for Department of Botany.
+              Manage academic programs and course structure{departmentId && departments.length > 0 ? ` — ${departments.find(d => d.id === departmentId)?.name ?? ""}` : ""}.
             </p>
           </div>
           <button
@@ -1126,6 +1187,7 @@ export default function DepartmentCurriculumPage() {
           </div>
         </div>
       )}
+      </>)}
     </div>
   );
 }

@@ -51,11 +51,11 @@ export default function AttendancePage() {
     setLoading(true);
     const [att, off, d] = await Promise.all([
       fetch(`/api/attendance?institutionId=${admin.institutionId}`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as any,
-      fetch(`/api/attendance/offline?institutionId=${admin.institutionId}`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as any,
+      fetch(`/api/attendance/offline?institutionId=${admin.institutionId}`, { credentials: "include" }).then(r => r.ok ? r.json() : []) as any,
       fetch(`/api/departments?institutionId=${admin.institutionId}`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as any,
     ]);
     setRecords(att.records ?? att.data ?? att ?? []);
-    setOffline(off.records ?? off.data ?? off ?? []);
+    setOffline(off.records ?? off.data ?? (Array.isArray(off) ? off : []));
     setDepts(d.departments ?? d.data ?? d ?? []);
     setLoading(false);
   }, [admin?.institutionId]);
@@ -65,7 +65,7 @@ export default function AttendancePage() {
   const q = search.toLowerCase();
 
   const filteredOnline = records.filter(r => {
-    const matchQ = !q || r.student?.name.toLowerCase().includes(q) || r.student?.admissionNumber.toLowerCase().includes(q);
+    const matchQ = !q || r.student?.name?.toLowerCase().includes(q) || r.student?.admissionNumber?.toLowerCase().includes(q);
     const matchStatus = statusFilter === "all" || r.status === statusFilter;
     return matchQ && matchStatus;
   });

@@ -72,6 +72,7 @@ export async function GET(req: NextRequest) {
         venueName: item.venueName, lecturerId: item.lecturerId, lecturerName: item.lecturer?.fullName,
         day: item.day, startTime: item.startTime, endTime: item.endTime, status: item.status,
         createdAt: item.createdAt, updatedAt: item.updatedAt,
+        departmentId: item.departmentId,
         department: item.department ? { id: item.department.id, name: item.department.name } : null,
       }));
       return NextResponse.json(result, { headers: { ...corsHeaders, 'Cache-Control': 'private, max-age=30, stale-while-revalidate=300' } });
