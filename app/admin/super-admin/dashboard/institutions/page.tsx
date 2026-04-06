@@ -14,8 +14,8 @@ interface Institution {
 }
 
 const inp =
-  "w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500";
-const lbl = "block text-xs font-medium text-slate-400 mb-1.5";
+  "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500";
+const lbl = "block text-xs font-medium text-gray-500 mb-1.5";
 
 export default function InstitutionsPage() {
   const [institutions, setInstitutions] = useState<Institution[]>([]);
@@ -92,7 +92,7 @@ export default function InstitutionsPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed top-4 right-4 z-50 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+            className="fixed top-4 right-4 z-50 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-gray-900 shadow-lg"
           >
             {toast}
           </motion.div>
@@ -102,20 +102,20 @@ export default function InstitutionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Institutions</h1>
-          <p className="text-sm text-slate-400 mt-0.5">{institutions.length} institution{institutions.length !== 1 ? "s" : ""} total</p>
+          <h1 className="text-xl font-bold text-gray-900">Institutions</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{institutions.length} institution{institutions.length !== 1 ? "s" : ""} total</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={load}
             disabled={loading}
-            className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors disabled:opacity-50"
+            className="rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
           <button
             onClick={() => { setShowCreate(true); setErr(null); setInstName(""); }}
-            className="flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 transition-colors"
+            className="flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-violet-600 transition-colors"
           >
             <Plus className="h-4 w-4" />
             New Institution
@@ -125,7 +125,7 @@ export default function InstitutionsPage() {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
         <input
           type="text"
           placeholder="Search institutions…"
@@ -136,22 +136,22 @@ export default function InstitutionsPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
+      <div className="rounded-2xl border border-gray-200 bg-white border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800">
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Institution</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400">
+              <tr className="border-b border-gray-200">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Institution</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
                   <Globe className="inline h-3.5 w-3.5 mr-1" />Depts
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
                   <Users className="inline h-3.5 w-3.5 mr-1" />Students
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
                   <GraduationCap className="inline h-3.5 w-3.5 mr-1" />Lecturers
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">
                   <DoorOpen className="inline h-3.5 w-3.5 mr-1" />Rooms
                 </th>
               </tr>
@@ -159,15 +159,15 @@ export default function InstitutionsPage() {
             <tbody>
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
-                  <tr key={i} className="border-b border-slate-800/50">
+                  <tr key={i} className="border-b border-gray-200/50">
                     <td colSpan={5} className="px-4 py-3">
-                      <div className="h-4 rounded-md bg-slate-800 animate-pulse w-2/3" />
+                      <div className="h-4 rounded-md bg-gray-200 animate-pulse w-2/3" />
                     </td>
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-10 text-center text-slate-500">
+                  <td colSpan={5} className="px-4 py-10 text-center text-gray-400">
                     {search ? "No institutions match your search." : "No institutions yet."}
                   </td>
                 </tr>
@@ -178,23 +178,23 @@ export default function InstitutionsPage() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.03 }}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors"
+                    className="border-b border-gray-200/50 hover:bg-gray-50 transition-colors"
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/15 shrink-0">
-                          <Building2 className="h-4 w-4 text-violet-400" />
+                          <Building2 className="h-4 w-4 text-violet-600" />
                         </div>
                         <div>
-                          <p className="font-medium text-slate-200">{inst.name}</p>
-                          <p className="text-xs text-slate-500 font-mono">{inst.id.slice(0, 8)}…</p>
+                          <p className="font-medium text-gray-800">{inst.name}</p>
+                          <p className="text-xs text-gray-400 font-mono">{inst.id.slice(0, 8)}…</p>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-center text-slate-300">{inst._count.departments}</td>
-                    <td className="px-4 py-3 text-center text-slate-300">{inst._count.students.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-center text-slate-300">{inst._count.lecturers}</td>
-                    <td className="px-4 py-3 text-center text-slate-300">{inst._count.admins}</td>
+                    <td className="px-4 py-3 text-center text-gray-700">{inst._count.departments}</td>
+                    <td className="px-4 py-3 text-center text-gray-700">{inst._count.students.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-center text-gray-700">{inst._count.lecturers}</td>
+                    <td className="px-4 py-3 text-center text-gray-700">{inst._count.admins}</td>
                   </motion.tr>
                 ))
               )}
@@ -222,10 +222,10 @@ export default function InstitutionsPage() {
               exit={{ opacity: 0, scale: 0.95, y: 10 }}
               className="fixed inset-0 z-50 flex items-center justify-center p-4"
             >
-              <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+              <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white border border-gray-200 p-6 shadow-2xl">
                 <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-base font-semibold text-white">New Institution</h2>
-                  <button onClick={() => setShowCreate(false)} className="rounded-lg p-1 text-slate-400 hover:text-white">
+                  <h2 className="text-base font-semibold text-gray-900">New Institution</h2>
+                  <button onClick={() => setShowCreate(false)} className="rounded-lg p-1 text-gray-500 hover:text-gray-900">
                     <X className="h-4 w-4" />
                   </button>
                 </div>
@@ -243,20 +243,20 @@ export default function InstitutionsPage() {
                     />
                   </div>
 
-                  {err && <p className="rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-400">{err}</p>}
+                  {err && <p className="rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-600">{err}</p>}
 
                   <div className="flex justify-end gap-2 pt-1">
                     <button
                       type="button"
                       onClick={() => setShowCreate(false)}
-                      className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 transition-colors"
+                      className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
                       disabled={saving}
-                      className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50 transition-colors"
+                      className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-violet-600 disabled:opacity-50 transition-colors"
                     >
                       {saving ? "Creating…" : "Create Institution"}
                     </button>

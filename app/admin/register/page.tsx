@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { Card } from "@/app/components/ui/card";
 import { Label } from "@/app/components/ui/label";
 import { Input } from "@/app/components/ui/input";
@@ -10,12 +10,9 @@ import { Button } from "@/app/components/ui/button";
 import { FormField, AlertBanner } from "@/app/components/ui/form";
 
 type Role =
-  | "institution_admin"
-  | "department_admin"
-  | "compliance_admin"
-  | "faculty_admin"
-  | "registry_admin"
-  | "space_admin";
+  | "system_admin"
+  | "academic_registrar"
+  | "facilities_manager";
 
 interface RoleOption {
   value: Role;
@@ -32,9 +29,9 @@ interface RoleOption {
 
 const ROLE_OPTIONS: RoleOption[] = [
   {
-    value: "institution_admin",
-    label: "Institution Admin",
-    description: "Manage an entire institution — departments, courses & staff.",
+    value: "system_admin",
+    label: "System Administrator",
+    description: "Onboard and manage an entire institution — departments, staff & settings.",
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10h16v11H4V10z" />
@@ -48,73 +45,25 @@ const ROLE_OPTIONS: RoleOption[] = [
     canCreateInstitution: true,
   },
   {
-    value: "department_admin",
-    label: "Department Admin",
-    description: "Oversee a specific department within an institution.",
+    value: "academic_registrar",
+    label: "Academic Registrar",
+    description: "Manage students, lecturers, curriculum, timetable & academic records.",
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
       </svg>
     ),
     color: "text-purple-300",
     border: "border-purple-500/40",
     bg: "bg-purple-500/10",
     needsInstitution: true,
-    needsDepartment: true,
-    canCreateInstitution: false,
-  },
-  {
-    value: "faculty_admin",
-    label: "Faculty Admin",
-    description: "Manage faculty members and academic scheduling.",
-    icon: (
-      <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 14l9-5-9-5-9 5 9 5z" /><path strokeLinecap="round" strokeLinejoin="round" d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
-      </svg>
-    ),
-    color: "text-cyan-300",
-    border: "border-cyan-500/40",
-    bg: "bg-cyan-500/10",
-    needsInstitution: true,
     needsDepartment: false,
     canCreateInstitution: false,
   },
   {
-    value: "registry_admin",
-    label: "Registry Admin",
-    description: "Handle student records, enrolment & official documentation.",
-    icon: (
-      <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-      </svg>
-    ),
-    color: "text-teal-300",
-    border: "border-teal-500/40",
-    bg: "bg-teal-500/10",
-    needsInstitution: true,
-    needsDepartment: false,
-    canCreateInstitution: false,
-  },
-  {
-    value: "compliance_admin",
-    label: "Compliance Admin",
-    description: "Monitor regulatory compliance, audits & policy enforcement.",
-    icon: (
-      <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-      </svg>
-    ),
-    color: "text-green-300",
-    border: "border-green-500/40",
-    bg: "bg-green-500/10",
-    needsInstitution: true,
-    needsDepartment: false,
-    canCreateInstitution: false,
-  },
-  {
-    value: "space_admin",
-    label: "Space Admin",
-    description: "Manage room bookings, facilities & physical resources.",
+    value: "facilities_manager",
+    label: "Facilities Manager",
+    description: "Manage room bookings, reservations and physical space resources.",
     icon: (
       <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
@@ -130,12 +79,9 @@ const ROLE_OPTIONS: RoleOption[] = [
 ];
 
 const ROLE_DASHBOARD: Record<Role, string> = {
-  institution_admin: "/admin/institution-admin/dashboard",
-  department_admin:  "/admin/department-admin/dashboard",
-  compliance_admin:  "/admin/compliance-admin/dashboard",
-  faculty_admin:     "/admin/faculty-admin/dashboard",
-  registry_admin:    "/admin/registry-admin/dashboard",
-  space_admin:       "/admin/space-admin/dashboard",
+  system_admin:       "/admin/system-admin/dashboard",
+  academic_registrar: "/admin/academic-registrar/dashboard",
+  facilities_manager: "/admin/facilities-manager/dashboard",
 };
 
 export default function AdminRegisterPage() {
@@ -152,11 +98,36 @@ export default function AdminRegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   // Institution fields
-  const [createInstitution, setCreateInstitution] = useState(true); // institution_admin only
+  const [createInstitution, setCreateInstitution] = useState(true); // system_admin only
   const [institutionId, setInstitutionId] = useState("");
   const [institutionName, setInstitutionName] = useState("");
 
-  // Department fields (department_admin)
+  // Institution picker (academic_registrar / facilities_manager)
+  const [institutions, setInstitutions] = useState<{ id: string; name: string }[]>([]);
+  const [institutionsLoading, setInstitutionsLoading] = useState(false);
+  const [institutionSearch, setInstitutionSearch] = useState("");
+  const [institutionDropdownOpen, setInstitutionDropdownOpen] = useState(false);
+  const institutionInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch institutions list when entering step 2 for roles that need a picker
+  useEffect(() => {
+    if (
+      step !== 2 ||
+      !selectedRole ||
+      selectedRole.canCreateInstitution
+    ) return;
+
+    setInstitutionsLoading(true);
+    fetch("/api/institutions")
+      .then((r) => r.json())
+      .then((data) => {
+        setInstitutions(Array.isArray(data) ? data : (data.data ?? []));
+      })
+      .catch(() => setInstitutions([]))
+      .finally(() => setInstitutionsLoading(false));
+  }, [step, selectedRole]);
+
+  // Department fields (kept for API compat, no longer shown in UI)
   const [departmentName, setDepartmentName] = useState("");
 
   const [error, setError] = useState<string | null>(null);
@@ -167,6 +138,9 @@ export default function AdminRegisterPage() {
 
   const handleRoleSelect = (option: RoleOption) => {
     setSelectedRole(option);
+    setInstitutionId("");
+    setInstitutionSearch("");
+    setInstitutionDropdownOpen(false);
     setStep(2);
     setError(null);
   };
@@ -185,19 +159,27 @@ export default function AdminRegisterPage() {
     }
 
     const role = selectedRole!.value;
+
+    // For roles that use the institution picker, ensure a selection was made
+    if (
+      selectedRole!.needsInstitution &&
+      !selectedRole!.canCreateInstitution &&
+      !institutionId
+    ) {
+      setError("Please select an institution from the list.");
+      return;
+    }
+
     const body: Record<string, string> = { fullName, email, password, role };
 
-    if (role === "institution_admin") {
+    if (role === "system_admin") {
       if (createInstitution) {
         body.institutionName = institutionName;
       } else {
         body.institutionId = institutionId;
       }
-    } else if (role === "department_admin") {
-      body.institutionId = institutionId;
-      body.departmentName = departmentName;
     } else {
-      // compliance, faculty, registry, space
+      // academic_registrar, facilities_manager
       body.institutionId = institutionId;
     }
 
@@ -354,10 +336,10 @@ export default function AdminRegisterPage() {
                 </FormField>
               </div>
 
-              {/* institution_admin: create or join */}
-              {selectedRole.value === "institution_admin" && (
+              {/* system_admin: create or join */}
+              {selectedRole.value === "system_admin" && (
                 <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-3">
-                  <p className="text-sm font-semibold text-slate-200">Institution</p>
+                  <p className="text-sm font-semibold text-white">Institution</p>
                   <div className="flex gap-3">
                     <button
                       type="button"
@@ -396,44 +378,72 @@ export default function AdminRegisterPage() {
                 </div>
               )}
 
-              {/* department_admin: institution ID + department name */}
-              {selectedRole.value === "department_admin" && (
-                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-3">
-                  <p className="text-sm font-semibold text-slate-200">Institution & Department</p>
-                  <Input
-                    type="text"
-                    theme="dark"
-                    required
-                    value={institutionId}
-                    onChange={(e) => setInstitutionId(e.target.value)}
-                    placeholder="Institution ID (provided by institution admin)"
-                  />
-                  <Input
-                    type="text"
-                    theme="dark"
-                    required
-                    value={departmentName}
-                    onChange={(e) => setDepartmentName(e.target.value)}
-                    placeholder="Department name (e.g. Computer Science)"
-                  />
-                </div>
-              )}
-
-              {/* Other institution-level roles: just institution ID */}
-              {selectedRole.needsInstitution && !selectedRole.canCreateInstitution && selectedRole.value !== "department_admin" && (
+              {/* Other institution-level roles: institution picker */}
+              {selectedRole.needsInstitution && !selectedRole.canCreateInstitution && (
                 <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4">
                   <FormField>
-                    <Label htmlFor="reg-inst-id" theme="dark">Institution ID</Label>
-                    <Input
-                      id="reg-inst-id"
-                      type="text"
-                      theme="dark"
-                      required
-                      value={institutionId}
-                      onChange={(e) => setInstitutionId(e.target.value)}
-                      placeholder="Institution ID (provided by institution admin)"
-                    />
-                    <p className="text-xs text-slate-500 mt-0.5">Contact your Institution Admin to obtain this ID.</p>
+                    <Label htmlFor="reg-inst-search" theme="dark">Institution</Label>
+                    <div className="relative">
+                      <input
+                        id="reg-inst-search"
+                        ref={institutionInputRef}
+                        type="text"
+                        autoComplete="off"
+                        required
+                        value={institutionSearch}
+                        onChange={(e) => {
+                          setInstitutionSearch(e.target.value);
+                          setInstitutionId("");
+                          setInstitutionDropdownOpen(true);
+                        }}
+                        onFocus={() => setInstitutionDropdownOpen(true)}
+                        onBlur={() => setTimeout(() => setInstitutionDropdownOpen(false), 150)}
+                        placeholder={institutionsLoading ? "Loading institutions…" : "Search for your institution…"}
+                        disabled={institutionsLoading}
+                        className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-violet-500 focus:outline-none focus:ring-1 focus:ring-violet-500 disabled:opacity-50"
+                      />
+                      {/* chevron icon */}
+                      <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </span>
+
+                      {/* Dropdown */}
+                      {institutionDropdownOpen && !institutionsLoading && (
+                        <ul className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto rounded-lg border border-slate-600 bg-slate-800 shadow-xl shadow-black/40">
+                          {institutions
+                            .filter((inst) =>
+                              inst.name.toLowerCase().includes(institutionSearch.toLowerCase())
+                            )
+                            .map((inst) => (
+                              <li key={inst.id}>
+                                <button
+                                  type="button"
+                                  onMouseDown={() => {
+                                    setInstitutionId(inst.id);
+                                    setInstitutionSearch(inst.name);
+                                    setInstitutionDropdownOpen(false);
+                                  }}
+                                  className="w-full px-3 py-2 text-left text-sm text-slate-200 hover:bg-violet-500/20 hover:text-violet-300 transition-colors"
+                                >
+                                  {inst.name}
+                                </button>
+                              </li>
+                            ))}
+                          {institutions.filter((inst) =>
+                            inst.name.toLowerCase().includes(institutionSearch.toLowerCase())
+                          ).length === 0 && (
+                            <li className="px-3 py-2 text-sm text-slate-500">No institutions found.</li>
+                          )}
+                        </ul>
+                      )}
+                    </div>
+                    {/* Hidden required input so form validation fires when no selection made */}
+                    <input type="hidden" name="institutionId" value={institutionId} required />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Select the institution you will be managing.
+                    </p>
                   </FormField>
                 </div>
               )}

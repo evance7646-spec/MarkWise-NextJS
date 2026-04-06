@@ -49,8 +49,8 @@ export async function saveUploadedFile(file: File): Promise<SavedFile> {
   await fs.promises.writeFile(path.join(uploadsDir, filename), buffer);
 
   // Videos: use the /stream/ path (served by the Range-aware API handler)
-  // Other files: served directly as Next.js static assets under /uploads/
-  const fileUrl = isVideo ? `/stream/${filename}` : `/uploads/${filename}`;
+  // Other files: served via /api/files/ (JWT-authenticated download route)
+  const fileUrl = isVideo ? `/stream/${filename}` : `/api/files/${filename}`;
 
   return {
     fileUrl,

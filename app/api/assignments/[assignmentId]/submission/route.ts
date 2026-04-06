@@ -19,16 +19,22 @@ export async function GET(req: NextRequest, context: { params: Promise<{ assignm
   });
   if (!submission) return NextResponse.json({ error: 'No submission found' }, { status: 404 });
 
+  const derivedType = submission.fileUrl ? 'file' : submission.linkUrl ? 'link' : 'text';
+
   return NextResponse.json({
     id: submission.id,
     assignmentId: submission.assignmentId,
     studentId: submission.studentId,
     submittedAt: submission.submittedAt,
-    fileUrl: submission.fileUrl,
-    text: submission.textContent,
     late: submission.submittedAt > assignment.dueDate,
-    grade: submission.grade,
-    feedback: submission.feedback,
+    grade: submission.grade ?? null,
+    feedback: submission.feedback ?? null,
     version: submission.version,
+    type: (submission as any).type ?? derivedType,
+    text: submission.textContent ?? null,
+    linkUrl: submission.linkUrl ?? null,
+    fileUrl: submission.fileUrl ?? null,
+    fileName: submission.fileName ?? null,
+    mimeType: (submission as any).mimeType ?? null,
   });
 }

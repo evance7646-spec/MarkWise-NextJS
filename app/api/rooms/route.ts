@@ -86,15 +86,6 @@ export async function GET(request: Request) {
       skip: offset,
     });
 
-    // If institutionId was provided but no rooms found, fetch all active rooms with limit
-    if (parsed.data.institutionId && rooms.length === 0) {
-      rooms = await prisma.room.findMany({
-        where: { isActive: true },
-        orderBy: [{ institutionId: "asc" }, { buildingCode: "asc" }, { roomCode: "asc" }],
-        take: limit,
-        skip: offset,
-      });
-    }
 
 
 
@@ -156,101 +147,84 @@ export async function GET(request: Request) {
       }
     }
 
-    const withAvailability = await Promise.all(
-      rooms.map(async (room) => {
-        const now = new Date();
-        // Only fetch bookings within the requested window (defaults to today)
-        const bookings = await prisma.booking.findMany({
-          where: {
-            roomId: room.id,
-            status: { in: ["reserved", "occupied"] },
-            startAt: { lt: windowEnd },
-            endAt: { gt: windowStart },
-          },
-          orderBy: { startAt: "asc" },
-          include: {
-            lecturer: true,
-            unit: true,
-          },
-        });
+    // Batch-fetch ALL bookings and holds for all rooms in 2 queries (avoids N+1 pool exhaustion)
+    const now = new Date();
+    const allBookings = roomIds.length > 0 ? await prisma.booking.findMany({
+      where: {
+        roomId: { in: roomIds },
+        status: { in: ["reserved", "occupied"] },
+        startAt: { lt: windowEnd },
+        endAt: { gt: windowStart },
+      },
+      orderBy: { startAt: "asc" },
+      include: { lecturer: true, unit: true },
+    }) : [];
 
-        // Find the current booking (if any)
-        const currentBooking = bookings.find(
-          (b) => new Date(b.startAt) <= now && new Date(b.endAt) > now
-        );
+    const allActiveHolds = roomIds.length > 0 ? await prisma.bookingHold.findMany({
+      where: {
+        roomId: { in: roomIds },
+        status: "active",
+        expiresAt: { gt: now },
+        startAt: { lt: windowEnd },
+        endAt: { gt: windowStart },
+      },
+      select: { id: true, roomId: true },
+    }) : [];
 
-        // Find the next booking (if any)
-        const nextBooking = bookings.find(
-          (b) => new Date(b.startAt) > now
-        );
+    // Group by roomId for O(1) lookup
+    const bookingsByRoom = new Map<string, typeof allBookings>();
+    for (const b of allBookings) {
+      if (!bookingsByRoom.has(b.roomId)) bookingsByRoom.set(b.roomId, []);
+      bookingsByRoom.get(b.roomId)!.push(b);
+    }
+    const holdRoomIds = new Set(allActiveHolds.map((h) => h.roomId));
 
-        // Attach booking details for reserved rooms using next booking if no current booking exists
-        let bookingStartTime = currentBooking?.startAt?.toISOString();
-        let bookingEndTime = currentBooking?.endAt?.toISOString();
-        let bookingUnitCode = currentBooking?.unitCode || currentBooking?.unit?.code;
-        let bookingLecturerName = currentBooking?.lecturer?.fullName || currentBooking?.lecturer?.email;
+    const withAvailability = rooms.map((room) => {
+      const bookings = bookingsByRoom.get(room.id) ?? [];
 
-        // If room is reserved and no current booking, use next booking details
-        if (room.status === "reserved" && !currentBooking && nextBooking) {
-          bookingStartTime = nextBooking.startAt?.toISOString();
-          bookingEndTime = nextBooking.endAt?.toISOString();
-          bookingUnitCode = nextBooking.unitCode || nextBooking.unit?.code;
-          bookingLecturerName = nextBooking.lecturer?.fullName || nextBooking.lecturer?.email;
+      const currentBooking = bookings.find(
+        (b) => new Date(b.startAt) <= now && new Date(b.endAt) > now
+      );
+      const nextBooking = bookings.find((b) => new Date(b.startAt) > now);
+
+      let bookingStartTime = currentBooking?.startAt?.toISOString();
+      let bookingEndTime = currentBooking?.endAt?.toISOString();
+      let bookingUnitCode = currentBooking?.unitCode || currentBooking?.unit?.code;
+      let bookingLecturerName = currentBooking?.lecturer?.fullName || currentBooking?.lecturer?.email;
+
+      if (room.status === "reserved" && !currentBooking && nextBooking) {
+        bookingStartTime = nextBooking.startAt?.toISOString();
+        bookingEndTime = nextBooking.endAt?.toISOString();
+        bookingUnitCode = nextBooking.unitCode || nextBooking.unit?.code;
+        bookingLecturerName = nextBooking.lecturer?.fullName || nextBooking.lecturer?.email;
+      }
+
+      const hasBookingConflict = bookings.length > 0 || holdRoomIds.has(room.id);
+      const hasTimetableConflict = timetableBusyIds.has(room.id);
+      const hasConflict = hasBookingConflict || hasTimetableConflict;
+
+      let windowStatus: string | undefined;
+      if (hasExplicitWindow) {
+        if (room.status === "unavailable") {
+          windowStatus = "unavailable";
+        } else if (hasConflict) {
+          windowStatus = currentBooking?.status ?? (bookings.length > 0 ? bookings[0].status : "reserved");
+        } else {
+          windowStatus = "free";
         }
+      }
 
-        const [bookingConflict, holdConflict] = await Promise.all([
-          prisma.booking.findFirst({
-            where: {
-              roomId: room.id,
-              status: { in: ["reserved", "occupied"] },
-              startAt: { lt: windowEnd },
-              endAt: { gt: windowStart },
-            },
-            select: { id: true },
-          }),
-          prisma.bookingHold.findFirst({
-            where: {
-              roomId: room.id,
-              status: "active",
-              expiresAt: { gt: new Date() },
-              startAt: { lt: windowEnd },
-              endAt: { gt: windowStart },
-            },
-            select: { id: true },
-          }),
-        ]);
-
-        const hasBookingConflict = Boolean(bookingConflict || holdConflict);
-        const hasTimetableConflict = timetableBusyIds.has(room.id);
-        const hasConflict = hasBookingConflict || hasTimetableConflict;
-
-        // When an explicit time window is provided, compute the availability
-        // status for that window instead of using the DB's real-time status.
-        let windowStatus: string | undefined;
-        if (hasExplicitWindow) {
-          if (room.status === "unavailable") {
-            windowStatus = "unavailable";
-          } else if (hasConflict) {
-            // Use the booking's actual status if available, otherwise "reserved"
-            windowStatus = currentBooking?.status ?? (bookings.length > 0 ? bookings[0].status : "reserved");
-          } else {
-            windowStatus = "free";
-          }
-        }
-
-        return {
-          ...toRoomStatusPayload(room),
-          hasConflict,
-          // Override status with window-aware status when explicit window given
-          ...(windowStatus ? { status: windowStatus } : {}),
-          bookingStartTime,
-          bookingEndTime,
-          bookingUnitCode,
-          bookingLecturerName,
-          bookings,
-        };
-      })
-    );
+      return {
+        ...toRoomStatusPayload(room),
+        hasConflict,
+        ...(windowStatus ? { status: windowStatus } : {}),
+        bookingStartTime,
+        bookingEndTime,
+        bookingUnitCode,
+        bookingLecturerName,
+        bookings,
+      };
+    });
 
     return jsonOk({
       rooms: withAvailability,

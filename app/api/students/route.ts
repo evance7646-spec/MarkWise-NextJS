@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
   // Determine which departmentId to query
   // - dept_admin: must use their own departmentId (ignore or validate the param)
-  // - institution_admin: may query any department in their institution
+  // - system_admin: may query any department in their institution
   let departmentId: string;
   if (scope.isInstitutionAdmin) {
     if (!requestedDeptId) {

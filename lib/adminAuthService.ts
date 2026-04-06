@@ -15,12 +15,12 @@ type AdminSignupBody = {
   email?: string;
   password?: string;
   role?: string;
-  // institution_admin fields
+  // system_admin fields
   institutionId?: string;   // existing institution — skip creation when provided
   institutionName?: string; // new institution name — used when institutionId is absent
   logoUrl?: string;
   logo?: string;            // legacy alias for logoUrl (multipart upload filename)
-  // department_admin fields
+  // (legacy department fields — no longer used by registerable roles)
   departmentId?: string;    // existing department — skip creation when provided
   departmentName?: string;  // new/existing department name — find-or-create when departmentId absent
 };
@@ -58,12 +58,9 @@ export async function handleAdminSignup(request: Request) {
       );
     }
     const REGISTERABLE_ROLES = [
-      "institution_admin",
-      "department_admin",
-      "compliance_admin",
-      "faculty_admin",
-      "registry_admin",
-      "space_admin",
+      "system_admin",
+      "academic_registrar",
+      "facilities_manager",
     ];
     if (!REGISTERABLE_ROLES.includes(role ?? "")) {
       return NextResponse.json(
@@ -84,8 +81,8 @@ export async function handleAdminSignup(request: Request) {
     const hashedPassword = await hashPassword(password);
     let admin: Awaited<ReturnType<typeof prisma.admin.create>>;
 
-    // ── institution_admin ─────────────────────────────────────────────────────
-    if (role === "institution_admin") {
+    // ── system_admin ─────────────────────────────────────────────────────────
+    if (role === "system_admin") {
       const institutionName = body.institutionName?.trim() || `${fullName} Institution`;
       const logoUrl = body.logoUrl || body.logo || null;
 
@@ -142,7 +139,7 @@ export async function handleAdminSignup(request: Request) {
     }
 
     // ── institution-level roles (no department) ───────────────────────────────
-    const INSTITUTION_LEVEL_ROLES = ["compliance_admin", "faculty_admin", "registry_admin", "space_admin"];
+    const INSTITUTION_LEVEL_ROLES = ["academic_registrar", "facilities_manager"];
     if (INSTITUTION_LEVEL_ROLES.includes(role!)) {
       if (!institutionId) {
         return NextResponse.json(
@@ -180,7 +177,7 @@ export async function handleAdminSignup(request: Request) {
       );
     }
 
-    // ── department_admin ──────────────────────────────────────────────────────
+    // ── dead code: department_admin removed ──────────────────────────────────
     if (!institutionId) {
       return NextResponse.json(
         { error: "Institution ID is required for department admin." },

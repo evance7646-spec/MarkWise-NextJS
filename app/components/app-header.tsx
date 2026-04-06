@@ -52,7 +52,7 @@ export default function AppHeader() {
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: i * 0.1 }}
-              href={`#${item.toLowerCase().replace(/\s+/g, "-")}`}
+              href={item === "Pricing" ? "/pricing" : `#${item.toLowerCase().replace(/\s+/g, "-")}`}
               className="text-sm font-medium text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-300 transition-colors relative group"
             >
               {item}
@@ -82,37 +82,25 @@ export default function AppHeader() {
               {dropdownOpen === "signin" && (
                 <div className="absolute right-0 mt-2 w-64 rounded-2xl shadow-2xl border-2 border-indigo-200 dark:border-indigo-600 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 dark:from-slate-900 dark:via-indigo-950 dark:to-cyan-950 z-50 overflow-hidden">
                   {/* Institutional portals */}
-                  <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Institutional Portals</p>
+                  <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Admin Portals</p>
                   {[
-                    { label: "Institution Admin", href: "/admin/institution-admin/login", color: "text-indigo-700 dark:text-indigo-300" },
-                    { label: "Faculty Admin",     href: "/faculty/login",     color: "text-cyan-700 dark:text-cyan-300" },
-                    { label: "Registry Admin",    href: "/registry/login",    color: "text-teal-700 dark:text-teal-300" },
-                    { label: "Compliance Admin",  href: "/compliance/login",  color: "text-green-700 dark:text-green-300" },
-                    { label: "Space Admin",       href: "/admin/login",       color: "text-orange-700 dark:text-orange-300" },
+                    { label: "System Administrator", href: "/admin/login", color: "text-indigo-700 dark:text-indigo-300" },
+                    { label: "Academic Registrar",   href: "/admin/login", color: "text-purple-700 dark:text-purple-300" },
+                    { label: "Facilities Manager",   href: "/admin/login", color: "text-orange-700 dark:text-orange-300" },
                   ].map((item) => (
                     <button
-                      key={item.href}
+                      key={item.label}
                       className={`flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm font-semibold ${item.color} hover:bg-indigo-100 dark:hover:bg-indigo-800/60 transition-colors duration-150`}
                       onClick={() => { router.push(item.href); setDropdownOpen(null); }}
                     >
                       {item.label}
                     </button>
                   ))}
-                  {/* Department portal */}
-                  <div className="border-t border-indigo-100 dark:border-indigo-800/60 mt-1">
-                    <p className="px-4 pt-2.5 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Department</p>
-                    <button
-                      className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm font-semibold text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-800/60 transition-colors duration-150"
-                      onClick={() => { router.push("/admin/department-admin/login"); setDropdownOpen(null); }}
-                    >
-                      Department Admin
-                    </button>
-                  </div>
                   {/* Super admin */}
                   <div className="border-t border-indigo-100 dark:border-indigo-800/60 mt-1 mb-1">
                     <button
                       className="flex items-center gap-2 w-full text-left px-4 py-2.5 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors duration-150"
-                      onClick={() => { router.push("/super/login"); setDropdownOpen(null); }}
+                      onClick={() => { router.push("/admin/login"); setDropdownOpen(null); }}
                     >
                       <svg className="h-3.5 w-3.5 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />

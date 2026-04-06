@@ -49,7 +49,7 @@ model Assignment {
   lecturerId   String
   type         String       @default("individual")
   isGroup      Boolean      @default(false)
-  allowedTypes String[]     @default([])
+  allowedTypes String[]     @default(["file", "link", "text"])
   blockLate    Boolean      @default(false)
   allowResub      Boolean      @default(true)
   attemptsAllowed Int          @default(1)
@@ -71,8 +71,10 @@ model Submission {
   assignmentId    String
   studentId       String?
   groupId         String?
+  type            String           @default("file")
   fileUrl         String?
   fileName        String?
+  mimeType        String?
   linkUrl         String?
   textContent     String?
   submittedByName String?
@@ -772,12 +774,9 @@ model StudentEnrollmentSnapshot {
 
 enum AdminRole {
   super_admin
-  institution_admin
-  department_admin
-  space_admin
-  faculty_admin
-  compliance_admin
-  registry_admin
+  system_admin
+  academic_registrar
+  facilities_manager
 }
 
 enum UserType {

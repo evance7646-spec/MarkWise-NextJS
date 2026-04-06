@@ -10,23 +10,17 @@ import { Button } from "@/app/components/ui/button";
 import { FormField, AlertBanner } from "@/app/components/ui/form";
 
 const ROLE_DASHBOARD: Record<string, string> = {
-  super_admin:       "/admin/super-admin/dashboard",
-  institution_admin: "/admin/institution-admin/dashboard",
-  compliance_admin:  "/admin/compliance-admin/dashboard",
-  faculty_admin:     "/admin/faculty-admin/dashboard",
-  registry_admin:    "/admin/registry-admin/dashboard",
-  space_admin:       "/admin/space-admin/dashboard",
-  department_admin:  "/admin/department-admin/dashboard",
+  super_admin:        "/admin/super-admin/dashboard",
+  system_admin:       "/admin/system-admin/dashboard",
+  academic_registrar: "/admin/academic-registrar/dashboard",
+  facilities_manager: "/admin/facilities-manager/dashboard",
 };
 
 const ROLE_LABELS: Record<string, string> = {
-  super_admin:       "Super Admin",
-  institution_admin: "Institution Admin",
-  compliance_admin:  "Compliance Admin",
-  faculty_admin:     "Faculty Admin",
-  registry_admin:    "Registry Admin",
-  space_admin:       "Space Admin",
-  department_admin:  "Department Admin",
+  super_admin:        "Super Admin",
+  system_admin:       "System Administrator",
+  academic_registrar: "Academic Registrar",
+  facilities_manager: "Facilities Manager",
 };
 
 export default function AdminLoginPage() {
@@ -179,7 +173,7 @@ export default function AdminLoginPage() {
             </p>
           </div>
 
-          <div className="mt-5 pt-4 border-t border-slate-700">
+          <div className="mt-5 pt-4 border-t border-slate-600/70">
             <p className="text-xs text-slate-500 text-center">
               Access is role-restricted. You&apos;ll be redirected to your portal after sign-in.
             </p>

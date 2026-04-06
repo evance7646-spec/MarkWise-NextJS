@@ -120,36 +120,39 @@ export async function recomputeRoomStatus(tx: TxClient, roomId: string, reason: 
 export async function expireHolds(actorId: string | null = "system") {
   const now = new Date();
 
-  await prisma.$transaction(async (tx) => {
-    const expiredHolds = await tx.bookingHold.findMany({
-      where: {
-        status: BookingHoldStatus.active,
-        expiresAt: { lte: now },
-      },
-      select: {
-        id: true,
-        roomId: true,
-      },
-    });
+  // Find expired holds outside any transaction to avoid long-lived locks
+  const expiredHolds = await prisma.bookingHold.findMany({
+    where: {
+      status: BookingHoldStatus.active,
+      expiresAt: { lte: now },
+    },
+    select: { id: true, roomId: true },
+  });
 
-    if (!expiredHolds.length) return;
+  if (!expiredHolds.length) return;
 
-    const holdIds = expiredHolds.map((item) => item.id);
-    const affectedRoomIds = [...new Set(expiredHolds.map((item) => item.roomId))];
+  const holdIds = expiredHolds.map((item) => item.id);
+  const affectedRoomIds = [...new Set(expiredHolds.map((item) => item.roomId))];
 
-    await tx.bookingHold.updateMany({
-      where: {
-        id: { in: holdIds },
-      },
-      data: {
-        status: BookingHoldStatus.expired,
-      },
-    });
+  // Expire the holds in one atomic batch — no interactive transaction needed
+  await prisma.bookingHold.updateMany({
+    where: { id: { in: holdIds } },
+    data: { status: BookingHoldStatus.expired },
+  });
 
-    for (const roomId of affectedRoomIds) {
-      await recomputeRoomStatus(tx, roomId, "hold.expired", actorId);
-    }
-  }, { maxWait: 10000, timeout: 30000 });
+  // Recompute status for each affected room in small, independent transactions
+  const BATCH_SIZE = 3;
+  for (let i = 0; i < affectedRoomIds.length; i += BATCH_SIZE) {
+    const batch = affectedRoomIds.slice(i, i + BATCH_SIZE);
+    await Promise.allSettled(
+      batch.map((roomId) =>
+        prisma.$transaction(
+          (tx) => recomputeRoomStatus(tx, roomId, "hold.expired", actorId),
+          { maxWait: 3_000, timeout: 10_000 },
+        )
+      )
+    );
+  }
 }
 
 async function assertNoConflicts(

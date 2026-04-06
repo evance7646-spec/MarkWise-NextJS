@@ -66,14 +66,14 @@ export async function resolveAdminScope(request: Request | NextRequest): Promise
   }
 
   // Institution-level roles can see all departments/data within their institution.
-  const INSTITUTION_LEVEL_ROLES = ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'];
+  const INSTITUTION_LEVEL_ROLES = ['system_admin', 'academic_registrar', 'facilities_manager'];
 
   // Fast path: new tokens embed departmentId/institutionId/role — skip DB entirely
   if (payload.departmentId !== undefined || payload.institutionId !== undefined) {
     return {
       ok: true,
       adminId,
-      role: payload.role ?? 'institution_admin',
+      role: payload.role ?? 'system_admin',
       institutionId: payload.institutionId ?? null,
       departmentId: payload.departmentId ?? null,
       isInstitutionAdmin: INSTITUTION_LEVEL_ROLES.includes(payload.role ?? ''),
@@ -105,13 +105,13 @@ export function getAdminScopeFromJWT(req: NextRequest): AdminScopeResult {
   if (!token) return { ok: false, status: 401, error: 'Missing Authorization header' };
   try {
     const payload = verify(token, getJwtSecret()) as any;
-    const INSTITUTION_LEVEL_ROLES = ['institution_admin', 'compliance_admin', 'faculty_admin', 'registry_admin', 'space_admin'];
+    const INSTITUTION_LEVEL_ROLES = ['system_admin', 'academic_registrar', 'facilities_manager'];
     return {
       ok: true,
       adminId: payload.adminId || payload.id,
       institutionId: payload.institutionId ?? null,
       departmentId: payload.departmentId ?? null,
-      role: payload.role || 'institution_admin',
+      role: payload.role || 'system_admin',
       isInstitutionAdmin: INSTITUTION_LEVEL_ROLES.includes(payload.role || ''),
     };
   } catch {

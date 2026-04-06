@@ -25,10 +25,10 @@ function BarRow({ label, value, max, color, suffix = "" }: { label: string; valu
   return (
     <div>
       <div className="flex items-center justify-between text-xs mb-1">
-        <span className="text-slate-300 truncate max-w-36">{label}</span>
-        <span className="text-slate-400 tabular-nums">{value.toLocaleString()}{suffix}</span>
+        <span className="text-gray-700 truncate max-w-36">{label}</span>
+        <span className="text-gray-500 tabular-nums">{value.toLocaleString()}{suffix}</span>
       </div>
-      <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+      <div className="h-1.5 rounded-full bg-white overflow-hidden">
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: `${pct}%` }}
@@ -77,10 +77,10 @@ export default function PlatformAnalyticsPage() {
   const maxRevenue = byRevenue[0]?.rev ?? 1;
 
   const summaryKpis = [
-    { label: "Institutions",       value: stats?.institutions ?? 0, icon: Building2,  color: "text-sky-400",    sub: "SaaS clients" },
-    { label: "Institution Admins", value: stats?.admins       ?? 0, icon: ShieldCheck, color: "text-indigo-400", sub: "Admin accounts" },
-    { label: "Platform Users",     value: totalUsers,                icon: Users2,     color: "text-violet-400", sub: "Students + lecturers" },
-    { label: "Est. Revenue / sem", value: `KSh ${estimatedRevenue.toLocaleString()}`, icon: TrendingUp, color: "text-emerald-400", sub: `@ KSh ${PRICE_PER_STUDENT_PER_SEMESTER}/student`, isText: true },
+    { label: "Institutions",       value: stats?.institutions ?? 0, icon: Building2,  color: "text-sky-600",    sub: "SaaS clients" },
+    { label: "Institution Admins", value: stats?.admins       ?? 0, icon: ShieldCheck, color: "text-indigo-600", sub: "Admin accounts" },
+    { label: "Platform Users",     value: totalUsers,                icon: Users2,     color: "text-violet-600", sub: "Students + lecturers" },
+    { label: "Est. Revenue / sem", value: `KSh ${estimatedRevenue.toLocaleString()}`, icon: TrendingUp, color: "text-emerald-600", sub: `@ KSh ${PRICE_PER_STUDENT_PER_SEMESTER}/student`, isText: true },
   ];
 
   return (
@@ -88,10 +88,10 @@ export default function PlatformAnalyticsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Platform Analytics</h1>
-          <p className="text-sm text-slate-400 mt-0.5">Subscription usage and revenue estimates</p>
+          <h1 className="text-xl font-bold text-gray-900">Platform Analytics</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Subscription usage and revenue estimates</p>
         </div>
-        <button onClick={load} disabled={loading} className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors disabled:opacity-50">
+        <button onClick={load} disabled={loading} className="rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50">
           <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
         </button>
       </div>
@@ -100,26 +100,26 @@ export default function PlatformAnalyticsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {summaryKpis.map(({ label, value, icon: Icon, color, sub, isText }, i) => (
           <motion.div key={label} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.07 }}
-            className="rounded-2xl border border-slate-800 bg-slate-900 p-4">
+            className="rounded-2xl border border-gray-200 bg-white border border-gray-200 p-4">
             <Icon className={`h-4 w-4 ${color} mb-3`} />
-            <p className={`${isText ? "text-lg" : "text-2xl"} font-bold text-white`}>
+            <p className={`${isText ? "text-lg" : "text-2xl"} font-bold text-gray-900`}>
               {loading ? "—" : isText ? value : (value as number).toLocaleString()}
             </p>
-            <p className="text-xs font-medium text-slate-300 mt-0.5">{label}</p>
-            <p className="text-xs text-slate-500 mt-0.5">{sub}</p>
+            <p className="text-xs font-medium text-gray-700 mt-0.5">{label}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{sub}</p>
           </motion.div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Platform Users by Institution */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-1">Platform Users by Institution</h2>
-          <p className="text-xs text-slate-500 mb-4">Students + lecturers — reflects platform adoption</p>
+        <div className="rounded-2xl border border-gray-200 bg-white border border-gray-200 p-5">
+          <h2 className="text-sm font-semibold text-gray-700 mb-1">Platform Users by Institution</h2>
+          <p className="text-xs text-gray-400 mb-4">Students + lecturers — reflects platform adoption</p>
           {loading ? (
-            <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-6 rounded bg-slate-800 animate-pulse" />)}</div>
+            <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-6 rounded bg-gray-200 animate-pulse" />)}</div>
           ) : byUsers.length === 0 ? (
-            <p className="text-xs text-slate-500">No institutions yet</p>
+            <p className="text-xs text-gray-400">No institutions yet</p>
           ) : (
             <div className="space-y-3">
               {byUsers.slice(0, 10).map(inst => (
@@ -130,13 +130,13 @@ export default function PlatformAnalyticsPage() {
         </div>
 
         {/* Estimated Revenue by Institution */}
-        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-          <h2 className="text-sm font-semibold text-slate-300 mb-1">Est. Revenue by Institution</h2>
-          <p className="text-xs text-slate-500 mb-4">KSh {PRICE_PER_STUDENT_PER_SEMESTER}/student/semester<br/>(estimated, based on enrolled students)</p>
+        <div className="rounded-2xl border border-gray-200 bg-white border border-gray-200 p-5">
+          <h2 className="text-sm font-semibold text-gray-700 mb-1">Est. Revenue by Institution</h2>
+          <p className="text-xs text-gray-400 mb-4">KSh {PRICE_PER_STUDENT_PER_SEMESTER}/student/semester<br/>(estimated, based on enrolled students)</p>
           {loading ? (
-            <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-6 rounded bg-slate-800 animate-pulse" />)}</div>
+            <div className="space-y-3">{Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-6 rounded bg-gray-200 animate-pulse" />)}</div>
           ) : byRevenue.length === 0 ? (
-            <p className="text-xs text-slate-500">No institutions yet</p>
+            <p className="text-xs text-gray-400">No institutions yet</p>
           ) : (
             <div className="space-y-3">
               {byRevenue.slice(0, 10).map(inst => (
@@ -148,40 +148,40 @@ export default function PlatformAnalyticsPage() {
       </div>
 
       {/* Subscription Table */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
-        <div className="px-5 py-4 border-b border-slate-800">
-          <h2 className="text-sm font-semibold text-slate-300">Subscription Summary</h2>
-          <p className="text-xs text-slate-500 mt-0.5">One row per onboarded institution</p>
+      <div className="rounded-2xl border border-gray-200 bg-white border border-gray-200 overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-200">
+          <h2 className="text-sm font-semibold text-gray-700">Subscription Summary</h2>
+          <p className="text-xs text-gray-400 mt-0.5">One row per onboarded institution</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800">
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Institution</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400">Students</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400">Lecturers</th>
-                <th className="px-4 py-3 text-center text-xs font-medium text-slate-400">Total Users</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-slate-400">Est. Revenue / sem</th>
+              <tr className="border-b border-gray-200">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Institution</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Students</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Lecturers</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">Total Users</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Est. Revenue / sem</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 Array.from({ length: 4 }).map((_, i) => (
-                  <tr key={i} className="border-b border-slate-800/50">
-                    <td colSpan={5} className="px-4 py-3"><div className="h-4 rounded bg-slate-800 animate-pulse w-2/3" /></td>
+                  <tr key={i} className="border-b border-gray-200/50">
+                    <td colSpan={5} className="px-4 py-3"><div className="h-4 rounded bg-gray-200 animate-pulse w-2/3" /></td>
                   </tr>
                 ))
               ) : institutions.length === 0 ? (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No institutions onboarded yet.</td></tr>
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400">No institutions onboarded yet.</td></tr>
               ) : (
                 institutions.map((inst, i) => (
                   <motion.tr key={inst.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.03 }}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors">
-                    <td className="px-4 py-3 font-medium text-slate-200">{inst.name}</td>
-                    <td className="px-4 py-3 text-center text-slate-400">{inst._count.students.toLocaleString()}</td>
-                    <td className="px-4 py-3 text-center text-slate-400">{inst._count.lecturers}</td>
-                    <td className="px-4 py-3 text-center text-slate-400">{(inst._count.students + inst._count.lecturers).toLocaleString()}</td>
-                    <td className="px-4 py-3 text-right font-medium text-emerald-400">
+                    className="border-b border-gray-200/50 hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3 font-medium text-gray-800">{inst.name}</td>
+                    <td className="px-4 py-3 text-center text-gray-500">{inst._count.students.toLocaleString()}</td>
+                    <td className="px-4 py-3 text-center text-gray-500">{inst._count.lecturers}</td>
+                    <td className="px-4 py-3 text-center text-gray-500">{(inst._count.students + inst._count.lecturers).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-right font-medium text-emerald-600">
                       KSh {(inst._count.students * PRICE_PER_STUDENT_PER_SEMESTER).toLocaleString()}
                     </td>
                   </motion.tr>
@@ -190,12 +190,12 @@ export default function PlatformAnalyticsPage() {
             </tbody>
             {!loading && institutions.length > 0 && (
               <tfoot>
-                <tr className="border-t border-slate-700 bg-slate-800/50">
-                  <td className="px-4 py-3 text-xs font-semibold text-slate-300">Total</td>
-                  <td className="px-4 py-3 text-center text-xs font-semibold text-slate-300">{(stats?.students ?? 0).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-center text-xs font-semibold text-slate-300">{stats?.lecturers ?? 0}</td>
-                  <td className="px-4 py-3 text-center text-xs font-semibold text-slate-300">{totalUsers.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-xs font-bold text-emerald-400">KSh {estimatedRevenue.toLocaleString()}</td>
+                <tr className="border-t border-gray-200 bg-gray-50">
+                  <td className="px-4 py-3 text-xs font-semibold text-gray-700">Total</td>
+                  <td className="px-4 py-3 text-center text-xs font-semibold text-gray-700">{(stats?.students ?? 0).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-center text-xs font-semibold text-gray-700">{stats?.lecturers ?? 0}</td>
+                  <td className="px-4 py-3 text-center text-xs font-semibold text-gray-700">{totalUsers.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-xs font-bold text-emerald-600">KSh {estimatedRevenue.toLocaleString()}</td>
                 </tr>
               </tfoot>
             )}

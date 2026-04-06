@@ -67,7 +67,7 @@ function SidebarContent({ pathname, onClose }: { pathname: string; onClose?: () 
         <button
           onClick={async () => {
             await fetch("/api/auth/admin/logout", { method: "POST", credentials: "include" });
-            window.location.href = "/super/login";
+            window.location.href = "/admin/login";
           }}
           className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:bg-red-500/15 hover:text-red-400"
         >
@@ -81,7 +81,6 @@ function SidebarContent({ pathname, onClose }: { pathname: string; onClose?: () 
 
 const PUBLIC_PATHS_SUPER = [
   "/admin/super-admin/register",
-  "/admin/super-admin/login",
 ];
 
 export default function SuperAdminLayout({ children }: { children: ReactNode }) {
@@ -98,7 +97,7 @@ export default function SuperAdminLayout({ children }: { children: ReactNode }) 
     fetch("/api/auth/me", { credentials: "include" })
       .then(r => (r.ok ? r.json() : null))
       .then(data => {
-        if (!data) { router.push("/super/login"); return; }
+        if (!data) { router.push("/admin/login"); return; }
         setAdmin({
           id: data.id,
           fullName: data.fullName ?? "Admin",
@@ -107,7 +106,7 @@ export default function SuperAdminLayout({ children }: { children: ReactNode }) 
         });
         setLoading(false);
       })
-      .catch(() => router.push("/super/login"));
+      .catch(() => router.push("/admin/login"));
   }, [router, isPublicPath]);
 
   if (isPublicPath) return <>{children}</>;
@@ -126,9 +125,9 @@ export default function SuperAdminLayout({ children }: { children: ReactNode }) 
 
   return (
     <SuperAdminContext.Provider value={admin}>
-      <div className="flex min-h-screen bg-slate-950 text-slate-100">
+      <div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden">
         {/* Desktop sidebar */}
-        <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-gradient-to-b from-violet-950/60 to-slate-900 border-r border-white/8">
+        <aside className="hidden lg:flex w-60 shrink-0 flex-col bg-gradient-to-b from-violet-950/60 to-slate-900 border-r border-white/8 overflow-y-auto">
           <SidebarContent pathname={pathname} />
         </aside>
 
@@ -159,9 +158,9 @@ export default function SuperAdminLayout({ children }: { children: ReactNode }) 
         </AnimatePresence>
 
         {/* Main */}
-        <div className="flex flex-1 flex-col min-w-0">
+        <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
           {/* Mobile topbar */}
-          <header className="flex items-center justify-between px-4 py-3 border-b border-white/8 lg:hidden bg-slate-950/80 backdrop-blur-sm">
+          <header className="flex items-center justify-between px-4 py-3 border-b border-white/8 lg:hidden bg-white/80 backdrop-blur-sm border-gray-200">
             <button
               onClick={() => setDrawerOpen(true)}
               className="rounded-lg p-1.5 text-slate-400 hover:bg-white/10 hover:text-white transition-colors"
@@ -177,7 +176,7 @@ export default function SuperAdminLayout({ children }: { children: ReactNode }) 
             <div className="w-8" />
           </header>
 
-          <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          <main className="flex-1 overflow-y-auto bg-gray-50 p-4 lg:p-6">
             {children}
           </main>
         </div>

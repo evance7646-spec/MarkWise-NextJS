@@ -5,8 +5,8 @@ import { Settings2, Eye, EyeOff, LogOut } from "lucide-react";
 import { useSuperAdmin } from "../../context";
 
 const inp =
-  "w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500";
-const lbl = "block text-xs font-medium text-slate-400 mb-1.5";
+  "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500";
+const lbl = "block text-xs font-medium text-gray-500 mb-1.5";
 
 export default function SettingsPage() {
   const admin = useSuperAdmin();
@@ -75,46 +75,46 @@ export default function SettingsPage() {
 
   const handleSignOut = async () => {
     await fetch("/api/auth/admin/logout", { method: "POST", credentials: "include" });
-    window.location.href = "/super/login";
+    window.location.href = "/admin/login";
   };
 
   return (
     <div className="space-y-6 max-w-2xl">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-white">Settings</h1>
-        <p className="text-sm text-slate-400 mt-0.5">Manage your super-admin account</p>
+        <h1 className="text-xl font-bold text-gray-900">Settings</h1>
+        <p className="text-sm text-gray-500 mt-0.5">Manage your super-admin account</p>
       </div>
 
       {/* Account info */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-        <h2 className="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
-          <Settings2 className="h-4 w-4 text-violet-400" />
+      <div className="rounded-2xl border border-gray-200 bg-white border border-gray-200 p-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+          <Settings2 className="h-4 w-4 text-violet-600" />
           Account Info
         </h2>
         <dl className="space-y-3 text-sm">
           <div className="flex items-center justify-between">
-            <dt className="text-slate-400">Email</dt>
-            <dd className="text-slate-200 font-mono text-xs">{admin?.email ?? "—"}</dd>
+            <dt className="text-gray-500">Email</dt>
+            <dd className="text-gray-800 font-mono text-xs">{admin?.email ?? "—"}</dd>
           </div>
           <div className="flex items-center justify-between">
-            <dt className="text-slate-400">Role</dt>
+            <dt className="text-gray-500">Role</dt>
             <dd>
-              <span className="inline-flex items-center rounded-full bg-violet-500/20 px-2.5 py-0.5 text-xs font-medium text-violet-300">
+              <span className="inline-flex items-center rounded-full bg-violet-500/20 px-2.5 py-0.5 text-xs font-medium text-violet-700">
                 {admin?.role?.replace(/_/g, " ") ?? "—"}
               </span>
             </dd>
           </div>
           <div className="flex items-center justify-between">
-            <dt className="text-slate-400">Admin ID</dt>
-            <dd className="text-slate-500 font-mono text-xs">{admin?.id ?? "—"}</dd>
+            <dt className="text-gray-500">Admin ID</dt>
+            <dd className="text-gray-400 font-mono text-xs">{admin?.id ?? "—"}</dd>
           </div>
         </dl>
       </div>
 
       {/* Profile */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-        <h2 className="text-sm font-semibold text-slate-300 mb-4">Update Profile</h2>
+      <div className="rounded-2xl border border-gray-200 bg-white border border-gray-200 p-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Update Profile</h2>
         <form onSubmit={handleProfileSave} className="space-y-4">
           <div>
             <label className={lbl}>Full Name</label>
@@ -134,8 +134,8 @@ export default function SettingsPage() {
                 exit={{ opacity: 0 }}
                 className={`rounded-lg px-3 py-2 text-xs ${
                   profileMsg.type === "ok"
-                    ? "bg-emerald-500/15 text-emerald-400"
-                    : "bg-red-500/15 text-red-400"
+                    ? "bg-emerald-500/15 text-emerald-600"
+                    : "bg-red-500/15 text-red-600"
                 }`}
               >
                 {profileMsg.text}
@@ -146,7 +146,7 @@ export default function SettingsPage() {
             <button
               type="submit"
               disabled={savingProfile}
-              className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50 transition-colors"
+              className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-violet-600 disabled:opacity-50 transition-colors"
             >
               {savingProfile ? "Saving…" : "Save Changes"}
             </button>
@@ -155,8 +155,8 @@ export default function SettingsPage() {
       </div>
 
       {/* Password */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 p-5">
-        <h2 className="text-sm font-semibold text-slate-300 mb-4">Change Password</h2>
+      <div className="rounded-2xl border border-gray-200 bg-white border border-gray-200 p-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Change Password</h2>
         <form onSubmit={handlePasswordSave} className="space-y-4">
           {[
             { label: "Current Password", value: currentPw, onChange: setCurrentPw, show: showCurrent, toggle: () => setShowCurr(v => !v) },
@@ -173,7 +173,7 @@ export default function SettingsPage() {
                   placeholder="••••••••"
                   className={`${inp} pr-10`}
                 />
-                <button type="button" onClick={toggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                <button type="button" onClick={toggle} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
                   {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
@@ -187,8 +187,8 @@ export default function SettingsPage() {
                 exit={{ opacity: 0 }}
                 className={`rounded-lg px-3 py-2 text-xs ${
                   pwMsg.type === "ok"
-                    ? "bg-emerald-500/15 text-emerald-400"
-                    : "bg-red-500/15 text-red-400"
+                    ? "bg-emerald-500/15 text-emerald-600"
+                    : "bg-red-500/15 text-red-600"
                 }`}
               >
                 {pwMsg.text}
@@ -199,7 +199,7 @@ export default function SettingsPage() {
             <button
               type="submit"
               disabled={savingPw}
-              className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50 transition-colors"
+              className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-violet-600 disabled:opacity-50 transition-colors"
             >
               {savingPw ? "Updating…" : "Update Password"}
             </button>
@@ -209,11 +209,11 @@ export default function SettingsPage() {
 
       {/* Sign out */}
       <div className="rounded-2xl border border-red-900/40 bg-red-950/20 p-5">
-        <h2 className="text-sm font-semibold text-red-400 mb-2">Sign Out</h2>
-        <p className="text-xs text-slate-400 mb-4">You will be redirected to the super-admin login page.</p>
+        <h2 className="text-sm font-semibold text-red-600 mb-2">Sign Out</h2>
+        <p className="text-xs text-gray-500 mb-4">You will be redirected to the super-admin login page.</p>
         <button
           onClick={handleSignOut}
-          className="flex items-center gap-2 rounded-xl border border-red-800/50 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/20 transition-colors"
+          className="flex items-center gap-2 rounded-xl border border-red-800/50 bg-red-500/10 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-500/20 transition-colors"
         >
           <LogOut className="h-4 w-4" />
           Sign Out

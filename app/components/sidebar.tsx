@@ -6,11 +6,11 @@ import { usePathname } from "next/navigation";
 import { Building2, Calendar, BarChart3, Zap, CalendarClock, X } from "lucide-react";
 
 const defaultNavItems = [
-  { name: "Rooms",        href: "/admin/space-admin",              icon: Building2 },
-  { name: "Bookings",     href: "/admin/space-admin/bookings",     icon: Calendar  },
-  { name: "Reservations", href: "/admin/space-admin/reservations", icon: CalendarClock },
-  { name: "Analytics",    href: "/admin/space-admin/analytics",    icon: BarChart3 },
-  { name: "Optimizer",    href: "/admin/space-admin/optimizer",    icon: Zap, highlight: true },
+  { name: "Rooms",        href: "/admin/facilities-manager",              icon: Building2 },
+  { name: "Bookings",     href: "/admin/facilities-manager/bookings",     icon: Calendar  },
+  { name: "Reservations", href: "/admin/facilities-manager/reservations", icon: CalendarClock },
+  { name: "Analytics",    href: "/admin/facilities-manager/analytics",    icon: BarChart3 },
+  { name: "Optimizer",    href: "/admin/facilities-manager/optimizer",    icon: Zap, highlight: true },
 ];
 
 function NavLinks({ navItems, pathname, onNavigate }: { navItems: typeof defaultNavItems; pathname: string; onNavigate?: () => void }) {
@@ -19,7 +19,7 @@ function NavLinks({ navItems, pathname, onNavigate }: { navItems: typeof default
       {navItems.map((item) => {
         const isActive =
           pathname === item.href ||
-          (item.href !== "/admin/space-admin" && pathname.startsWith(item.href + "/"));
+          (item.href !== "/admin/facilities-manager" && pathname.startsWith(item.href + "/"));
 
         return (
           <Link
@@ -76,7 +76,7 @@ export default function Sidebar({
   return (
     <>
       {/* Desktop sidebar */}
-      <aside className="hidden md:flex flex-col w-64 h-screen bg-white dark:bg-slate-800 border-r-2 border-indigo-200 dark:border-indigo-800 shadow-lg fixed top-0 left-0 z-40">
+      <aside className="hidden md:flex flex-col w-64 h-screen bg-white dark:bg-slate-800 border-r-2 border-indigo-200 dark:border-indigo-800 shadow-lg fixed top-0 left-0 z-40 overflow-y-auto">
         <NavLinks navItems={navItems} pathname={pathname} />
       </aside>
 

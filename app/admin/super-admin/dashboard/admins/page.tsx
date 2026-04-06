@@ -18,14 +18,15 @@ interface AdminRow {
 interface Institution { id: string; name: string }
 
 const ROLE_COLORS: Record<string, string> = {
-  super_admin:       "bg-violet-500/20 text-violet-300",
-  institution_admin: "bg-indigo-500/20 text-indigo-300",
-  department_admin:  "bg-sky-500/20 text-sky-300",
+  super_admin:        "bg-violet-500/20 text-violet-700",
+  system_admin:       "bg-indigo-500/20 text-indigo-700",
+  academic_registrar: "bg-purple-500/20 text-purple-700",
+  facilities_manager: "bg-orange-500/20 text-orange-700",
 };
 
 const inp =
-  "w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500";
-const lbl = "block text-xs font-medium text-slate-400 mb-1.5";
+  "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500";
+const lbl = "block text-xs font-medium text-gray-500 mb-1.5";
 
 export default function AdminsPage() {
   const [admins, setAdmins]         = useState<AdminRow[]>([]);
@@ -55,8 +56,8 @@ export default function AdminsPage() {
       ]);
       if (aRes.ok) {
         const d = await aRes.json();
-        // Super-admin only manages institution admins
-        setAdmins((d.admins ?? []).filter((a: AdminRow) => a.role === "institution_admin"));
+        // Super-admin only manages system admins
+        setAdmins((d.admins ?? []).filter((a: AdminRow) => a.role === "system_admin"));
       }
       if (iRes.ok) {
         const d = await iRes.json();
@@ -92,7 +93,7 @@ export default function AdminsPage() {
           fullName: form.fullName,
           email: form.email,
           password: form.password,
-          role: "institution_admin",
+          role: "system_admin",
           institutionId: form.institutionId,
         }),
       });
@@ -118,7 +119,7 @@ export default function AdminsPage() {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="fixed top-4 right-4 z-50 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-white shadow-lg"
+            className="fixed top-4 right-4 z-50 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-medium text-gray-900 shadow-lg"
           >
             {toast}
           </motion.div>
@@ -128,20 +129,20 @@ export default function AdminsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-white">Institution Admins</h1>
-          <p className="text-sm text-slate-400 mt-0.5">{admins.length} institution admin{admins.length !== 1 ? "s" : ""} onboarded</p>
+          <h1 className="text-xl font-bold text-gray-900">Institution Admins</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{admins.length} institution admin{admins.length !== 1 ? "s" : ""} onboarded</p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={load}
             disabled={loading}
-            className="rounded-xl border border-slate-700 bg-slate-800 p-2 text-slate-400 hover:text-white hover:bg-slate-700 transition-colors disabled:opacity-50"
+            className="rounded-xl border border-gray-200 bg-white p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
           <button
             onClick={() => { setShowCreate(true); setErr(null); }}
-            className="flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 transition-colors"
+            className="flex items-center gap-2 rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-violet-600 transition-colors"
           >
             <Plus className="h-4 w-4" />
             Assign Institution Admin
@@ -152,7 +153,7 @@ export default function AdminsPage() {
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-48">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             type="text"
             placeholder="Search name or email…"
@@ -164,7 +165,7 @@ export default function AdminsPage() {
         <select
           value={instFilter}
           onChange={e => setInstFilter(e.target.value)}
-          className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-2.5 text-sm text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+          className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
         >
           <option value="">All Institutions</option>
           {institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
@@ -173,29 +174,29 @@ export default function AdminsPage() {
       </div>
 
       {/* Table */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900 overflow-hidden">
+      <div className="rounded-2xl border border-gray-200 bg-white border border-gray-200 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-slate-800">
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Email</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Institution</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-400">Created</th>
+              <tr className="border-b border-gray-200">
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Name</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Institution</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Created</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 Array.from({ length: 6 }).map((_, i) => (
-                  <tr key={i} className="border-b border-slate-800/50">
+                  <tr key={i} className="border-b border-gray-200/50">
                     <td colSpan={4} className="px-4 py-3">
-                      <div className="h-4 rounded-md bg-slate-800 animate-pulse w-3/4" />
+                      <div className="h-4 rounded-md bg-gray-200 animate-pulse w-3/4" />
                     </td>
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-10 text-center text-slate-500">No institution admins found.</td>
+                  <td colSpan={4} className="px-4 py-10 text-center text-gray-400">No institution admins found.</td>
                 </tr>
               ) : (
                 filtered.map((a, i) => (
@@ -204,19 +205,19 @@ export default function AdminsPage() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: i * 0.025 }}
-                    className="border-b border-slate-800/50 hover:bg-slate-800/40 transition-colors"
+                    className="border-b border-gray-200/50 hover:bg-gray-50 transition-colors"
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-500/20 text-violet-300 text-xs font-bold shrink-0">
+                        <div className="flex h-7 w-7 items-center justify-center rounded-full bg-violet-500/20 text-violet-700 text-xs font-bold shrink-0">
                           {a.fullName.charAt(0).toUpperCase()}
                         </div>
-                        <span className="font-medium text-slate-200">{a.fullName}</span>
+                        <span className="font-medium text-gray-800">{a.fullName}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-slate-400">{a.email}</td>
-                    <td className="px-4 py-3 text-slate-400">{a.institution?.name ?? "—"}</td>
-                    <td className="px-4 py-3 text-slate-500 text-xs">
+                    <td className="px-4 py-3 text-gray-500">{a.email}</td>
+                    <td className="px-4 py-3 text-gray-500">{a.institution?.name ?? "—"}</td>
+                    <td className="px-4 py-3 text-gray-400 text-xs">
                       {new Date(a.createdAt).toLocaleDateString()}
                     </td>
                   </motion.tr>
@@ -233,10 +234,10 @@ export default function AdminsPage() {
           <>
             <motion.div key="bk" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-black/60" onClick={() => setShowCreate(false)} />
             <motion.div key="md" initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} className="fixed inset-0 z-50 flex items-center justify-center p-4">
-              <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+              <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white border border-gray-200 p-6 shadow-2xl">
                 <div className="flex items-center justify-between mb-5">
-                  <h2 className="text-base font-semibold text-white">Assign Institution Admin</h2>
-                  <button onClick={() => setShowCreate(false)} className="rounded-lg p-1 text-slate-400 hover:text-white"><X className="h-4 w-4" /></button>
+                  <h2 className="text-base font-semibold text-gray-900">Assign Institution Admin</h2>
+                  <button onClick={() => setShowCreate(false)} className="rounded-lg p-1 text-gray-500 hover:text-gray-900"><X className="h-4 w-4" /></button>
                 </div>
                 <form onSubmit={handleCreate} className="space-y-4">
                   <div>
@@ -251,7 +252,7 @@ export default function AdminsPage() {
                     <label className={lbl}>Password</label>
                     <div className="relative">
                       <input type={showPw ? "text" : "password"} value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="Min. 6 characters" className={`${inp} pr-10`} />
-                      <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+                      <button type="button" onClick={() => setShowPw(v => !v)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700">
                         {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
@@ -263,10 +264,10 @@ export default function AdminsPage() {
                       {institutions.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                     </select>
                   </div>
-                  {err && <p className="rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-400">{err}</p>}
+                  {err && <p className="rounded-lg bg-red-500/15 px-3 py-2 text-xs text-red-600">{err}</p>}
                   <div className="flex justify-end gap-2 pt-1">
-                    <button type="button" onClick={() => setShowCreate(false)} className="rounded-xl border border-slate-700 px-4 py-2 text-sm text-slate-300 hover:bg-slate-800 transition-colors">Cancel</button>
-                    <button type="submit" disabled={saving} className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-white hover:bg-violet-600 disabled:opacity-50 transition-colors">{saving ? "Saving…" : "Create Admin"}</button>
+                    <button type="button" onClick={() => setShowCreate(false)} className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">Cancel</button>
+                    <button type="submit" disabled={saving} className="rounded-xl bg-violet-500 px-4 py-2 text-sm font-medium text-gray-900 hover:bg-violet-600 disabled:opacity-50 transition-colors">{saving ? "Saving…" : "Create Admin"}</button>
                   </div>
                 </form>
               </div>

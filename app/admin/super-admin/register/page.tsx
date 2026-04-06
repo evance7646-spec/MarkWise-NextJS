@@ -56,7 +56,7 @@ export default function SuperAdminRegisterPage() {
   };
 
   const inp =
-    "w-full rounded-xl border border-slate-700 bg-slate-800/60 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-colors";
+    "w-full rounded-xl border border-slate-600 bg-slate-800/60 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-colors";
   const lbl = "block text-xs font-medium text-slate-400 mb-1.5";
 
   return (
@@ -151,7 +151,7 @@ export default function SuperAdminRegisterPage() {
               <div className="pt-1">
                 <label className={lbl}>
                   Setup Secret{" "}
-                  <span className="text-slate-600 font-normal">
+                  <span className="text-slate-400 font-normal">
                     (from SUPER_ADMIN_SETUP_SECRET in .env)
                   </span>
                 </label>
@@ -188,7 +188,7 @@ export default function SuperAdminRegisterPage() {
             </form>
           )}
 
-          <p className="mt-6 text-center text-xs text-slate-600">
+          <p className="mt-6 text-center text-xs text-slate-400">
             Already have an account?{" "}
             <Link href="/admin/super-admin/login" className="text-violet-400 hover:text-violet-300">
               Sign in

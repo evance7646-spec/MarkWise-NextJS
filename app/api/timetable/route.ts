@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
     prisma.course.findUnique({ where: { id: courseId }, select: { id: true } }),
   ]);
 
-  if (adminId && adminRecord && adminRecord.role !== 'institution_admin') {
+  if (adminId && adminRecord && adminRecord.role !== 'system_admin') {
     if (adminRecord.departmentId && adminRecord.departmentId !== departmentId) {
       return NextResponse.json(
         { error: 'You can only create timetable entries for your own department.' },

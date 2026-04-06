@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   }
   const admin = await prisma.admin.findUnique({
     where: { id: payload.adminId },
-    include: { department: true },
+    include: { department: true, institution: { select: { id: true, name: true } } },
   });
   if (!admin) {
     return NextResponse.json({ error: 'Admin not found (token valid but user missing)' }, { status: 404 });
@@ -33,8 +33,10 @@ export async function GET(req: NextRequest) {
     email: admin.email,
     role: admin.role,
     institutionId: admin.institutionId,
+    institutionName: admin.institution?.name ?? null,
     departmentId: admin.departmentId,
     department: admin.department ? { id: admin.department.id, name: admin.department.name } : null,
+    institution: admin.institution ?? null,
     authSource: authHeader ? 'authorization' : 'cookie',
   });
 }

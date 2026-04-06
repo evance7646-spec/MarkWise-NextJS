@@ -1,29 +1,36 @@
 /* ==================== TAILWIND ==================== */
 @import "tailwindcss";
 
-/* ==================== CUSTOM THEME VARIABLES ==================== */
-/* Removed invalid @theme rule. Use :root or custom properties directly if needed. */
-
-/* Dark mode */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: #0a0a0a;
-    --color-foreground: #ededed;
-  }
-}
+/* ==================== ADMIN SURFACE SYSTEM ==================== */
+/* 
+  Admin layout uses:
+    bg-admin-base   = #0f172a  (slate-900) — page background
+    bg-admin-card   = #1e293b  (slate-800) — card surface
+    bg-admin-raised = #334155  (slate-600) — elevated / hover
+  These are applied via Tailwind slate classes in layout files.
+*/
 
 /* ==================== BASE STYLES ==================== */
-html,
-body {
+html, body {
   min-height: 100vh;
   background-color: #f3f4f6;
   color: var(--color-foreground);
   font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Dark mode */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #0f172a;
+    --color-foreground: #f1f5f9;
+  }
 }
 
 .dark html,
 .dark body {
-  background-color: #181a20;
+  background-color: #0f172a;
 }
 
 /* Smooth scrolling */
@@ -31,7 +38,7 @@ html {
   scroll-behavior: smooth;
 }
 
-/* Better focus styles for accessibility */
+/* Better focus styles */
 *:focus-visible {
   outline: 2px solid #4f46e5;
   outline-offset: 2px;
@@ -41,7 +48,7 @@ html {
   outline-color: #818cf8;
 }
 
-/* Text selection color */
+/* Text selection */
 ::selection {
   background: #4f46e5;
   color: white;
@@ -50,12 +57,6 @@ html {
 .dark ::selection {
   background: #818cf8;
   color: #0a0a0a;
-}
-
-/* Improve text rendering */
-* {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
 /* Base typography */

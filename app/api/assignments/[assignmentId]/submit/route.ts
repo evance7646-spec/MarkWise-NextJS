@@ -45,6 +45,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ assign
   const contentType = req.headers.get('content-type') ?? '';
   let fileUrl: string | null = null;
   let fileName: string | null = null;
+  let mimeType: string | null = null;
   let linkUrl: string | null = null;
   let textContent: string | null = null;
   let groupId: string | null = null;
@@ -61,12 +62,14 @@ export async function POST(req: NextRequest, context: { params: Promise<{ assign
         const saved = await saveUploadedFile(rawFile);
         fileUrl = saved.fileUrl;
         fileName = rawFile.name;
+        mimeType = saved.mimeType;
       } catch (err: any) {
         return NextResponse.json({ error: err.message ?? 'Upload failed' }, { status: err.status ?? 400, headers: corsHeaders });
       }
     } else {
       fileUrl = (formData.get('fileUrl') as string) || null;
       fileName = (formData.get('fileName') as string) || null;
+      mimeType = (formData.get('mimeType') as string) || null;
     }
     textContent = (formData.get('text') as string) || null;
     linkUrl = (formData.get('linkUrl') as string) || null;
@@ -75,6 +78,7 @@ export async function POST(req: NextRequest, context: { params: Promise<{ assign
     submissionType = body.type ?? 'text';
     fileUrl = body.fileUrl ?? null;
     fileName = body.fileName ?? null;
+    mimeType = body.mimeType ?? null;
     linkUrl = body.linkUrl ?? null;
     textContent = body.text ?? body.textContent ?? null;
     groupId = body.groupId ?? null;
@@ -122,8 +126,10 @@ export async function POST(req: NextRequest, context: { params: Promise<{ assign
       assignmentId,
       studentId,
       groupId: groupId ?? null,
+      type: submissionType,
       fileUrl,
       fileName,
+      mimeType,
       linkUrl,
       textContent,
       submittedByName: studentRow?.name ?? null,
@@ -142,11 +148,12 @@ export async function POST(req: NextRequest, context: { params: Promise<{ assign
     groupName: (submission as any).group?.name ?? null,
     submittedBy: submission.studentId,
     submittedByName: submission.submittedByName ?? null,
+    type: submissionType,
     fileUrl: submission.fileUrl ?? null,
     fileName: submission.fileName ?? null,
+    mimeType: submission.mimeType ?? null,
     linkUrl: submission.linkUrl ?? null,
     text: submission.textContent ?? null,
-    type: submissionType,
     submittedAt: submission.submittedAt,
     late: isLate,
     version: submission.version,

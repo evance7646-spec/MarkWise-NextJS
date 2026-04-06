@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
   }
 
   const isGroup = Boolean(body.isGroup ?? body.is_group ?? false);
-  const allowedTypes: string[] = body.allowedTypes ?? body.allowed_types ?? [];
+  const allowedTypes: string[] = body.allowedTypes ?? body.allowed_types ?? ['file', 'link', 'text'];
   const blockLate = Boolean(body.blockLate ?? body.block_late ?? false);
   const allowResub: boolean = body.allowResub ?? body.allow_resub ?? true;
   const attemptsAllowed = Number(body.attemptsAllowed ?? body.attempts_allowed ?? 1);

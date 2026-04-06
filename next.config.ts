@@ -31,6 +31,7 @@ const nextConfig: NextConfig = {
       { source: "/auth/:path*",          destination: "/api/auth/:path*" },
       { source: "/assignments",           destination: "/api/assignments" },
       { source: "/assignments/:path*",    destination: "/api/assignments/:path*" },
+      { source: "/files/:path*",          destination: "/api/files/:path*" },
       { source: "/attendance/:path*",      destination: "/api/attendance/:path*" },
       { source: "/meeting-invites",          destination: "/api/meeting-invites" },
       { source: "/meeting-invites/:path*",   destination: "/api/meeting-invites/:path*" },

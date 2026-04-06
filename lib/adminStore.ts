@@ -3,12 +3,9 @@ import path from "node:path";
 
 export type AdminRole =
   | "super_admin"
-  | "institution_admin"
-  | "department_admin"
-  | "space_admin"
-  | "faculty_admin"
-  | "compliance_admin"
-  | "registry_admin";
+  | "system_admin"
+  | "academic_registrar"
+  | "facilities_manager";
 
 export type AdminUser = {
   id: string;
@@ -26,12 +23,9 @@ export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 const ADMIN_ROLES: AdminRole[] = [
   "super_admin",
-  "institution_admin",
-  "department_admin",
-  "space_admin",
-  "faculty_admin",
-  "compliance_admin",
-  "registry_admin",
+  "system_admin",
+  "academic_registrar",
+  "facilities_manager",
 ];
 
 const isAdminUser = (value: unknown): value is AdminUser => {

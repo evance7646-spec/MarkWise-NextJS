@@ -16,6 +16,9 @@ import {
   BarChart3,
   Users,
   Sparkles,
+  Building2,
+  GraduationCap,
+  DoorOpen,
 } from "lucide-react";
 import AppHeader from "@/app/components/app-header";
 import AppFooter from "@/app/components/app-footer";
@@ -29,6 +32,7 @@ function LandingPageContent() {
   const statsRef = useRef(null);
   const howItWorksRef = useRef(null);
   const testimonialsRef = useRef(null);
+  const rolesRef = useRef(null);
   const ctaRef = useRef(null);
 
   const heroInView = useInView(heroRef, { once: true, amount: 0.3 });
@@ -36,6 +40,7 @@ function LandingPageContent() {
   const statsInView = useInView(statsRef, { once: true, amount: 0.3 });
   const howItWorksInView = useInView(howItWorksRef, { once: true, amount: 0.3 });
   const testimonialsInView = useInView(testimonialsRef, { once: true, amount: 0.2 });
+  const rolesInView = useInView(rolesRef, { once: true, amount: 0.2 });
   const ctaInView = useInView(ctaRef, { once: true, amount: 0.5 });
 
   const features = [
@@ -84,6 +89,41 @@ function LandingPageContent() {
     { value: "End-to-End", label: "Assignments and group workflows", icon: <CheckCircle className="h-5 w-5" /> },
   ];
 
+  const adminRoles = [
+    {
+      icon: <Shield className="h-6 w-6" />,
+      title: "Super Admin",
+      description: "Platform owner with full control over all institutions and system administrators.",
+      href: "/admin/login",
+      color: "from-amber-500 to-yellow-400",
+      badge: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30",
+    },
+    {
+      icon: <Building2 className="h-6 w-6" />,
+      title: "System Administrator",
+      description: "Onboards and manages an entire institution — departments, staff, and settings.",
+      href: "/admin/register",
+      color: "from-indigo-500 to-blue-500",
+      badge: "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-500/30",
+    },
+    {
+      icon: <GraduationCap className="h-6 w-6" />,
+      title: "Academic Registrar",
+      description: "Manages students, lecturers, curriculum, timetable, enrolments, and academic analytics.",
+      href: "/admin/register",
+      color: "from-purple-500 to-violet-500",
+      badge: "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-500/30",
+    },
+    {
+      icon: <DoorOpen className="h-6 w-6" />,
+      title: "Facilities Manager",
+      description: "Controls room bookings, reservations, space availability, and physical resource allocation.",
+      href: "/admin/register",
+      color: "from-orange-500 to-red-400",
+      badge: "bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/30",
+    },
+  ];
+
   const fadeInUp: Variants = {
     hidden: { opacity: 0, y: 30 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.6, ease: [0, 0, 0.2, 1] } }
@@ -112,7 +152,7 @@ function LandingPageContent() {
       <AppHeader />
 
       {/* Hero Section */}
-      <section ref={heroRef} className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-12 sm:py-16 lg:py-24">
+      <section ref={heroRef} className="relative mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 min-h-[calc(100vh-5rem)] flex items-center py-8 sm:py-10">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           <motion.div
             variants={staggerContainer}
@@ -127,44 +167,17 @@ function LandingPageContent() {
               </span>
             </motion.div>
 
-            <motion.h1 variants={fadeInUp} className="text-4xl sm:text-5xl lg:text-6xl xl:text-7xl font-bold tracking-tight">
+            <motion.h1 variants={fadeInUp} className="text-3xl sm:text-4xl lg:text-5xl xl:text-6xl font-bold tracking-tight">
               Replace Fragmented
               <span className="block mt-2 bg-gradient-to-r from-indigo-600 via-purple-600 to-cyan-600 bg-clip-text text-transparent">
                 Campus Operations
               </span>
             </motion.h1>
 
-            <motion.p variants={fadeInUp} className="text-lg sm:text-xl text-slate-600 dark:text-slate-300 max-w-xl">
+            <motion.p variants={fadeInUp} className="text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-xl">
               MarkWise unifies attendance verification, room coordination, assignment workflows,
               and student group management for institutions running physical, online, and hybrid learning.
-            </motion.p>
-
-            <motion.div variants={fadeInUp} className="flex flex-col sm:flex-row gap-4 pt-4">
-              <Link
-                href="/admin/institution-admin/login"
-                className="group relative px-8 py-4 text-base font-semibold text-white bg-gradient-to-r from-indigo-600 to-cyan-600 rounded-2xl overflow-hidden shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105"
-              >
-                <span className="relative z-10 flex items-center justify-center gap-2">
-                  Institution Portal
-                  <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-                </span>
-                <div className="absolute inset-0 bg-gradient-to-r from-indigo-700 to-cyan-700 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </Link>
-              <button
-                className="group px-8 py-4 text-base font-semibold text-indigo-700 dark:text-indigo-300 border-2 border-indigo-200 dark:border-indigo-500/30 rounded-2xl hover:bg-indigo-50 dark:hover:bg-indigo-500/10 transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
-                onClick={() => router.push("/admin/department-admin/login")}
-              >
-                Department Portal
-                <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-              </button>
-              <Link
-                href="/admin/space-admin/login"
-                className="group px-8 py-4 text-base font-semibold text-green-700 dark:text-green-300 border-2 border-green-200 dark:border-green-500/30 rounded-2xl hover:bg-green-50 dark:hover:bg-green-500/10 transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
-              >
-                Room Manager
-                <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-              </Link>
-            </motion.div>
+            </motion.p>          
 
             <motion.div variants={fadeInUp} className="flex items-center gap-6 pt-4">
               <div className="flex -space-x-2">
@@ -278,7 +291,7 @@ function LandingPageContent() {
                 <div className="flex justify-center mb-2 text-indigo-600 dark:text-indigo-400">
                   {stat.icon}
                 </div>
-                <div className="text-3xl lg:text-4xl font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
+                <div className="text-2xl lg:text-3xl font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
                   {stat.value}
                 </div>
                 <div className="text-sm text-slate-600 dark:text-slate-300">{stat.label}</div>
@@ -299,7 +312,7 @@ function LandingPageContent() {
           <span className="inline-block px-4 py-2 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-sm font-medium">
             Features
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
             Everything Needed to Run
             <span className="block mt-2 bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
               Trusted Academic Operations
@@ -329,8 +342,8 @@ function LandingPageContent() {
                 <div className={`h-14 w-14 rounded-xl bg-gradient-to-r ${feature.color} flex items-center justify-center mb-6 text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
                   {feature.icon}
                 </div>
-                <h3 className="text-xl font-bold mb-3 text-slate-900 dark:text-white">{feature.title}</h3>
-                <p className="text-slate-600 dark:text-slate-300 leading-relaxed">{feature.description}</p>
+                <h3 className="text-lg font-bold mb-3 text-slate-900 dark:text-white">{feature.title}</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{feature.description}</p>
                 
                 <div className="mt-6 flex items-center text-indigo-600 dark:text-indigo-400 font-medium text-sm opacity-0 group-hover:opacity-100 transition-opacity">
                   Learn more
@@ -359,7 +372,7 @@ function LandingPageContent() {
               <span className="inline-block px-4 py-2 rounded-full bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-sm font-medium backdrop-blur-sm">
                 How It Works
               </span>
-              <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight">
+              <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
                 Simple Steps to
                 <span className="block mt-2 bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
                   Coordinated Learning
@@ -411,7 +424,7 @@ function LandingPageContent() {
                       {item.step}
                     </div>
                     
-                    <h3 className="text-xl font-bold mb-3 text-slate-900 dark:text-white">
+                    <h3 className="text-lg font-bold mb-3 text-slate-900 dark:text-white">
                       {item.title}
                     </h3>
                     
@@ -443,7 +456,7 @@ function LandingPageContent() {
           <span className="inline-block px-4 py-2 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-sm font-medium">
             Testimonials
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
             Grounded in Real Institutional
             <span className="block mt-2 bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
               Pain Points
@@ -492,7 +505,7 @@ function LandingPageContent() {
                 {/* Quote mark */}
                 <div className="text-6xl font-serif text-indigo-200 dark:text-indigo-800/50 leading-none mb-4">&quot;</div>
                 
-                <p className="text-lg italic mb-6 text-slate-700 dark:text-slate-200">
+                <p className="text-base italic mb-6 text-slate-700 dark:text-slate-200">
                   {item.quote}
                 </p>
                 
@@ -518,121 +531,60 @@ function LandingPageContent() {
         </motion.div>
       </section>
 
-      {/* Pricing Section */}
-      <section id="pricing" className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
+      {/* Admin Roles Section */}
+      <section ref={rolesRef} id="admin-roles" className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-16 lg:py-24">
         <motion.div
           initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.2 }}
+          animate={rolesInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 30 }}
           transition={{ duration: 0.6 }}
           className="text-center space-y-4 mb-16"
         >
           <span className="inline-block px-4 py-2 rounded-full bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-sm font-medium">
-            Pricing
+            Admin Roles
           </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight">
-            Institution-Wide Licensing,
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
+            Four Roles,
             <span className="block mt-2 bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
-              Student-Based Pricing
+              One Coordinated Institution
             </span>
           </h2>
           <p className="max-w-2xl mx-auto text-lg text-slate-600 dark:text-slate-300">
-            A single annual campus license priced per active student, with unlimited access for lecturers,
-            administrators, and support teams.
+            Each admin type has a focused scope so authority is clear, access is minimal, and nothing falls through the gaps.
           </p>
         </motion.div>
 
-        <div className="grid md:grid-cols-3 gap-6 lg:gap-8">
-          {[
-            {
-              name: "MarkWise Core",
-              price: "$3",
-              suffix: "per active student / year",
-              description: "Essential integrity and coordination foundation for institution-wide rollout.",
-              features: [
-                "Verified attendance sessions",
-                "Room availability and booking visibility",
-                "Core materials and update coordination",
-                "Audit-ready attendance records",
-              ],
-              featured: false,
-            },
-            {
-              name: "MarkWise Pro",
-              price: "$6",
-              suffix: "per active student / year",
-              description: "Advanced academic workflows for departments running hybrid operations at scale.",
-              features: [
-                "Everything in Core",
-                "Assignments and submission tracking",
-                "Structured groups and group submissions",
-                "Operational analytics for lecturers and departments",
-              ],
-              featured: true,
-            },
-            {
-              name: "MarkWise Enterprise",
-              price: "$9",
-              suffix: "per active student / year",
-              description: "For institutions that require deep integration, governance, and dedicated support.",
-              features: [
-                "Everything in Pro",
-                "SIS/LMS integration support",
-                "Custom modules and rollout support",
-                "Dedicated enterprise support",
-              ],
-              featured: false,
-            },
-          ].map((tier) => (
-            <motion.article
-              key={tier.name}
-              initial={{ opacity: 0, y: 24 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, amount: 0.2 }}
-              transition={{ duration: 0.5 }}
-              className={`relative rounded-2xl border-2 p-8 bg-white dark:bg-slate-900/60 ${
-                tier.featured
-                  ? "border-indigo-500 shadow-xl"
-                  : "border-slate-200 dark:border-slate-700"
-              }`}
-            >
-              {tier.featured && (
-                <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full text-xs font-semibold bg-gradient-to-r from-indigo-600 to-cyan-600 text-white">
-                  Best for Growing Institutions
-                </span>
-              )}
-
-              <h3 className="text-xl font-bold text-slate-900 dark:text-white">{tier.name}</h3>
-              <p className="mt-3 text-slate-600 dark:text-slate-300">{tier.description}</p>
-
-              <div className="mt-6">
-                <div className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
-                  {tier.price}
-                </div>
-                <div className="text-sm text-slate-600 dark:text-slate-300 mt-1">{tier.suffix}</div>
-              </div>
-
-              <ul className="mt-6 space-y-3">
-                {tier.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-3 text-slate-700 dark:text-slate-200">
-                    <CheckCircle className="h-5 w-5 text-indigo-600 dark:text-indigo-400 mt-0.5 shrink-0" />
-                    <span>{feature}</span>
-                  </li>
-                ))}
-              </ul>
-            </motion.article>
-          ))}
-        </div>
-
-        <motion.p
-          initial={{ opacity: 0, y: 16 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true, amount: 0.2 }}
-          transition={{ duration: 0.5 }}
-          className="mt-10 text-center text-sm text-slate-600 dark:text-slate-300"
+        <motion.div
+          variants={staggerContainer}
+          initial="hidden"
+          animate={rolesInView ? "visible" : "hidden"}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
         >
-          One-time implementation and onboarding fees cover deployment, data migration, and staff training.
-        </motion.p>
+          {adminRoles.map((role) => (
+            <motion.div
+              key={role.title}
+              variants={fadeInUp}
+              whileHover={{ y: -6, transition: { duration: 0.3 } }}
+              className="group relative"
+            >
+              <div className="relative p-7 rounded-2xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 hover:border-indigo-300 dark:hover:border-indigo-500/40 transition-all duration-300 h-full flex flex-col">
+                <div className={`h-12 w-12 rounded-xl bg-gradient-to-r ${role.color} flex items-center justify-center mb-5 text-white shadow-lg group-hover:scale-110 transition-transform duration-300`}>
+                  {role.icon}
+                </div>
+                <span className={`self-start mb-3 px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${role.badge}`}>
+                  {role.title}
+                </span>
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed flex-1">{role.description}</p>
+                <Link
+                  href={role.href}
+                  className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:gap-2.5 transition-all"
+                >
+                  {role.href === "/admin/login" && role.title === "Super Admin" ? "Sign In" : "Register"}
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </motion.div>
+          ))}
+        </motion.div>
       </section>
 
       {/* CTA Section */}
@@ -657,7 +609,7 @@ function LandingPageContent() {
               initial={{ opacity: 0, y: 20 }}
               animate={ctaInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-6"
+              className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-6"
             >
               Ready to Pilot MarkWise in Your Institution?
             </motion.h2>
@@ -666,31 +618,23 @@ function LandingPageContent() {
               initial={{ opacity: 0, y: 20 }}
               animate={ctaInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="text-lg sm:text-xl mb-10 max-w-2xl mx-auto opacity-90"
+              className="text-base sm:text-lg mb-10 max-w-2xl mx-auto opacity-90"
             >
-              Start with institution and department workspaces, then configure attendance, rooms, assignments,
-              and groups in one coordinated rollout.
+              Register as System Administrator to onboard your institution, then add your Academic Registrar
+              and Facilities Manager to activate the full platform.
             </motion.p>
             
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={ctaInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="flex flex-col sm:flex-row justify-center gap-4"
+              className="flex justify-center"
             >
               <Link
-                href="/admin/institution-admin/login"
-                className="group px-8 py-4 bg-white text-indigo-600 rounded-2xl font-semibold text-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+                href="/admin/register"
+                className="group px-10 py-4 bg-white text-indigo-600 rounded-2xl font-semibold text-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
               >
-                Institution Portal
-                <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
-              </Link>
-              
-              <Link
-                href="/admin/department-admin/login"
-                className="group px-8 py-4 bg-transparent border-2 border-white text-white rounded-2xl font-semibold text-lg hover:bg-white/10 transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
-              >
-                Department Portal
+                Get Started — Register Your Institution
                 <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </Link>
             </motion.div>
