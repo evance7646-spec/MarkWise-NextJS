@@ -72,7 +72,7 @@ export class MappingService {
     const normalizedUnit: Record<string, string> = {};
 
     for (const u of units) {
-      if (!u.bleId) continue;
+      if (u.bleId == null) continue;
 
       // Format ID as 3-digit string with optional prefix
       const formattedId = BLEIdManager.formatId(u.bleId, 'unit', context || undefined);
@@ -108,7 +108,7 @@ export class MappingService {
     const normalizedRoom: Record<string, string> = {};
 
     for (const r of rooms) {
-      if (!r.bleId) continue;
+      if (r.bleId == null) continue;
 
       // Format ID as 3-digit string with optional prefix
       const formattedId = BLEIdManager.formatId(r.bleId, 'room', context || undefined);
@@ -185,6 +185,10 @@ export class MappingService {
    * We store all mapping data in metadata and pass null for roomId (schema must be updated to allow null).
    */
   static async saveMappingSet(institutionId: string, mappingSet: MappingSet): Promise<void> {
+    // Delete all previous snapshots for this institution before saving the new one.
+    // This keeps the table lean and ensures getLatestMappingSet always returns fresh data.
+    await prisma.institutionMappingSet.deleteMany({ where: { institutionId } });
+
     await prisma.institutionMappingSet.create({
       data: {
         institutionId,
@@ -266,19 +270,34 @@ export class MappingService {
     const latest = await this.getLatestMappingSet(institutionId, context);
 
     if (!latest) {
+      // No snapshot at all — generate and save
       const newSet = await this.generateMappingSet(institutionId);
       await this.saveMappingSet(institutionId, newSet);
-      return {
-        mappingSet: newSet,
-        needsFullSync: true
-      };
+      return { mappingSet: newSet, needsFullSync: true };
     }
 
-    if (!clientVersion) {
-      return { mappingSet: latest, needsFullSync: true };
+    // Check live DB counts against the snapshot so we always detect
+    // rooms or units added/removed after the last save — for every institution.
+    const [liveUnitCount, liveRoomCount] = await Promise.all([
+      prisma.unit.count({
+        where: { department: { institutionId }, bleId: { not: null } }
+      }),
+      prisma.room.count({
+        where: { institutionId, bleId: { not: null } }
+      }),
+    ]);
+
+    const snapshotStale =
+      liveUnitCount !== latest.unitRanges.count ||
+      liveRoomCount !== latest.roomRanges.count;
+
+    if (snapshotStale) {
+      const newSet = await this.generateMappingSet(institutionId);
+      await this.saveMappingSet(institutionId, newSet);
+      return { mappingSet: newSet, needsFullSync: true };
     }
 
-    if (clientVersion !== latest.version) {
+    if (!clientVersion || clientVersion !== latest.version) {
       return { mappingSet: latest, needsFullSync: true };
     }
 

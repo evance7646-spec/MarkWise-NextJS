@@ -502,29 +502,83 @@ export async function refreshRoomStatuses(institutionId?: string) {
   if ((now - (_lastRefresh.get(key) ?? 0)) < REFRESH_COOLDOWN_MS) return;
   _lastRefresh.set(key, now);
 
-  // Fetch room IDs outside any transaction — no cross-room atomicity is needed.
+  // Fetch rooms that can change status (skip unavailable — those are manually managed)
   const rooms = await prisma.room.findMany({
-    select: { id: true },
+    select: { id: true, status: true },
     where: {
       isActive: true,
+      status: { not: RoomStatus.unavailable },
       ...(institutionId ? { institutionId } : {}),
     },
   });
 
-  // Small batches to avoid saturating the Supabase connection pooler.
-  // Each room gets its own short transaction so one slow room can't block others.
-  const BATCH_SIZE = 3;
-  for (let i = 0; i < rooms.length; i += BATCH_SIZE) {
-    const batch = rooms.slice(i, i + BATCH_SIZE);
-    await Promise.allSettled(
-      batch.map((room) =>
-        prisma.$transaction(
-          (tx) => recomputeRoomStatus(tx, room.id, "room.refresh", "system"),
-          { maxWait: 3_000, timeout: 5_000 },
-        )
-      )
-    );
+  if (!rooms.length) return;
+
+  const roomIds = rooms.map((r) => r.id);
+  const nowDate = new Date();
+  const endOfDay = new Date(nowDate);
+  endOfDay.setHours(23, 59, 59, 999);
+
+  // 3 bulk queries — no per-room transactions needed
+  const [occupiedRows, holdRows, reservedRows] = await Promise.all([
+    prisma.booking.findMany({
+      where: {
+        roomId: { in: roomIds },
+        status: BookingStatus.occupied,
+        startAt: { lte: nowDate },
+        endAt: { gt: nowDate },
+      },
+      select: { roomId: true },
+    }),
+    prisma.bookingHold.findMany({
+      where: {
+        roomId: { in: roomIds },
+        status: BookingHoldStatus.active,
+        startAt: { lte: nowDate },
+        expiresAt: { gt: nowDate },
+      },
+      select: { roomId: true },
+    }),
+    prisma.booking.findMany({
+      where: {
+        roomId: { in: roomIds },
+        status: BookingStatus.reserved,
+        startAt: { gt: nowDate, lte: endOfDay },
+      },
+      select: { roomId: true },
+    }),
+  ]);
+
+  const occupiedIds = new Set(occupiedRows.map((r) => r.roomId));
+  const holdIds     = new Set(holdRows.map((r) => r.roomId));
+  const reservedIds = new Set(reservedRows.map((r) => r.roomId));
+
+  const toOccupied: string[] = [];
+  const toReserved: string[] = [];
+  const toFree:     string[] = [];
+
+  for (const room of rooms) {
+    if (occupiedIds.has(room.id)) {
+      if (room.status !== RoomStatus.occupied) toOccupied.push(room.id);
+    } else if (holdIds.has(room.id) || reservedIds.has(room.id)) {
+      if (room.status !== RoomStatus.reserved) toReserved.push(room.id);
+    } else {
+      if (room.status !== RoomStatus.free) toFree.push(room.id);
+    }
   }
+
+  // 3 bulk writes — replaces O(n) per-room transactions
+  await Promise.all([
+    toOccupied.length
+      ? prisma.room.updateMany({ where: { id: { in: toOccupied } }, data: { status: RoomStatus.occupied } })
+      : null,
+    toReserved.length
+      ? prisma.room.updateMany({ where: { id: { in: toReserved } }, data: { status: RoomStatus.reserved } })
+      : null,
+    toFree.length
+      ? prisma.room.updateMany({ where: { id: { in: toFree } }, data: { status: RoomStatus.free } })
+      : null,
+  ].filter(Boolean));
 }
 
 export async function markRoomUnavailable(roomId: string, actorId: string) {

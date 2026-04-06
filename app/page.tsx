@@ -15,6 +15,7 @@ import {
   Calendar,
   BarChart3,
   Users,
+  Users2,
   Sparkles,
   Building2,
   GraduationCap,
@@ -121,6 +122,14 @@ function LandingPageContent() {
       href: "/admin/register",
       color: "from-orange-500 to-red-400",
       badge: "bg-orange-50 dark:bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-500/30",
+    },
+    {
+      icon: <Users2 className="h-6 w-6" />,
+      title: "Department Admin",
+      description: "Manages timetable, curriculum, students, lecturers, and courses within a specific department.",
+      href: "/admin/register",
+      color: "from-teal-500 to-emerald-400",
+      badge: "bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-500/30",
     },
   ];
 
@@ -543,13 +552,13 @@ function LandingPageContent() {
             Admin Roles
           </span>
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
-            Four Roles,
+            Five Roles,
             <span className="block mt-2 bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
               One Coordinated Institution
             </span>
           </h2>
           <p className="max-w-2xl mx-auto text-lg text-slate-600 dark:text-slate-300">
-            Each admin type has a focused scope so authority is clear, access is minimal, and nothing falls through the gaps.
+            Each role has a focused scope — from institution-wide oversight down to department-level operations — so authority is clear and nothing falls through the gaps.
           </p>
         </motion.div>
 
@@ -557,7 +566,7 @@ function LandingPageContent() {
           variants={staggerContainer}
           initial="hidden"
           animate={rolesInView ? "visible" : "hidden"}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6"
         >
           {adminRoles.map((role) => (
             <motion.div
@@ -620,8 +629,8 @@ function LandingPageContent() {
               transition={{ duration: 0.6, delay: 0.3 }}
               className="text-base sm:text-lg mb-10 max-w-2xl mx-auto opacity-90"
             >
-              Register as System Administrator to onboard your institution, then add your Academic Registrar
-              and Facilities Manager to activate the full platform.
+              Register as System Administrator to onboard your institution, then add your Academic Registrar,
+              Facilities Manager, and Department Admins to activate the full platform.
             </motion.p>
             
             <motion.div

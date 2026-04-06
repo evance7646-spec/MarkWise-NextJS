@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import Sidebar from "../../components/sidebar";
 import Header from "../../components/header";
 import Footer from "../../components/footer";
-import { Sparkles } from "lucide-react";
+import { Sparkles, LogOut } from "lucide-react";
 import { FacilitiesManagerContext, FacilitiesManagerInfo } from "./context";
 
 export default function RoomManagerShell({ children }: { children: React.ReactNode }) {
@@ -14,6 +14,11 @@ export default function RoomManagerShell({ children }: { children: React.ReactNo
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [admin, setAdmin] = useState<FacilitiesManagerInfo | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const handleSignOut = async () => {
+    await fetch("/api/auth/admin/logout", { method: "POST", credentials: "include" });
+    router.push("/admin/login");
+  };
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -46,7 +51,16 @@ export default function RoomManagerShell({ children }: { children: React.ReactNo
       <div className="min-h-screen bg-slate-50 flex">
         <Sidebar mobileOpen={sidebarOpen} onMobileClose={() => setSidebarOpen(false)} />
         <div className="flex-1 flex flex-col min-h-screen ml-0 md:ml-64">
-          <Header onMenuToggle={() => setSidebarOpen((prev) => !prev)} />
+          <div className="bg-white dark:bg-slate-800 border-b-2 border-indigo-200 dark:border-indigo-800 shadow-md sticky top-0 z-30 flex items-center justify-between px-4 sm:px-6">
+            <Header onMenuToggle={() => setSidebarOpen((prev) => !prev)} />
+            <button
+              onClick={handleSignOut}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+            >
+              <LogOut className="h-4 w-4" />
+              <span className="hidden sm:inline">Sign Out</span>
+            </button>
+          </div>
           <main className="py-4 sm:py-6 flex-1">
             <div className="max-w-7xl mx-auto px-4 sm:px-6">
               {children}

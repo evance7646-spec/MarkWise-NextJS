@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { useFacilitiesManager } from "./context";
 import { motion, AnimatePresence } from "framer-motion";
 
 // Icons
@@ -418,6 +419,7 @@ function BuildingNameEditor({
 
 export default function RoomManagerPage() {
   const router = useRouter();
+  const manager = useFacilitiesManager();
   
   // State
   const [mounted, setMounted] = useState(false);
@@ -485,20 +487,12 @@ export default function RoomManagerPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // Get institution ID from token on mount
+  // Sync institutionId from auth context
   useEffect(() => {
-    const token = localStorage.getItem("roomManagerToken");
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        if (payload?.institutionId) {
-          setFormData(prev => ({ ...prev, institutionId: payload.institutionId }));
-        }
-      } catch (e) {
-        console.error("Failed to decode token", e);
-      }
+    if (manager?.institutionId) {
+      setFormData(prev => ({ ...prev, institutionId: manager.institutionId }));
     }
-  }, []);
+  }, [manager?.institutionId]);
 
   // Load rooms
   const loadRooms = async (silent = false) => {
@@ -506,13 +500,8 @@ export default function RoomManagerPage() {
     setError("");
     
     try {
-      const token = localStorage.getItem("roomManagerToken");
-      const headers: HeadersInit = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
       // Add limit to get all rooms; API defaults to today's bookings
-      const url = "/api/rooms?limit=1000";
-      const response = await fetch(url, { headers });
+      const response = await fetch("/api/rooms?limit=1000", { credentials: "include" });
       const data = await response.json();
 
       if (!response.ok) {
@@ -537,7 +526,7 @@ export default function RoomManagerPage() {
       
       // Auto-expand all buildings by default on first load
       if (!silent && enhancedRooms.length > 0) {
-        const buildings = [...new Set(enhancedRooms.map((r: Room) => r.buildingCode))];
+        const buildings = [...new Set(enhancedRooms.map((r: Room) => r.buildingCode))] as string[];
         setExpandedBuildings(new Set(buildings));
       }
     } catch (err: any) {
@@ -572,12 +561,6 @@ export default function RoomManagerPage() {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("roomManagerToken");
-      const headers: HeadersInit = {
-        "Content-Type": "application/json",
-      };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
       const url = editingRoom ? `/api/rooms/${editingRoom.id}` : "/api/rooms";
       const method = editingRoom ? "PATCH" : "POST";
 
@@ -594,7 +577,8 @@ export default function RoomManagerPage() {
 
       const response = await fetch(url, {
         method,
-        headers,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(apiPayload)
       });
 
@@ -624,12 +608,6 @@ export default function RoomManagerPage() {
     setSuccess("");
 
     try {
-      const token = localStorage.getItem("roomManagerToken");
-      const headers: HeadersInit = {
-        "Content-Type": "application/json",
-      };
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
       // Generate rooms
       const roomsToCreate = [];
       const { startNumber, endNumber, buildingCode, buildingName, floor, roomPrefix, capacity, type, status } = bulkFormData;
@@ -649,7 +627,7 @@ export default function RoomManagerPage() {
           : `${buildingCode} ${roomNumber}`;
         
         roomsToCreate.push({
-          institutionId: formData.institutionId,
+          institutionId: manager?.institutionId || formData.institutionId,
           buildingCode,
           roomCode,
           name: `${buildingName} Room ${roomNumber}`,
@@ -664,7 +642,8 @@ export default function RoomManagerPage() {
       // Send bulk request
       const response = await fetch("/api/rooms/bulk", {
         method: "POST",
-        headers,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ rooms: roomsToCreate })
       });
 
@@ -690,13 +669,9 @@ export default function RoomManagerPage() {
     setError("");
 
     try {
-      const token = localStorage.getItem("roomManagerToken");
-      const headers: HeadersInit = {};
-      if (token) headers["Authorization"] = `Bearer ${token}`;
-
       const response = await fetch(`/api/rooms/${room.id}`, {
         method: "DELETE",
-        headers
+        credentials: "include",
       });
 
       if (!response.ok) {
@@ -736,14 +711,7 @@ export default function RoomManagerPage() {
 
   // Reset forms
   const resetForm = () => {
-    const token = localStorage.getItem("roomManagerToken");
-    let institutionId = "";
-    if (token) {
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        institutionId = payload?.institutionId || "";
-      } catch (e) {}
-    }
+    const institutionId = manager?.institutionId || formData.institutionId;
     setFormData({
       institutionId,
       buildingCode: "",

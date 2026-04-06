@@ -12,7 +12,8 @@ import { FormField, AlertBanner } from "@/app/components/ui/form";
 type Role =
   | "system_admin"
   | "academic_registrar"
-  | "facilities_manager";
+  | "facilities_manager"
+  | "department_admin";
 
 interface RoleOption {
   value: Role;
@@ -61,7 +62,7 @@ const ROLE_OPTIONS: RoleOption[] = [
     canCreateInstitution: false,
   },
   {
-    value: "facilities_manager",
+    value: "facilities_manager" as Role,
     label: "Facilities Manager",
     description: "Manage room bookings, reservations and physical space resources.",
     icon: (
@@ -76,12 +77,29 @@ const ROLE_OPTIONS: RoleOption[] = [
     needsDepartment: false,
     canCreateInstitution: false,
   },
+  {
+    value: "department_admin" as Role,
+    label: "Department Admin",
+    description: "Manage timetables, curriculum, students and lecturers for a specific department.",
+    icon: (
+      <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+      </svg>
+    ),
+    color: "text-teal-300",
+    border: "border-teal-500/40",
+    bg: "bg-teal-500/10",
+    needsInstitution: true,
+    needsDepartment: true,
+    canCreateInstitution: false,
+  },
 ];
 
 const ROLE_DASHBOARD: Record<Role, string> = {
   system_admin:       "/admin/system-admin/dashboard",
   academic_registrar: "/admin/academic-registrar/dashboard",
   facilities_manager: "/admin/facilities-manager/dashboard",
+  department_admin:   "/admin/department-admin/dashboard",
 };
 
 export default function AdminRegisterPage() {
@@ -127,8 +145,23 @@ export default function AdminRegisterPage() {
       .finally(() => setInstitutionsLoading(false));
   }, [step, selectedRole]);
 
-  // Department fields (kept for API compat, no longer shown in UI)
+  // Department fields (department_admin only)
+  const [createDepartment, setCreateDepartment] = useState(false);
+  const [departmentId, setDepartmentId] = useState("");
   const [departmentName, setDepartmentName] = useState("");
+  const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(false);
+
+  // Fetch departments when institutionId is set for department_admin
+  useEffect(() => {
+    if (!selectedRole?.needsDepartment || !institutionId) { setDepartments([]); return; }
+    setDepartmentsLoading(true);
+    fetch(`/api/departments?institutionId=${institutionId}`)
+      .then(r => r.ok ? r.json() : {})
+      .then(data => setDepartments(data.departments ?? data.data ?? data ?? []))
+      .catch(() => setDepartments([]))
+      .finally(() => setDepartmentsLoading(false));
+  }, [selectedRole, institutionId]);
 
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -141,6 +174,9 @@ export default function AdminRegisterPage() {
     setInstitutionId("");
     setInstitutionSearch("");
     setInstitutionDropdownOpen(false);
+    setCreateDepartment(false);
+    setDepartmentId("");
+    setDepartmentName("");
     setStep(2);
     setError(null);
   };
@@ -170,6 +206,17 @@ export default function AdminRegisterPage() {
       return;
     }
 
+    if (selectedRole!.needsDepartment) {
+      if (createDepartment && !departmentName.trim()) {
+        setError("Please enter a department name.");
+        return;
+      }
+      if (!createDepartment && !departmentId) {
+        setError("Please select a department or choose to create a new one.");
+        return;
+      }
+    }
+
     const body: Record<string, string> = { fullName, email, password, role };
 
     if (role === "system_admin") {
@@ -181,6 +228,14 @@ export default function AdminRegisterPage() {
     } else {
       // academic_registrar, facilities_manager
       body.institutionId = institutionId;
+    }
+
+    if (role === "department_admin") {
+      if (createDepartment) {
+        body.departmentName = departmentName.trim();
+      } else {
+        body.departmentId = departmentId;
+      }
     }
 
     setLoading(true);
@@ -445,6 +500,86 @@ export default function AdminRegisterPage() {
                       Select the institution you will be managing.
                     </p>
                   </FormField>
+                </div>
+              )}
+
+              {/* Department picker/creator — department_admin only */}
+              {selectedRole.needsDepartment && (
+                <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-white">Department</p>
+
+                  {/* Toggle */}
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { setCreateDepartment(false); setDepartmentName(""); }}
+                      className={`flex-1 rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all ${
+                        !createDepartment
+                          ? "border-teal-500/60 bg-teal-500/20 text-teal-300"
+                          : "border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      Join existing department
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setCreateDepartment(true); setDepartmentId(""); }}
+                      className={`flex-1 rounded-lg border px-4 py-2.5 text-xs font-semibold transition-all ${
+                        createDepartment
+                          ? "border-teal-500/60 bg-teal-500/20 text-teal-300"
+                          : "border-slate-600 text-slate-400 hover:border-slate-500 hover:text-slate-300"
+                      }`}
+                    >
+                      Create new department
+                    </button>
+                  </div>
+
+                  {/* Select existing */}
+                  {!createDepartment && (
+                    <FormField>
+                      {!institutionId ? (
+                        <p className="text-xs text-slate-500">Select an institution above first.</p>
+                      ) : departmentsLoading ? (
+                        <p className="text-xs text-slate-500">Loading departments…</p>
+                      ) : (
+                        <select
+                          id="reg-dept"
+                          value={departmentId}
+                          onChange={e => {
+                            const opt = departments.find(d => d.id === e.target.value);
+                            setDepartmentId(e.target.value);
+                            setDepartmentName(opt?.name ?? "");
+                          }}
+                          className="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                        >
+                          <option value="">Select department…</option>
+                          {departments.map(d => (
+                            <option key={d.id} value={d.id}>{d.name}</option>
+                          ))}
+                        </select>
+                      )}
+                      {departments.length === 0 && institutionId && !departmentsLoading && (
+                        <p className="text-xs text-amber-400 mt-1">No departments found — switch to "Create new" to add one.</p>
+                      )}
+                    </FormField>
+                  )}
+
+                  {/* Create new */}
+                  {createDepartment && (
+                    <FormField>
+                      <Input
+                        type="text"
+                        theme="dark"
+                        required
+                        value={departmentName}
+                        onChange={e => setDepartmentName(e.target.value)}
+                        placeholder="Department name (e.g. Computer Science)"
+                      />
+                      <p className="text-xs text-slate-500 mt-1">
+                        A new department will be created under the selected institution.
+                      </p>
+                    </FormField>
+                  )}
                 </div>
               )}
 

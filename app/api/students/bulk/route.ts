@@ -1,87 +1,121 @@
-import { randomUUID } from "node:crypto";
-import { NextResponse } from "next/server";
-import { normalizeAdmission, readStudents, type StudentRecord, writeStudents } from "@/lib/studentStore.server";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { resolveAdminScope } from "@/lib/adminScope";
 
 export const runtime = "nodejs";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+export async function POST(req: NextRequest) {
+  // Auth
+  const scope = await resolveAdminScope(req);
+  if (!scope.ok) {
+    return NextResponse.json({ error: scope.error }, { status: scope.status ?? 401 });
+  }
 
-export async function POST(request: Request) {
+  let body: { students?: unknown[] };
   try {
-    const body = (await request.json()) as {
-      courseId?: string;
-      students?: Array<{ name?: string; admissionNumber?: string; email?: string }>;
-    };
-    const courseId = body.courseId?.trim() ?? "";
-
-    const incoming = body.students ?? [];
-    if (!courseId) {
-      return NextResponse.json(
-        { error: "courseId is required." },
-        { status: 400, headers: corsHeaders },
-      );
-    }
-
-    if (!Array.isArray(incoming) || incoming.length === 0) {
-      return NextResponse.json(
-        { error: "students array is required." },
-        { status: 400, headers: corsHeaders },
-      );
-    }
-
-    const current = await readStudents();
-    const existingAdmissions = new Set(
-      current.map((student) => normalizeAdmission(student.admissionNumber)),
-    );
-
-    const added: StudentRecord[] = [];
-    const skipped: Array<{ name: string; admissionNumber: string; reason: string }> = [];
-
-    for (const rawStudent of incoming) {
-      const name = rawStudent.name?.trim() ?? "";
-      const admissionNumber = normalizeAdmission(rawStudent.admissionNumber ?? "");
-      const email = rawStudent.email?.trim();
-
-      if (!name || !admissionNumber) {
-        skipped.push({ name, admissionNumber, reason: "invalid" });
-        continue;
-      }
-
-      if (existingAdmissions.has(admissionNumber)) {
-        skipped.push({ name, admissionNumber, reason: "duplicate" });
-        continue;
-      }
-
-      existingAdmissions.add(admissionNumber);
-      added.push({ id: randomUUID(), name, admissionNumber, courseId, email });
-    }
-
-    if (added.length > 0) {
-      await writeStudents([...current, ...added]);
-    }
-
-    return NextResponse.json(
-      {
-        added,
-        skipped,
-      },
-      { headers: corsHeaders },
-    );
+    body = await req.json();
   } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const students = Array.isArray(body?.students) ? body.students : [];
+  if (students.length === 0) {
     return NextResponse.json(
-      { error: "Failed bulk add." },
-      { status: 500, headers: corsHeaders },
+      { error: "students array is required and must not be empty" },
+      { status: 400 },
     );
   }
+
+  // Derive departmentId from scope (dept admin uses their own; institution admin provides it in the row)
+  const firstRow = students[0] as Record<string, unknown>;
+  const departmentId = scope.isInstitutionAdmin
+    ? String(firstRow?.departmentId ?? "").trim()
+    : (scope.departmentId ?? "");
+
+  if (!departmentId) {
+    return NextResponse.json({ error: "departmentId is required" }, { status: 400 });
+  }
+
+  // Validate department + get institutionId in one query
+  const dept = await prisma.department.findUnique({
+    where: { id: departmentId },
+    select: { institutionId: true },
+  });
+  if (!dept) {
+    return NextResponse.json({ error: "Department not found" }, { status: 404 });
+  }
+  if (
+    scope.isInstitutionAdmin &&
+    scope.institutionId &&
+    dept.institutionId !== scope.institutionId
+  ) {
+    return NextResponse.json(
+      { error: "Department does not belong to your institution" },
+      { status: 403 },
+    );
+  }
+
+  const institutionId = dept.institutionId;
+  let created = 0;
+  let skipped = 0;
+
+  for (const raw of students) {
+    const s = raw as Record<string, unknown>;
+    const name = String(s.name ?? "").trim();
+    const admissionNumber = String(s.admissionNumber ?? "").trim();
+    const courseId = String(s.courseId ?? "").trim();
+    const emailRaw = String(s.email ?? "").trim();
+    const email = emailRaw || null;
+
+    if (!name || !admissionNumber || !courseId) {
+      skipped++;
+      continue;
+    }
+
+    // Duplicate check
+    const exists = await prisma.student.findFirst({
+      where: { admissionNumber },
+      select: { id: true },
+    });
+    if (exists) {
+      skipped++;
+      continue;
+    }
+
+    // Email uniqueness — skip if email already taken
+    if (email) {
+      const emailTaken = await prisma.student.findFirst({
+        where: { email },
+        select: { id: true },
+      });
+      if (emailTaken) {
+        skipped++;
+        continue;
+      }
+    }
+
+    try {
+      await prisma.student.create({
+        data: {
+          name,
+          admissionNumber,
+          email,
+          courseId,
+          departmentId,
+          institutionId,
+          year: typeof s.year === "number" ? s.year : 1,
+        },
+      });
+      created++;
+    } catch {
+      skipped++;
+    }
+  }
+
+  return NextResponse.json({ created, skipped });
 }
 
 export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: corsHeaders,
-  });
+  return new Response(null, { status: 204 });
 }
+

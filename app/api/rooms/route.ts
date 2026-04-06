@@ -6,7 +6,7 @@ import { jsonError, jsonOk, optionsResponse, ApiError } from "@/lib/roomApi";
 import { resolveRoomScope } from "@/lib/roomAuth";
 import { createRoomSchema, roomsQuerySchema } from "@/lib/roomValidation";
 import { expireHolds, refreshRoomStatuses, toRoomStatusPayload } from "@/lib/roomBookingService";
-import { updateInstitutionMappingSet } from '@/lib/updateInstitutionMappingSet';
+import { MappingService } from "@/lib/ble/MappingService";
 
 export const runtime = "nodejs";
 
@@ -19,7 +19,12 @@ export async function GET(request: Request) {
     // (window queries compute availability on-the-fly instead)
     const { searchParams } = new URL(request.url);
     const institutionId = searchParams.get("institutionId") ?? undefined;
-    await expireHolds();
+    // Best-effort — a DB blip should not prevent rooms from being returned
+    try {
+      await expireHolds();
+    } catch (holdErr) {
+      console.warn("[rooms] expireHolds skipped:", (holdErr as Error).message);
+    }
     const needsDbRefresh = !searchParams.get("startAt") || !searchParams.get("endAt");
     if (needsDbRefresh) {
       // Refresh is best-effort — a DB blip or pool exhaustion should not fail the whole request.
@@ -251,8 +256,8 @@ export async function POST(request: Request) {
       throw new ApiError(scope.status, "UNAUTHORIZED", scope.error);
     }
 
-    if (scope.role !== "roomManager") {
-      throw new ApiError(403, "FORBIDDEN", "Only room managers can add, edit, or delete rooms. Other roles are read-only.");
+    if (scope.role !== "roomManager" && scope.role !== "admin") {
+      throw new ApiError(403, "FORBIDDEN", "Only room managers or admins can add rooms.");
     }
 
     const body = await request.json();
@@ -282,7 +287,9 @@ export async function POST(request: Request) {
       data: { ...parsed.data, bleId: nextBleId },
     });
     if (parsed.data.institutionId) {
-      await updateInstitutionMappingSet(parsed.data.institutionId);
+      await BLEIdManager.autoAssignIds(parsed.data.institutionId);
+      const mappingSet = await MappingService.generateMappingSet(parsed.data.institutionId);
+      await MappingService.saveMappingSet(parsed.data.institutionId, mappingSet);
     }
     return jsonOk({ room: toRoomStatusPayload(room) }, 201);
   } catch (error) {

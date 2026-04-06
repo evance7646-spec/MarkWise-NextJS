@@ -24,7 +24,15 @@ export async function GET(req: NextRequest) {
     try {
       const where: any = { institutionId: instId };
       if (courseId) where.courseId = courseId;
-      const students = await prisma.student.findMany({ where, orderBy: { name: 'asc' } });
+      const students = await prisma.student.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        include: {
+          auth: { select: { id: true } },
+          _count: { select: { enrollments: true } },
+          course: { select: { name: true } },
+        },
+      });
       return NextResponse.json({ students });
     } catch {
       return NextResponse.json({ error: 'Failed to fetch students' }, { status: 500 });
@@ -58,12 +66,19 @@ export async function GET(req: NextRequest) {
     departmentId = scope.departmentId;
   }
 
+  const includeOpts = {
+    auth: { select: { id: true } },
+    _count: { select: { enrollments: true } },
+    course: { select: { name: true } },
+  };
+
   try {
     const where: any = { departmentId };
     if (courseId) where.courseId = courseId;
     const students = await prisma.student.findMany({
       where,
       orderBy: { name: 'asc' },
+      include: includeOpts,
     });
     return NextResponse.json({ students });
   } catch {
@@ -80,7 +95,7 @@ export async function POST(req: NextRequest) {
   }
 
   const data = await req.json();
-  const { name, admissionNumber, courseId, email, year } = data;
+  const { name, admissionNumber, courseId, year } = data;
 
   // Resolve departmentId server-side; never trust the body
   const departmentId = scope.isInstitutionAdmin

@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { updateInstitutionMappingSet } from '@/lib/updateInstitutionMappingSet';
+import { MappingService } from "@/lib/ble/MappingService";
 import { BLEIdManager } from "@/lib/ble/BLEIdManager";
+import { resolveRoomScope } from "@/lib/roomAuth";
 
 export async function POST(request: Request) {
   try {
+    const scope = await resolveRoomScope(request);
+    if (!scope.ok) {
+      return NextResponse.json({ error: { message: scope.error } }, { status: scope.status });
+    }
+    if (scope.role !== "roomManager" && scope.role !== "admin") {
+      return NextResponse.json({ error: { message: "Only room managers or admins can create rooms." } }, { status: 403 });
+    }
     const { rooms } = await request.json();
     if (!Array.isArray(rooms) || rooms.length === 0) {
       return NextResponse.json({ error: { message: "No rooms provided." } }, { status: 400 });
@@ -47,7 +55,9 @@ export async function POST(request: Request) {
       skipDuplicates: true,
     });
     if (institutionId) {
-      await updateInstitutionMappingSet(institutionId);
+      await BLEIdManager.autoAssignIds(institutionId);
+      const mappingSet = await MappingService.generateMappingSet(institutionId);
+      await MappingService.saveMappingSet(institutionId, mappingSet);
     }
     return NextResponse.json({ data: { count: created.count } }, { status: 201 });
   } catch (error) {

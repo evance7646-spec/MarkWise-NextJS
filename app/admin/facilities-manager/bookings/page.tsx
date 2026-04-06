@@ -119,6 +119,7 @@ export default function BookingsPage() {
   const [loading, setLoading]           = useState(true);
   const [error, setError]               = useState<string | null>(null);
   const [lastUpdated, setLastUpdated]   = useState<Date | null>(null);
+  const [bookings, setBookings]         = useState<Booking[]>([]);
 
   const [tab, setTab]             = useState("all");
   const [search, setSearch]       = useState("");

@@ -61,6 +61,7 @@ export async function handleAdminSignup(request: Request) {
       "system_admin",
       "academic_registrar",
       "facilities_manager",
+      "department_admin",
     ];
     if (!REGISTERABLE_ROLES.includes(role ?? "")) {
       return NextResponse.json(
@@ -177,7 +178,7 @@ export async function handleAdminSignup(request: Request) {
       );
     }
 
-    // ── dead code: department_admin removed ──────────────────────────────────
+    // ── department_admin: requires institution + department ────────────────────
     if (!institutionId) {
       return NextResponse.json(
         { error: "Institution ID is required for department admin." },

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { updateInstitutionMappingSet } from '@/lib/updateInstitutionMappingSet';
+import { MappingService } from '@/lib/ble/MappingService';
 import { BLEIdManager } from '@/lib/ble/BLEIdManager';
 
 // GET /api/curriculum?departmentId=xxx
@@ -229,23 +229,21 @@ export async function POST(req: NextRequest) {
               return NextResponse.json({ error: `Failed to upsert unit ${unit.code || unit.id}: ${unitError}` }, { status: 500 });
             }
           }
-          
-          // Connect units to semester
+
+          // Connect units to semester (set replaces the whole relation — works for empty too)
           try {
             // Only connect units that exist in the DB
             const unitIds = semester.units.map((unit: any) => unit.id);
             const existingUnits = await prisma.unit.findMany({ where: { id: { in: unitIds } }, select: { id: true } });
             const validUnitIds = existingUnits.map(u => u.id);
-            if (validUnitIds.length > 0) {
-              await prisma.semester.update({
-                where: { id: semester.id },
-                data: {
-                  units: {
-                    set: validUnitIds.map((id: string) => ({ id })),
-                  },
+            await prisma.semester.update({
+              where: { id: semester.id },
+              data: {
+                units: {
+                  set: validUnitIds.map((id: string) => ({ id })),
                 },
-              });
-            }
+              },
+            });
           } catch (semError) {
             console.error(`Semester update error for semester ${semester.id}:`, semError);
             return NextResponse.json({ error: `Failed to update semester ${semester.id}: ${semError}` }, { status: 500 });
@@ -253,12 +251,23 @@ export async function POST(req: NextRequest) {
         }
       }
     }
-    
-    // After all upserts, update mapping set for institution
+
+    // Delete programs for this department that are no longer in the submitted list
+    const submittedProgramIds = (programs as any[]).map((p) => p.id);
+    if (submittedProgramIds.length > 0) {
+      await prisma.program.deleteMany({
+        where: { departmentId, NOT: { id: { in: submittedProgramIds } } },
+      });
+    } else {
+      await prisma.program.deleteMany({ where: { departmentId } });
+    }
+
     // Get institutionId from department
     const department = await prisma.department.findUnique({ where: { id: departmentId }, select: { institutionId: true } });
     if (department?.institutionId) {
-      await updateInstitutionMappingSet(department.institutionId);
+      await BLEIdManager.autoAssignIds(department.institutionId);
+      const mappingSet = await MappingService.generateMappingSet(department.institutionId);
+      await MappingService.saveMappingSet(department.institutionId, mappingSet);
     }
     return NextResponse.json({ ok: true });
   } catch (error: any) {

@@ -777,6 +777,7 @@ enum AdminRole {
   system_admin
   academic_registrar
   facilities_manager
+  department_admin
 }
 
 enum UserType {

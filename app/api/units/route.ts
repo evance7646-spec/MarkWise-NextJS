@@ -1,38 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyAdminAuthToken } from '@/lib/adminAuthJwt';
-import { updateInstitutionMappingSet } from '@/lib/updateInstitutionMappingSet';
+import { MappingService } from '@/lib/ble/MappingService';
 import { BLEIdManager } from '@/lib/ble/BLEIdManager';
 
-// GET /api/units?departmentId=xxx
+// GET /api/units?departmentId=xxx  OR  ?institutionId=xxx
 export async function GET(req: NextRequest) {
   // No authentication required for GET
 
   const { searchParams } = new URL(req.url);
   const departmentId = searchParams.get('departmentId');
-  if (!departmentId) {
-    return NextResponse.json({ error: 'departmentId is required' }, { status: 400 });
+  const institutionId = searchParams.get('institutionId');
+
+  if (!departmentId && !institutionId) {
+    return NextResponse.json({ error: 'departmentId or institutionId is required' }, { status: 400 });
   }
+
   try {
-    // Include courseId if available (unit may be linked to a course)
+    const where = departmentId
+      ? { departmentId }
+      : { department: { institutionId: institutionId! } };
+
     const units = await prisma.unit.findMany({
-      where: { departmentId },
+      where,
       orderBy: { code: 'asc' },
-      include: { semesters: { include: { year: { include: { program: true } } } } },
+      include: {
+        semesters: {
+          include: {
+            year: {
+              include: { course: true },
+            },
+          },
+        },
+      },
     });
-    // Try to infer courseId from program/years/semesters if not directly present
-    const unitsWithCourseId = units.map((unit: any) => {
-      let courseId = unit.courseId || null;
-      // Try to infer from program structure if possible
-      if (!courseId && unit.semesters && unit.semesters.length > 0) {
-        const program = unit.semesters[0]?.year?.program;
-        if (program && program.courses && program.courses.length > 0) {
-          courseId = program.courses[0].id;
-        }
-      }
-      return { ...unit, courseId };
-    });
-    return NextResponse.json(unitsWithCourseId);
+    return NextResponse.json(units);
   } catch (error) {
     return NextResponse.json({ error: 'Failed to fetch units' }, { status: 500 });
   }
@@ -64,10 +66,15 @@ export async function POST(req: NextRequest) {
     const institutionId = department?.institutionId ?? '';
     const nextBleId = await BLEIdManager.getNextUnitId(institutionId);
     const unit = await prisma.unit.create({
-      data: { code, title, departmentId, courseId, bleId: nextBleId },
+      data: {
+        code, title, departmentId, bleId: nextBleId,
+        courses: { connect: { id: courseId } },
+      },
     });
     if (institutionId) {
-      await updateInstitutionMappingSet(institutionId);
+      await BLEIdManager.autoAssignIds(institutionId);
+      const mappingSet = await MappingService.generateMappingSet(institutionId);
+      await MappingService.saveMappingSet(institutionId, mappingSet);
     }
     return NextResponse.json(unit, { status: 201 });
   } catch (error) {

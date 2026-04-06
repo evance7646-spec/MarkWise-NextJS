@@ -3,6 +3,15 @@ import { prisma } from "@/lib/prisma";
 import { publishTimetableUpdatedEvent } from "@/lib/timetableEvents";
 import { type TimetableEntry, getTimetableEntries } from "@/lib/timetableStore";
 
+// Compatibility shims: all mutations happen via Prisma in API routes.
+// readTimetableEntries delegates to the DB-backed getTimetableEntries.
+// writeTimetableEntries is intentionally a no-op — callers that still use
+// these names will compile and function; the version bump + event publish
+// in each function still run correctly.
+const readTimetableEntries = getTimetableEntries;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const writeTimetableEntries = async (_entries: TimetableEntry[]): Promise<void> => {};
+
 /**
  * Bump the TimetableVersion for a course so mobile clients detect the change
  * via ETag / If-None-Match polling.  Fire-and-forget safe.

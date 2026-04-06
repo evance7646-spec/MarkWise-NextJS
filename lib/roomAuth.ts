@@ -1,5 +1,6 @@
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { verifyRoomManagerJwt } from "@/lib/roomManagerAuthJwt";
+import { verifyAdminAuthToken } from "@/lib/adminAuthJwt";
 
 export type RoomScope =
   | { ok: true; role: "admin" | "lecturer" | "roomManager"; userId: string }
@@ -13,26 +14,30 @@ const extractBearerToken = (authorizationHeader: string | null) => {
 };
 
 export async function resolveRoomScope(request: Request): Promise<RoomScope> {
+  // Try admin cookie first (facilities manager uses cookie-based auth)
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const cookieMatch = cookieHeader.match(/(?:^|;\s*)admin_auth_token=([^;]+)/);
+  if (cookieMatch?.[1]) {
+    const cookiePayload = verifyAdminAuthToken(decodeURIComponent(cookieMatch[1]));
+    if (cookiePayload?.adminId) {
+      return { ok: true, role: "admin", userId: cookiePayload.adminId };
+    }
+  }
 
   const token = extractBearerToken(request.headers.get("authorization"));
   if (!token) {
     return {
       ok: false,
       status: 401,
-      error: "Missing authorization. Provide admin or lecturer bearer token.",
+      error: "Missing authorization. Provide admin cookie or bearer token.",
     };
   }
 
-  // Try admin token first
+  // Try admin bearer token
   try {
-    const { verifyAdminAuthToken } = await import("@/lib/adminAuthJwt");
     const payload = verifyAdminAuthToken(token);
     if (payload && payload.adminId) {
-      return {
-        ok: true,
-        role: "admin",
-        userId: payload.adminId,
-      };
+      return { ok: true, role: "admin", userId: payload.adminId };
     }
   } catch {}
 

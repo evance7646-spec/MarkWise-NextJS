@@ -61,11 +61,11 @@ export async function getTimetableEntries(): Promise<TimetableEntry[]> {
     id: item.id,
     courseId: item.courseId,
     courseName: item.course?.name,
-    yearOfStudy: item.yearOfStudy,
-    semester: item.semester,
+    yearOfStudy: item.yearOfStudy ?? undefined,
+    semester: item.semester ? (item.semester as "1" | "2") : undefined,
     unitCode: item.unit?.code ?? "",
     unitTitle: item.unit?.title ?? "",
-    venueName: item.venueName,
+    venueName: item.venueName ?? undefined,
     lecturerId: item.lecturerId,
     lecturerName: item.lecturer?.fullName ?? "",
     day: item.day,
@@ -73,7 +73,7 @@ export async function getTimetableEntries(): Promise<TimetableEntry[]> {
     endTime: item.endTime,
     status: item.status as any,
     createdAt: item.createdAt.toISOString(),
-    updatedAt: item.updatedAt?.toISOString(),
+    updatedAt: item.updatedAt?.toISOString() ?? undefined,
   }));
 
 }

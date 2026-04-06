@@ -93,10 +93,13 @@ export default function DepartmentCurriculumPage() {
     (async () => {
       setIsLoading(true);
       try {
-        const { department } = await fetchDepartmentInfo();
-        if (!department?.id) throw new Error("No department info");
-        setDepartmentId(department.id);
-        const curriculum = await fetchCurriculum(department.id);
+        const data = await fetchDepartmentInfo();
+        // Academic registrar is institution-level (departmentId is null);
+        // fall back gracefully to the flat departmentId field.
+        const deptId = data.departmentId || data.department?.id;
+        if (!deptId) throw new Error("No department assigned to this account — please contact your system administrator.");
+        setDepartmentId(deptId);
+        const curriculum = await fetchCurriculum(deptId);
         
         // Sort programs by name
         const sortedPrograms = (curriculum.programs || []).sort((a: Program, b: Program) => 

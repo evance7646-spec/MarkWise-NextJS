@@ -86,6 +86,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Access denied to this department.' }, { status: 403, headers: corsHeaders });
   }
 
+  // Type-narrow departmentId: at this point institutionId-only path already returned above,
+  // so departmentId must be a non-null string here.
+  if (!departmentId) {
+    return NextResponse.json({ error: 'departmentId is required' }, { status: 400, headers: corsHeaders });
+  }
+
   try {
     const entries = await prisma.timetable.findMany({
       where: { departmentId },
