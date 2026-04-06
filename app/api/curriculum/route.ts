@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { MappingService } from '@/lib/ble/MappingService';
 import { BLEIdManager } from '@/lib/ble/BLEIdManager';
-import { normalizeUnitCode } from '@/lib/unitCode';
+import { normalizeUnitCode, resolveUnitFields } from '@/lib/unitCode';
 
 // GET /api/curriculum?departmentId=xxx
 export async function GET(req: NextRequest) {
@@ -186,8 +186,9 @@ export async function POST(req: NextRequest) {
           // Upsert units and connect
           for (const unit of semester.units) {
             try {
-              // Normalise code to canonical format (e.g. "sch2170" → "SCH 2170")
-              const unitCode = normalizeUnitCode(unit.code);
+              // Resolve and canonicalise code+title, auto-correcting swapped fields.
+              // E.g. (code="Organic Chemistry", title="SCH 2170") → (code="SCH 2170", title="Organic Chemistry")
+              const { code: unitCode, title: unitTitle } = resolveUnitFields(unit.code, unit.title);
               // Check if a unit with the same code exists
               const existingUnit = await prisma.unit.findUnique({ where: { code: unitCode } });
               if (existingUnit) {
@@ -195,7 +196,7 @@ export async function POST(req: NextRequest) {
                 await prisma.unit.update({
                   where: { code: unitCode },
                   data: {
-                    title: unit.title,
+                    title: unitTitle,
                     departmentId,
                   },
                 });
@@ -218,7 +219,7 @@ export async function POST(req: NextRequest) {
                   data: {
                     id: unit.id,
                     code: unitCode,
-                    title: unit.title,
+                    title: unitTitle,
                     departmentId,
                     bleId: nextBleId,
                     courses: {
