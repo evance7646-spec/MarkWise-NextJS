@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import bcrypt from "bcryptjs";
+import { prisma } from "@/lib/prisma";
 import { findCourseById } from "./courseStore";
 import { signStudentAccessToken } from "./studentAuthJwt";
 import { getStudentAuthUsers, writeStudentAuthUsers } from "./studentAuthStore";
@@ -29,6 +30,7 @@ type RegistrationSuccess = {
 			id: string;
 			name: string;
 			email: string;
+			institutionId?: string;
 			course: {
 				id: string;
 				code: string;
@@ -47,6 +49,7 @@ type RegistrationSuccess = {
 			admissionNumber: string;
 			name: string;
 			email: string;
+			institutionId?: string;
 		};
 		accessToken: string;
 	};

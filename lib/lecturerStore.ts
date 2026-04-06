@@ -42,7 +42,7 @@ export async function readLecturerAccounts(): Promise<LecturerAccount[]> {
     fullName: item.fullName,
     email: item.email,
     phoneNumber: item.phoneNumber ?? "",
-    department: item.departmentId ?? undefined,
+    department: (item as any).departmentId ?? undefined,
     institutionId: item.institutionId ?? undefined,
     passwordHash: item.passwordHash,
     createdAt: item.createdAt.toISOString(),

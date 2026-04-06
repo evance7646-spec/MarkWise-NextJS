@@ -197,7 +197,7 @@ export class MappingService {
         metadata: {
           ...mappingSet,
           generatedAt: new Date().toISOString()
-        }
+        } as any
       }
     });
 
@@ -242,7 +242,7 @@ export class MappingService {
       });
 
       if (anyLatest) {
-        return anyLatest.metadata as MappingSet;
+        return anyLatest.metadata as unknown as MappingSet;
       }
     }
 
@@ -250,7 +250,7 @@ export class MappingService {
       return null;
     }
 
-    return latest.metadata as MappingSet;
+    return latest.metadata as unknown as MappingSet;
   }
 
   /**

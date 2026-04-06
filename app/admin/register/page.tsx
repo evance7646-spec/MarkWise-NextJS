@@ -158,7 +158,7 @@ export default function AdminRegisterPage() {
     setDepartmentsLoading(true);
     fetch(`/api/departments?institutionId=${institutionId}`)
       .then(r => r.ok ? r.json() : {})
-      .then(data => setDepartments(data.departments ?? data.data ?? data ?? []))
+      .then((data: any) => setDepartments(data.departments ?? data.data ?? data ?? []))
       .catch(() => setDepartments([]))
       .finally(() => setDepartmentsLoading(false));
   }, [selectedRole, institutionId]);

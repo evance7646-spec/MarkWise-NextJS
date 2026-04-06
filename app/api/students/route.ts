@@ -141,7 +141,7 @@ async function POST_BULK(req: NextRequest) {
     return NextResponse.json({ error: 'Course not found' }, { status: 404 });
   }
   const departmentId = course.departmentId;
-  const institutionId = course.institutionId || (await prisma.department.findUnique({ where: { id: departmentId } }))?.institutionId;
+  const institutionId = (await prisma.department.findUnique({ where: { id: departmentId } }))?.institutionId;
   const results = [];
   for (const student of students) {
     const { name, admissionNumber } = student;

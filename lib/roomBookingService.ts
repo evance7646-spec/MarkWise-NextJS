@@ -481,7 +481,6 @@ export async function getBookingById(bookingId: string) {
     where: { id: bookingId },
     include: {
       room: true,
-      hold: true,
     },
   });
 

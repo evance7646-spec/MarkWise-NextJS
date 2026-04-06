@@ -15,13 +15,12 @@ export async function removeDuplicateDepartments(prisma: PrismaClient, instituti
     include: {
       admins: true,
       courses: true,
-      lecturers: true,
       students: true,
       timetables: true,
       units: true,
       programs: true,
     },
-    orderBy: { createdAt: 'asc' },
+    orderBy: { id: 'asc' },
   });
 
   if (departments.length <= 1) return; // No duplicates
@@ -32,7 +31,6 @@ export async function removeDuplicateDepartments(prisma: PrismaClient, instituti
     // Update related records to point to the kept department
     await prisma.admin.updateMany({ where: { departmentId: dup.id }, data: { departmentId: keep.id } });
     await prisma.course.updateMany({ where: { departmentId: dup.id }, data: { departmentId: keep.id } });
-    await prisma.lecturer.updateMany({ where: { departmentId: dup.id }, data: { departmentId: keep.id } });
     await prisma.student.updateMany({ where: { departmentId: dup.id }, data: { departmentId: keep.id } });
     await prisma.timetable.updateMany({ where: { departmentId: dup.id }, data: { departmentId: keep.id } });
     await prisma.unit.updateMany({ where: { departmentId: dup.id }, data: { departmentId: keep.id } });

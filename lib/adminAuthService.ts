@@ -159,7 +159,7 @@ export async function handleAdminSignup(request: Request) {
         );
       }
       const newAdmin = await prisma.admin.create({
-        data: { fullName, email, password: hashedPassword, institutionId, role },
+        data: { fullName, email, password: hashedPassword, institutionId, role: role as any },
       });
       return NextResponse.json(
         {
@@ -251,7 +251,7 @@ export async function handleAdminSignup(request: Request) {
         password: hashedPassword,
         institutionId,
         departmentId,
-        role,
+        role: role as any,
       },
     });
 

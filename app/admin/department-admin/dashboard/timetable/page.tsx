@@ -89,11 +89,11 @@ export default function DeptTimetablePage() {
         fetch(`/api/lecturers?departmentId=${admin.departmentId}`, { credentials: "include" }).then(res => res.ok ? res.json() : []).catch(() => []),
         fetch(`/api/rooms?institutionId=${admin.institutionId}`, { credentials: "include" }).then(res => res.ok ? res.json() : {}).catch(() => ({})),
       ]);
-      setCourses(Array.isArray(c) ? c : (c.courses ?? c.data ?? []));
-      setUnits(Array.isArray(u) ? u : (u.units ?? u.data ?? []));
-      setLecturers(Array.isArray(l) ? l : (l.lecturers ?? l.data ?? []));
+      setCourses(Array.isArray(c) ? c : ((c as any).courses ?? (c as any).data ?? []));
+      setUnits(Array.isArray(u) ? u : ((u as any).units ?? (u as any).data ?? []));
+      setLecturers(Array.isArray(l) ? l : ((l as any).lecturers ?? (l as any).data ?? []));
       // Rooms API wraps via jsonOk: { apiVersion, data: { rooms: [...] } }
-      const roomPayload = r?.data ?? r;
+      const roomPayload = (r as any)?.data ?? r;
       setRooms(Array.isArray(roomPayload) ? roomPayload : (roomPayload?.rooms ?? []));
     } catch (err) {
       console.error("[timetable] openModal fetch error:", err);
