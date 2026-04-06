@@ -80,13 +80,14 @@ export default function AppHeader() {
                 </svg>
               </button>
               {dropdownOpen === "signin" && (
-                <div className="absolute right-0 mt-2 w-64 rounded-2xl shadow-2xl border-2 border-indigo-200 dark:border-indigo-600 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 dark:from-slate-900 dark:via-indigo-950 dark:to-cyan-950 z-50 overflow-hidden">
+                <div className="absolute right-0 mt-2 w-72 rounded-2xl shadow-2xl border-2 border-indigo-200 dark:border-indigo-600 bg-gradient-to-br from-white via-indigo-50 to-cyan-50 dark:from-slate-900 dark:via-indigo-950 dark:to-cyan-950 z-50 overflow-hidden pl-2">
                   {/* Institutional portals */}
                   <p className="px-4 pt-3 pb-1 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">Admin Portals</p>
                   {[
                     { label: "System Administrator", href: "/admin/login", color: "text-indigo-700 dark:text-indigo-300" },
                     { label: "Academic Registrar",   href: "/admin/login", color: "text-purple-700 dark:text-purple-300" },
                     { label: "Facilities Manager",   href: "/admin/login", color: "text-orange-700 dark:text-orange-300" },
+                    { label: "Department Admin",     href: "/admin/login", color: "text-teal-700 dark:text-teal-300" },
                   ].map((item) => (
                     <button
                       key={item.label}
