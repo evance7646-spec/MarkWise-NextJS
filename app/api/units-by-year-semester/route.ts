@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -43,7 +43,70 @@ const writeUnitsMap = async (map: Record<string, string[]>) => {
   }
 };
 
-export async function GET() {
+/** Extract the first integer from a label like "Year 2" → 2 or "Semester 1" → 1. */
+const extractNumber = (label: string, fallback: number): number => {
+  const m = label.match(/\d+/);
+  return m ? parseInt(m[0], 10) : fallback;
+};
+
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url);
+  const courseId = searchParams.get("courseId");
+  const courseCode = searchParams.get("courseCode");
+
+  // When the mobile app provides a course identifier, query from the live curriculum structure.
+  // Course → YearBlock → Semester → Unit  (many-to-many via SemesterUnits relation)
+  if (courseId || courseCode) {
+    try {
+      const course = await prisma.course.findFirst({
+        where: courseId
+          ? { id: courseId }
+          : { code: { equals: courseCode!, mode: "insensitive" } },
+        include: {
+          years: {
+            include: {
+              semesters: {
+                include: { units: true },
+              },
+            },
+          },
+        },
+      });
+
+      if (!course) {
+        return NextResponse.json(
+          { unitsByCourseYearSemester: {} },
+          { headers: corsHeaders },
+        );
+      }
+
+      const map: Record<string, string[]> = {};
+      course.years.forEach((yearBlock, yi) => {
+        const yearNum = extractNumber(yearBlock.name, yi + 1);
+        yearBlock.semesters.forEach((semester, si) => {
+          const semNum = extractNumber(semester.label, si + 1);
+          const key = `${yearNum}-${semNum}`;
+          if (!map[key]) map[key] = [];
+          for (const unit of semester.units) {
+            map[key].push(`${unit.title} (${unit.code})`);
+          }
+        });
+      });
+
+      return NextResponse.json(
+        { unitsByCourseYearSemester: map },
+        { headers: corsHeaders },
+      );
+    } catch (err) {
+      console.error("[units-by-year-semester GET] course query failed:", err);
+      return NextResponse.json(
+        { error: "Failed to fetch units" },
+        { status: 500, headers: corsHeaders },
+      );
+    }
+  }
+
+  // Legacy path: return flat UnitsByYearSemester table (used by academic registrar curriculum page)
   const map = await readUnitsMap();
   return NextResponse.json({ unitsByYearSemester: map }, { headers: corsHeaders });
 }

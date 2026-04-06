@@ -78,6 +78,10 @@ export async function POST(request: Request) {
           name: student?.name ?? null,
           email: student?.email ?? user.email,
           institutionId: student?.institutionId ?? null,
+          courseId: resolvedCourseId || null,
+          programId: null,
+          courseCode: course?.code ?? null,
+          courseName: course?.name ?? null,
           course: course
             ? {
                 id: course.id,

@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ success: true }, { status: 200, headers: corsHeaders });
+  return NextResponse.json({ ok: true, success: true }, { status: 200, headers: corsHeaders });
 }
 
 // GET /api/student/enrollment
