@@ -145,7 +145,7 @@ export default function AppHeader() {
               {["Features", "How It Works", "Testimonials", "Pricing", "For Institutions"].map((item) => (
                 <a
                   key={item}
-                  href={`#${item.toLowerCase().replace(/\s+/g, "-")}`}
+                  href={item === "Pricing" ? "/pricing" : `#${item.toLowerCase().replace(/\s+/g, "-")}`}
                   className="block py-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
                   onClick={() => setMobileMenuOpen(false)}
                 >
