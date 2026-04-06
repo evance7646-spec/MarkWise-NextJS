@@ -106,7 +106,70 @@ export async function GET(req: NextRequest) {
   const caller = identifyToken(token);
   if (!caller) return NextResponse.json({ error: 'Unauthorized' }, { status: 401, headers: corsHeaders });
 
-  const rawUnitId = new URL(req.url).searchParams.get('unitId');
+  const { searchParams } = new URL(req.url);
+  const rawUnitId = searchParams.get('unitId');
+  const rawUnits = searchParams.get('units'); // batch: comma-separated unit codes
+
+  // ── Batch path: ?units=SCH2100,SCH2170,SCH2180 ───────────────────────────
+  if (rawUnits) {
+    const codes = rawUnits.split(',').map(c => c.trim()).filter(Boolean);
+    if (codes.length === 0) {
+      return NextResponse.json({ assignments: [] }, { headers: corsHeaders });
+    }
+
+    // Resolve all codes in parallel
+    const unitRows = (await Promise.all(codes.map(c => resolveUnit(c)))).filter(Boolean) as { id: string; code: string }[];
+    if (unitRows.length === 0) {
+      return NextResponse.json({ assignments: [] }, { headers: corsHeaders });
+    }
+
+    // Students may only see assignments for units they are enrolled in
+    let allowedUnitIds: string[] = unitRows.map(u => u.id);
+    if (caller.role === 'student') {
+      const enrolled = await prisma.enrollment.findMany({
+        where: { studentId: caller.actorId, unitId: { in: allowedUnitIds } },
+        select: { unitId: true },
+      });
+      const enrolledSet = new Set(enrolled.map(e => e.unitId));
+      // Also allow units linked via the student's course
+      const courseUnits = await prisma.student.findUnique({
+        where: { id: caller.actorId },
+        select: { course: { select: { units: { select: { id: true } } } } },
+      });
+      for (const u of courseUnits?.course?.units ?? []) enrolledSet.add(u.id);
+      allowedUnitIds = allowedUnitIds.filter(id => enrolledSet.has(id));
+    }
+
+    // Build variant sets (uuid + code + stripped code) for legacy data compatibility
+    const unitMap = new Map<string, string>(); // variantKey → canonical code
+    const allVariants: string[] = [];
+    for (const u of unitRows) {
+      if (!allowedUnitIds.includes(u.id)) continue;
+      const stripped = u.code.replace(/\s+/g, '').toUpperCase();
+      for (const v of [u.id, u.code, stripped]) {
+        allVariants.push(v);
+        unitMap.set(v.toUpperCase(), u.code);
+      }
+    }
+
+    if (allVariants.length === 0) {
+      return NextResponse.json({ assignments: [] }, { headers: corsHeaders });
+    }
+
+    const rows = await prisma.assignment.findMany({
+      where: { unitId: { in: allVariants } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const assignments = rows.map(a => ({
+      ...a,
+      unitCode: unitMap.get(a.unitId.toUpperCase()) ?? a.unitId,
+      unitId: unitMap.get(a.unitId.toUpperCase()) ?? a.unitId,
+    }));
+    return NextResponse.json({ assignments }, { headers: corsHeaders });
+  }
+
+  // ── Single-unit path: ?unitId=xxx ────────────────────────────────────────
   let unit: { id: string; code: string } | null = null;
   if (rawUnitId) {
     unit = await resolveUnit(decodeURIComponent(rawUnitId));
