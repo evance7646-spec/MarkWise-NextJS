@@ -49,6 +49,13 @@ export async function GET(request: Request) {
           admissionNumber: user.admissionNumber,
           name: student?.name ?? null,
           email: student?.email ?? user.email,
+          institutionId: student?.institutionId ?? null,
+          // Flat fields — mirror the sign-in response so the app can hydrate course
+          // linking on every launch without a separate API call.
+          courseId: resolvedCourseId || null,
+          programId: null,
+          courseCode: course?.code ?? null,
+          courseName: course?.name ?? null,
           course: course
             ? {
                 id: course.id,

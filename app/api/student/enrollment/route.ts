@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,10 +78,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Normalize codes: trim whitespace, uppercase — consistent with attendance endpoints
+  // Canonical codes for storage, e.g. "SCH 2170" — must match timetable unitCode field.
   const codes = (unitCodes as unknown[])
     .filter((c) => typeof c === "string" && c.trim() !== "")
-    .map((c) => (c as string).replace(/\s+/g, "").toUpperCase());
+    .map((c) => normalizeUnitCode(c as string));
+
+  // Stripped form for SQL matching — resolves both "SCH2170" and "SCH 2170" in DB.
+  const strippedCodes = codes.map((c) => c.replace(/\s+/g, "").toUpperCase());
 
   const namesMap =
     unitNamesMap && typeof unitNamesMap === "object" && !Array.isArray(unitNamesMap)
@@ -88,36 +92,44 @@ export async function POST(req: NextRequest) {
       : {};
 
   try {
-    // Resolve Unit.id for each submitted code (normalize stored codes too)
-    const units = await prisma.$queryRaw<{ id: string; code: string }[]>`
-      SELECT id, code
-      FROM "Unit"
-      WHERE UPPER(REPLACE(code, ' ', '')) = ANY(${codes}::text[])
-    `;
-    const unitIds = units.map((u) => u.id);
+    // Resolve Unit.id for each submitted code (strip spaces on both sides for consistent match)
+    const units = strippedCodes.length > 0
+      ? await prisma.$queryRaw<{ id: string; code: string }[]>`
+          SELECT id, code
+          FROM "Unit"
+          WHERE UPPER(REPLACE(code, ' ', '')) = ANY(${strippedCodes}::text[])
+        `
+      : [];
+    const unitIds = (units as { id: string; code: string }[]).map((u) => u.id);
 
-    await prisma.$transaction([
-      // 1. Update the snapshot (mobile app cache)
+    // Build transaction conditionally to avoid destructive side-effects:
+    //   codes.length === 0            → explicit clear, delete all enrollment rows
+    //   unitIds.length  > 0           → sync: remove stale, insert new
+    //   codes.length > 0, ids === 0   → codes unresolvable (data issue) → keep existing rows
+    const ops: any[] = [
       prisma.studentEnrollmentSnapshot.upsert({
         where: { studentId },
         update: { unitCodes: codes, unitNamesMap: namesMap, year: yearStr, semester: semesterStr },
         create: { studentId, unitCodes: codes, unitNamesMap: namesMap, year: yearStr, semester: semesterStr },
       }),
+    ];
 
-      // 2. Remove enrollment rows for units no longer in the submitted list
-      prisma.enrollment.deleteMany({
-        where: {
-          studentId,
-          ...(unitIds.length > 0 ? { unitId: { notIn: unitIds } } : {}),
-        },
-      }),
+    if (codes.length === 0) {
+      ops.push(prisma.enrollment.deleteMany({ where: { studentId } }));
+    } else if (unitIds.length > 0) {
+      ops.push(
+        prisma.enrollment.deleteMany({
+          where: { studentId, unitId: { notIn: unitIds } },
+        }),
+        prisma.enrollment.createMany({
+          data: unitIds.map((unitId) => ({ studentId, unitId })),
+          skipDuplicates: true,
+        }),
+      );
+    }
+    // else: codes submitted but none resolved — snapshot saved, enrollment rows untouched.
 
-      // 3. Insert new enrollment rows (skip duplicates)
-      prisma.enrollment.createMany({
-        data: unitIds.map((unitId) => ({ studentId, unitId })),
-        skipDuplicates: true,
-      }),
-    ]);
+    await prisma.$transaction(ops);
   } catch (err) {
     console.error("[enrollment POST] failed for studentId:", studentId, err);
     return NextResponse.json(
@@ -164,7 +176,9 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json(
     {
-      unitCodes: snapshot.unitCodes,
+      // Re-normalize on read so legacy stripped codes ("SCH2170") are returned in
+      // canonical spaced form ("SCH 2170") matching timetable unitCode fields.
+      unitCodes: (snapshot.unitCodes as string[]).map(normalizeUnitCode),
       unitNamesMap: snapshot.unitNamesMap ?? {},
       year: snapshot.year,
       semester: snapshot.semester,
