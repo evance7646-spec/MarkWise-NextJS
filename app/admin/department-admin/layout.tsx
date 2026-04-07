@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   LayoutDashboard, Users, BookOpen, ClipboardCheck,
   GraduationCap, Menu, X, LogOut, ChevronRight,
-  Building2, Calendar, ClipboardList,
+  Building2, Calendar, ClipboardList, BarChart3,
 } from "lucide-react";
 import { DepartmentAdminContext, type DepartmentAdminInfo } from "./context";
 
@@ -20,6 +20,7 @@ const NAV = [
   { label: "Lecturers",  href: `${BASE}/dashboard/lecturers`,           icon: GraduationCap,   color: "text-amber-400"   },
   { label: "Courses",    href: `${BASE}/dashboard/courses`,             icon: BookOpen,        color: "text-amber-400"   },
   { label: "Attendance", href: `${BASE}/dashboard/attendance`,          icon: ClipboardList,   color: "text-teal-400"    },
+  { label: "Analytics",  href: `${BASE}/dashboard/analytics`,           icon: BarChart3,        color: "text-cyan-400"    },
 ];
 
 function SidebarContent({ admin, pathname, onClose }: { admin: DepartmentAdminInfo | null; pathname: string; onClose?: () => void }) {
