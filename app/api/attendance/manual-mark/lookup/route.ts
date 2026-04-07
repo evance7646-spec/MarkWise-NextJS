@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const unitCode = rawUnitCode.replace(/\s+/g, "").toUpperCase();
+  const unitCode = rawUnitCode.replace(/\s+/g, " ").trim().toUpperCase();
 
   // ── Fetch lecturer's institution ──────────────────────────────────────────
   const lecturer = await prisma.lecturer.findUnique({
@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
     where: { studentId: student.id },
     select: { unitCodes: true },
   });
-  const normalize = (c: string) => c.replace(/\s+/g, "").toUpperCase();
+  const normalize = (c: string) => c.replace(/\s+/g, " ").trim().toUpperCase();
   const isEnrolled =
     snapshot?.unitCodes.some((uc) => normalize(uc) === unitCode) ?? false;
 

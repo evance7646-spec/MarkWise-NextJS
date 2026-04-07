@@ -61,7 +61,7 @@ export async function GET(
 
   // ── Normalize unit code ───────────────────────────────────────────────────
   const { unitCode: rawParam } = await params;
-  const unitCode = decodeURIComponent(rawParam).replace(/\s+/g, "").toUpperCase();
+  const unitCode = decodeURIComponent(rawParam).replace(/\s+/g, " ").trim().toUpperCase();
   if (!unitCode) {
     return NextResponse.json(
       { message: "unitCode is required" },
@@ -91,7 +91,7 @@ export async function GET(
   const unitRows = await prisma.$queryRaw<{ id: string; departmentId: string }[]>`
     SELECT id, "departmentId"
     FROM "Unit"
-    WHERE UPPER(REPLACE(code, ' ', '')) = ${unitCode}
+    WHERE UPPER(REGEXP_REPLACE(code, '\s+', ' ', 'g')) = ${unitCode}
     LIMIT 1
   `;
   if (unitRows.length === 0) {
@@ -132,7 +132,7 @@ export async function GET(
       AND EXISTS (
         SELECT 1
         FROM unnest(es."unitCodes") AS uc
-        WHERE UPPER(REPLACE(uc, ' ', '')) = ${unitCode}
+        WHERE UPPER(REGEXP_REPLACE(uc, '\s+', ' ', 'g')) = ${unitCode}
       )
     ORDER BY s.name ASC
   `;

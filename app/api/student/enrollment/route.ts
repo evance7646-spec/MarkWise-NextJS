@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { prisma, withRetry } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
 import { normalizeUnitCode } from "@/lib/unitCode";
 
@@ -83,30 +83,29 @@ export async function POST(req: NextRequest) {
     .filter((c) => typeof c === "string" && c.trim() !== "")
     .map((c) => normalizeUnitCode(c as string));
 
-  // Stripped form for SQL matching — resolves both "SCH2170" and "SCH 2170" in DB.
-  const strippedCodes = codes.map((c) => c.replace(/\s+/g, "").toUpperCase());
-
   const namesMap =
     unitNamesMap && typeof unitNamesMap === "object" && !Array.isArray(unitNamesMap)
       ? unitNamesMap
       : {};
 
   try {
-    // Resolve Unit.id for each submitted code (strip spaces on both sides for consistent match)
-    const units = strippedCodes.length > 0
-      ? await prisma.$queryRaw<{ id: string; code: string }[]>`
-          SELECT id, code
-          FROM "Unit"
-          WHERE UPPER(REPLACE(code, ' ', '')) = ANY(${strippedCodes}::text[])
-        `
+    // Resolve Unit.id for each submitted code using ORM (no raw SQL — raw queries use
+    // prepared statements which are incompatible with pgBouncer transaction mode).
+    const units = codes.length > 0
+      ? await withRetry(() =>
+          prisma.unit.findMany({
+            where: { code: { in: codes } },
+            select: { id: true, code: true },
+          })
+        )
       : [];
-    const unitIds = (units as { id: string; code: string }[]).map((u) => u.id);
+    const unitIds = units.map((u) => u.id);
 
     // Build transaction conditionally to avoid destructive side-effects:
     //   codes.length === 0            → explicit clear, delete all enrollment rows
     //   unitIds.length  > 0           → sync: remove stale, insert new
     //   codes.length > 0, ids === 0   → codes unresolvable (data issue) → keep existing rows
-    const ops: any[] = [
+    const ops: Parameters<typeof prisma.$transaction>[0] = [
       prisma.studentEnrollmentSnapshot.upsert({
         where: { studentId },
         update: { unitCodes: codes, unitNamesMap: namesMap, year: yearStr, semester: semesterStr },
@@ -129,7 +128,7 @@ export async function POST(req: NextRequest) {
     }
     // else: codes submitted but none resolved — snapshot saved, enrollment rows untouched.
 
-    await prisma.$transaction(ops);
+    await withRetry(() => prisma.$transaction(ops));
   } catch (err) {
     console.error("[enrollment POST] failed for studentId:", studentId, err);
     return NextResponse.json(
@@ -138,7 +137,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return NextResponse.json({ ok: true, success: true }, { status: 200, headers: corsHeaders });
+  return NextResponse.json(
+    { unitCodes: codes, unitNamesMap: namesMap, year: yearStr, semester: semesterStr },
+    { status: 200, headers: corsHeaders }
+  );
 }
 
 // GET /api/student/enrollment

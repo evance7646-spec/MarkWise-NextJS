@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Normalise codes (match how ConductedSession stores them) ─────────────
-  const unitCode = rawUnitCode.replace(/\s+/g, "").toUpperCase();
+  const unitCode = rawUnitCode.replace(/\s+/g, " ").trim().toUpperCase();
   const lectureRoom = rawRoom.trim().toUpperCase();
   // Truncate to second precision to match ConductedSession insert logic
   const sessionStartMs = Math.floor(sessionStart / 1000) * 1000;
@@ -162,7 +162,7 @@ export async function POST(req: NextRequest) {
     where: { studentId: student.id },
     select: { unitCodes: true },
   });
-  const normalizeCode = (c: string) => c.replace(/\s+/g, "").toUpperCase();
+  const normalizeCode = (c: string) => c.replace(/\s+/g, " ").trim().toUpperCase();
   const isEnrolled =
     snapshot?.unitCodes.some((uc) => normalizeCode(uc) === unitCode) ?? false;
   if (!isEnrolled) {
