@@ -195,6 +195,10 @@ export async function POST(
     lecturerId: newEntry.lecturerId,
     unitId: newEntry.unitId,
     unitCode: newEntry.unit?.code ? normalizeUnitCode(newEntry.unit.code) : null,
+    day: newEntry.day,
+    startTime: newEntry.startTime,
+    endTime: newEntry.endTime,
+  }).catch(err => console.error("[timetable/merge] booking creation failed:", err));
 
   return NextResponse.json(
     {
