@@ -183,7 +183,11 @@ export async function POST(req: NextRequest) {
             },
           });
           
-          // Upsert units and connect
+          // Upsert units — collect the real DB IDs as we go so the semester
+          // set operation below always uses the canonical DB id, not the
+          // frontend-generated id (which differs for pre-existing units).
+          const resolvedUnitDbIds: string[] = [];
+
           for (const unit of semester.units) {
             try {
               // Resolve and canonicalise code+title, auto-correcting swapped fields.
@@ -209,6 +213,8 @@ export async function POST(req: NextRequest) {
                   update: {},
                   create: { departmentId, unitId: existingUnit.id },
                 });
+                // Use the real DB id, not the frontend-supplied unit.id
+                resolvedUnitDbIds.push(existingUnit.id);
               } else {
                 // Create new unit — assign BLE ID in U0–U199, scoped to this institution
                 const dept = await prisma.department.findUnique({ where: { id: departmentId }, select: { institutionId: true } });
@@ -231,6 +237,7 @@ export async function POST(req: NextRequest) {
                   update: {},
                   create: { departmentId, unitId: created.id },
                 });
+                resolvedUnitDbIds.push(created.id);
               }
             } catch (unitError) {
               console.error(`Unit upsert error for unit ${unit.id}:`, unitError);
@@ -238,17 +245,15 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Connect units to semester (set replaces the whole relation — works for empty too)
+          // Connect units to semester using the real DB ids collected above.
+          // Using resolvedUnitDbIds (not semester.units[].id) is critical for
+          // shared units whose DB id differs from the frontend-generated id.
           try {
-            // Only connect units that exist in the DB
-            const unitIds = semester.units.map((unit: any) => unit.id);
-            const existingUnits = await prisma.unit.findMany({ where: { id: { in: unitIds } }, select: { id: true } });
-            const validUnitIds = existingUnits.map(u => u.id);
             await prisma.semester.update({
               where: { id: semester.id },
               data: {
                 units: {
-                  set: validUnitIds.map((id: string) => ({ id })),
+                  set: resolvedUnitDbIds.map((id) => ({ id })),
                 },
               },
             });
