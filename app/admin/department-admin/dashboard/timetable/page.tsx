@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { motion } from "framer-motion";
-import { Calendar, Search, Plus, X, Loader2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Calendar, Search, Plus, X, Loader2, Users, ChevronRight } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
 interface Entry {
@@ -32,6 +32,26 @@ interface SemRef    { id: string; label: string; yearId: string; year: SemYear }
 interface Unit      { id: string; code: string; title: string; semesters?: SemRef[] }
 interface Lecturer  { id: string; fullName: string }
 interface Room      { id: string; name: string; roomCode: string; capacity: number; status?: string }
+
+interface MergeEntry {
+  id: string;
+  departmentName: string;
+  courseName: string;
+  courseCode: string;
+  unitCode: string;
+  unitTitle: string;
+  lecturerName: string;
+  roomName: string;
+  roomCode: string;
+  roomCapacity: number | null;
+  day: string;
+  startTime: string;
+  endTime: string;
+  yearOfStudy?: string;
+  semester?: string;
+  status: string;
+  studentCount: number;
+}
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const STATUS_STYLES: Record<string, string> = {
@@ -89,6 +109,12 @@ export default function DeptTimetablePage() {
   const [submitError, setSubmitError]       = useState<string | null>(null);
   const [mergeConflict, setMergeConflict]   = useState<{ conflictId: string; message: string } | null>(null);
 
+  // Joint-class detail drawer
+  const [drawerGroupId, setDrawerGroupId]     = useState<string | null>(null);
+  const [drawerEntries, setDrawerEntries]     = useState<MergeEntry[]>([]);
+  const [drawerTotal, setDrawerTotal]         = useState<number>(0);
+  const [drawerLoading, setDrawerLoading]     = useState(false);
+
   const fetchEntries = useCallback(async () => {
     if (!admin?.departmentId) return;
     setLoading(true);
@@ -103,6 +129,29 @@ export default function DeptTimetablePage() {
   const todayName = DAYS[new Date().getDay() - 1] ?? "Monday";
   useEffect(() => { setActiveDay(todayName); }, [todayName]);
 
+  const openMergeDrawer = useCallback(async (groupId: string) => {
+    setDrawerGroupId(groupId);
+    setDrawerLoading(true);
+    setDrawerEntries([]);
+    try {
+      const res = await fetch(`/api/timetable/merge-group/${groupId}`, { credentials: "include" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setDrawerEntries(data.entries ?? []);
+      setDrawerTotal(data.totalStudents ?? 0);
+    } catch (err) {
+      console.error("[drawer] fetchMergeGroup error:", err);
+    } finally {
+      setDrawerLoading(false);
+    }
+  }, []);
+
+  const closeDrawer = useCallback(() => {
+    setDrawerGroupId(null);
+    setDrawerEntries([]);
+  }, []);
+
+  // ── Open modal ─────────────────────────────────────────────────────
   // Open modal — load courses, units (with semester hierarchy), lecturers.
   // Rooms are intentionally NOT loaded here — they load dynamically after time is chosen.
   const openModal = useCallback(async () => {
@@ -409,9 +458,14 @@ export default function DeptTimetablePage() {
               </div>
               <div className="hidden sm:flex items-center gap-1.5">
                 {e.mergeGroupId && (
-                  <span className="rounded-full px-2 py-0.5 text-xs font-medium bg-violet-500/15 text-violet-600">
+                  <button
+                    onClick={() => openMergeDrawer(e.mergeGroupId!)}
+                    className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 transition-colors"
+                  >
+                    <Users className="h-3 w-3" />
                     Joint
-                  </span>
+                    <ChevronRight className="h-3 w-3 opacity-60" />
+                  </button>
                 )}
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[e.status] ?? "bg-slate-100 text-gray-500"}`}>
                   {e.status}
@@ -421,6 +475,97 @@ export default function DeptTimetablePage() {
           ))
         )}
       </div>
+
+      {/* ── Joint Class Detail Drawer ────────────────────────────────────── */}
+      <AnimatePresence>
+        {drawerGroupId && (
+          <>
+            {/* backdrop */}
+            <motion.div
+              key="drawer-backdrop"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeDrawer}
+              className="fixed inset-0 z-40 bg-black/40"
+            />
+            {/* panel */}
+            <motion.div
+              key="drawer-panel"
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 340, damping: 30 }}
+              className="fixed right-0 top-0 z-50 h-full w-full max-w-sm bg-white shadow-2xl flex flex-col"
+            >
+              {/* header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  <Users className="h-4.5 w-4.5 text-violet-600" />
+                  <span className="font-semibold text-gray-800 text-sm">Joint Class</span>
+                  {!drawerLoading && (
+                    <span className="rounded-full bg-violet-100 text-violet-700 text-xs font-medium px-2 py-0.5">
+                      {drawerEntries.length} dept{drawerEntries.length !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+                <button onClick={closeDrawer} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {drawerLoading ? (
+                <div className="flex-1 flex items-center justify-center gap-2 text-sm text-gray-400">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                </div>
+              ) : (
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+
+                  {/* summary bar */}
+                  <div className="rounded-xl bg-violet-50 border border-violet-100 px-4 py-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-violet-500 font-medium uppercase tracking-wider">Combined students</p>
+                      <p className="text-2xl font-bold text-violet-700 mt-0.5">{drawerTotal}</p>
+                    </div>
+                    {drawerEntries[0] && (
+                      <div className="text-right">
+                        <p className="text-xs text-gray-500">{drawerEntries[0].unitCode}</p>
+                        <p className="text-xs text-gray-400">{drawerEntries[0].day} {drawerEntries[0].startTime}–{drawerEntries[0].endTime}</p>
+                        <p className="text-xs text-gray-400">{drawerEntries[0].roomName}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* per-department cards */}
+                  {drawerEntries.map((me, idx) => (
+                    <div key={me.id} className="rounded-xl border border-gray-200 bg-white px-4 py-3 space-y-1.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{me.departmentName}</p>
+                          <p className="text-xs text-gray-500">{me.courseName}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
+                          STATUS_STYLES[me.status] ?? "bg-slate-100 text-gray-500"
+                        }`}>{me.status}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
+                        <span className="text-gray-400">Lecturer</span>
+                        <span className="font-medium text-gray-700">{me.lecturerName || "—"}</span>
+                        <span className="text-gray-400">Room</span>
+                        <span className="font-medium text-gray-700">{me.roomName || "—"}</span>
+                        <span className="text-gray-400">Year / Sem</span>
+                        <span className="font-medium text-gray-700">{me.yearOfStudy ?? "—"} · {me.semester ?? "—"}</span>
+                        <span className="text-gray-400">Students</span>
+                        <span className="font-semibold text-violet-700">{me.studentCount}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* ── New Entry Modal ──────────────────────────────────────────────── */}
       {showModal && (
