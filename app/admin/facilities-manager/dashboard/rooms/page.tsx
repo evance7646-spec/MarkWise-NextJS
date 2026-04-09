@@ -3,18 +3,30 @@ import { useEffect, useState, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Building2, Search, Plus, X, Filter, AlertTriangle,
-  CheckCircle2, XCircle, Clock, Minus,
+  CheckCircle2, XCircle, Clock, Minus, Calendar, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { useFacilitiesManager } from "../../context";
 
 const inp = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50 focus:border-sky-500";
 const lbl = "block text-xs font-medium text-gray-500 mb-1.5";
 
+interface TimetableEntry {
+  id: string;
+  startTime: string;
+  endTime: string;
+  unitCode: string;
+  unitTitle: string;
+  courseName: string;
+  lecturerName: string;
+  departmentName: string;
+}
+
 interface Room {
   id: string; name: string; roomCode: string; buildingCode: string;
   type: string; capacity: number; floor: number;
   status: "free" | "reserved" | "occupied" | "unavailable";
   isActive: boolean;
+  todayTimetable?: TimetableEntry[];
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -120,6 +132,7 @@ export default function RoomsPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [expandedRoomId, setExpandedRoomId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!admin?.institutionId) return;
@@ -188,6 +201,7 @@ export default function RoomsPage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 hidden lg:table-cell">Type</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-gray-400 hidden lg:table-cell">Cap.</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-gray-400">Status</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-400 hidden lg:table-cell">Today's Schedule</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-gray-400">Active</th>
               </tr>
             </thead>
@@ -195,38 +209,76 @@ export default function RoomsPage() {
               {loading ? (
                 [...Array(8)].map((_, i) => (
                   <tr key={i} className="border-b border-gray-200/50">
-                    {[1,2,3,4,5,6].map(j => <td key={j} className="px-4 py-3"><div className="h-5 rounded bg-gray-200 animate-pulse" /></td>)}
+                    {[1,2,3,4,5,6,7].map(j => <td key={j} className="px-4 py-3"><div className="h-5 rounded bg-gray-200 animate-pulse" /></td>)}
                   </tr>
                 ))
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={6} className="py-12 text-center">
+                <tr><td colSpan={7} className="py-12 text-center">
                   <div className="flex flex-col items-center gap-2">
                     <AlertTriangle className="h-7 w-7 text-slate-700" />
                     <p className="text-gray-400">{search ? "No rooms match your search" : "No rooms yet"}</p>
                   </div>
                 </td></tr>
-              ) : filtered.map((r, i) => (
-                <motion.tr key={r.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-                  className="border-b border-gray-200/50 hover:bg-gray-50">
-                  <td className="px-4 py-3">
-                    <div className="font-medium text-gray-800">{r.name}</div>
-                    <div className="text-xs text-gray-400 font-mono">{r.roomCode} · Fl {r.floor}</div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-500 hidden md:table-cell font-mono text-xs">{r.buildingCode}</td>
-                  <td className="px-4 py-3 hidden lg:table-cell">
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{r.type}</span>
-                  </td>
-                  <td className="px-4 py-3 text-center text-gray-500 hidden lg:table-cell">{r.capacity}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_COLOR[r.status] ?? "bg-gray-100 text-gray-500"}`}>
-                      {r.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <StatusBadge room={r} onToggle={load} />
-                  </td>
-                </motion.tr>
-              ))}
+              ) : filtered.flatMap((r, i) => {
+                const sessions = r.todayTimetable ?? [];
+                const isExpanded = expandedRoomId === r.id;
+                return [
+                  <motion.tr key={r.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
+                    className="border-b border-gray-200/50 hover:bg-gray-50">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-800">{r.name}</div>
+                      <div className="text-xs text-gray-400 font-mono">{r.roomCode} · Fl {r.floor}</div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500 hidden md:table-cell font-mono text-xs">{r.buildingCode}</td>
+                    <td className="px-4 py-3 hidden lg:table-cell">
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">{r.type}</span>
+                    </td>
+                    <td className="px-4 py-3 text-center text-gray-500 hidden lg:table-cell">{r.capacity}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium capitalize ${STATUS_COLOR[r.status] ?? "bg-gray-100 text-gray-500"}`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center hidden lg:table-cell">
+                      {sessions.length > 0 ? (
+                        <button
+                          onClick={() => setExpandedRoomId(isExpanded ? null : r.id)}
+                          className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium bg-violet-500/10 text-violet-600 hover:bg-violet-500/20 transition-colors">
+                          <Calendar className="h-3 w-3" />
+                          {sessions.length} session{sessions.length !== 1 ? "s" : ""}
+                          {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <StatusBadge room={r} onToggle={load} />
+                    </td>
+                  </motion.tr>,
+                  isExpanded && sessions.length > 0 ? (
+                    <motion.tr key={`${r.id}-expand`}
+                      initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="bg-violet-50/60 border-b border-violet-100">
+                      <td colSpan={7} className="px-6 py-3">
+                        <p className="text-xs font-semibold text-violet-700 mb-2">Today&apos;s Timetable</p>
+                        <div className="flex flex-wrap gap-2">
+                          {sessions.map(t => (
+                            <div key={t.id} className="flex items-center gap-2.5 rounded-xl border border-violet-200 bg-white px-3 py-2 shadow-sm text-xs">
+                              <span className="font-mono text-gray-500 shrink-0">{t.startTime}–{t.endTime}</span>
+                              <span className="font-semibold text-gray-800">{t.unitCode}</span>
+                              {t.unitTitle && <span className="text-gray-400 hidden xl:inline">{t.unitTitle}</span>}
+                              {t.departmentName && <span className="rounded-full bg-sky-100 text-sky-700 px-1.5 py-0.5">{t.departmentName}</span>}
+                              {t.lecturerName && <span className="text-gray-500">{t.lecturerName}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ) : null,
+                ].filter(Boolean);
+              })}
             </tbody>
           </table>
         </div>

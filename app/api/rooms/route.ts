@@ -185,6 +185,34 @@ export async function GET(request: Request) {
     }
     const holdRoomIds = new Set(allActiveHolds.map((h) => h.roomId));
 
+    // Fetch today's timetable entries for all rooms so the facilities manager
+    // can see the recurring schedule even without an explicit time window.
+    const DAYS_ARR = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    const todayName = DAYS_ARR[now.getDay()];
+    const allTodayTimetable = roomIds.length > 0 ? await prisma.timetable.findMany({
+      where: {
+        roomId: { in: roomIds },
+        day: todayName,
+        status: { notIn: ["Cancelled"] },
+      },
+      select: {
+        id: true,
+        roomId: true,
+        startTime: true,
+        endTime: true,
+        unitId: true,
+        unit: { select: { code: true, title: true } },
+        lecturer: { select: { fullName: true } },
+        course: { select: { name: true } },
+        department: { select: { name: true } },
+      },
+    }) : [];
+    const timetableByRoom = new Map<string, typeof allTodayTimetable>();
+    for (const t of allTodayTimetable) {
+      if (!timetableByRoom.has(t.roomId)) timetableByRoom.set(t.roomId, []);
+      timetableByRoom.get(t.roomId)!.push(t);
+    }
+
     const withAvailability = rooms.map((room) => {
       const bookings = bookingsByRoom.get(room.id) ?? [];
 
@@ -222,6 +250,19 @@ export async function GET(request: Request) {
         }
       }
 
+      const todayTimetable = (timetableByRoom.get(room.id) ?? [])
+        .sort((a, b) => a.startTime.localeCompare(b.startTime))
+        .map((t) => ({
+          id: t.id,
+          startTime: t.startTime,
+          endTime: t.endTime,
+          unitCode: t.unit?.code ?? "",
+          unitTitle: t.unit?.title ?? "",
+          courseName: t.course?.name ?? "",
+          lecturerName: t.lecturer?.fullName ?? "",
+          departmentName: t.department?.name ?? "",
+        }));
+
       return {
         ...toRoomStatusPayload(room),
         hasConflict,
@@ -231,6 +272,7 @@ export async function GET(request: Request) {
         bookingUnitCode,
         bookingLecturerName,
         bookings,
+        todayTimetable,
       };
     });
 

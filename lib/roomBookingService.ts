@@ -518,8 +518,16 @@ export async function refreshRoomStatuses(institutionId?: string) {
   const endOfDay = new Date(nowDate);
   endOfDay.setHours(23, 59, 59, 999);
 
-  // 3 bulk queries — no per-room transactions needed
-  const [occupiedRows, holdRows, reservedRows] = await Promise.all([
+  // Day name for timetable lookup (e.g. "Monday")
+  const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const todayName = DAYS[nowDate.getDay()];
+  const nowHHMM = `${String(nowDate.getHours()).padStart(2,"0")}:${String(nowDate.getMinutes()).padStart(2,"0")}`;
+
+  // 4 bulk queries — no per-room transactions needed
+  // The 4th query checks the Timetable table directly so rooms committed to
+  // recurring weekly classes are marked reserved even if the Booking sync
+  // was not run for those entries (e.g. legacy entries).
+  const [occupiedRows, holdRows, reservedRows, timetableRows] = await Promise.all([
     prisma.booking.findMany({
       where: {
         roomId: { in: roomIds },
@@ -546,11 +554,33 @@ export async function refreshRoomStatuses(institutionId?: string) {
       },
       select: { roomId: true },
     }),
+    // Timetable entries for today: covers rooms whose bookings haven't been
+    // created yet (legacy entries) or whose booking sync is behind.
+    prisma.timetable.findMany({
+      where: {
+        roomId: { in: roomIds },
+        day: todayName,
+        status: { notIn: ["Cancelled"] },
+        // Room is still reserved for the day even if class hasn't started yet
+        endTime: { gt: nowHHMM },
+      },
+      select: { roomId: true, startTime: true, endTime: true },
+    }),
   ]);
 
   const occupiedIds = new Set(occupiedRows.map((r) => r.roomId));
   const holdIds     = new Set(holdRows.map((r) => r.roomId));
   const reservedIds = new Set(reservedRows.map((r) => r.roomId));
+
+  // A room is occupied via timetable if a session is currently in progress
+  for (const t of timetableRows) {
+    if (t.startTime <= nowHHMM && t.endTime > nowHHMM) {
+      occupiedIds.add(t.roomId);
+    } else {
+      // Session later today → reserved
+      reservedIds.add(t.roomId);
+    }
+  }
 
   const toOccupied: string[] = [];
   const toReserved: string[] = [];
