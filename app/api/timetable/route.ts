@@ -307,6 +307,7 @@ export async function POST(req: NextRequest) {
           id: true,
           startTime: true,
           endTime: true,
+          departmentId: true,
           unit: { select: { code: true } },
           room: { select: { name: true } },
         },
@@ -336,6 +337,20 @@ export async function POST(req: NextRequest) {
     }
 
     if (lecturerConflict) {
+      const conflictUnitCode = lecturerConflict.unit?.code
+        ? normalizeUnitCode(lecturerConflict.unit.code)
+        : null;
+      // Same unit in a different room → the admin chose the wrong room.
+      // Offer to join the existing entry as a joint class instead of a hard error.
+      if (conflictUnitCode && conflictUnitCode === normalisedUnitCode) {
+        return NextResponse.json({
+          mergePrompt: true,
+          conflictId: lecturerConflict.id,
+          conflictDepartment: lecturerConflict.departmentId ?? null,
+          message: `${conflictUnitCode} is already scheduled in ${lecturerConflict.room?.name ?? 'another room'} at this time (${lecturerConflict.startTime}–${lecturerConflict.endTime}). Would you like to join that session as a joint class?`,
+        }, { status: 409, headers: corsHeaders });
+      }
+      // Different unit — genuine double-booking, hard error.
       return NextResponse.json({
         error: `Lecturer is already assigned to ${lecturerConflict.unit?.code ?? 'another class'} in ${lecturerConflict.room?.name ?? 'another room'} at this time (${lecturerConflict.startTime}–${lecturerConflict.endTime}).`,
         lecturerConflict: true,
