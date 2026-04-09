@@ -460,16 +460,19 @@ model Timetable {
   updatedBy           String?
   mergeGroupId        String?    // non-null = shared cross-department lesson group
   rescheduledRoomId   String?    // room used after reschedule (null = same room or not rescheduled)
+  isMerged            Boolean    @default(false) // true when part of a MergedSession
+  mergedSessionId     String?    // FK → MergedSession.id
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
   departmentId        String
   roomId              String
-  course           Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  department       Department @relation(fields: [departmentId], references: [id])
-  lecturer         Lecturer   @relation(fields: [lecturerId], references: [id])
-  room             Room       @relation("TimetableRoom", fields: [roomId], references: [id])
-  rescheduledRoom  Room?      @relation("TimetableRescheduledRoom", fields: [rescheduledRoomId], references: [id])
-  unit             Unit       @relation(fields: [unitId], references: [id])
+  course           Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  department       Department     @relation(fields: [departmentId], references: [id])
+  lecturer         Lecturer       @relation(fields: [lecturerId], references: [id])
+  room             Room           @relation("TimetableRoom", fields: [roomId], references: [id])
+  rescheduledRoom  Room?          @relation("TimetableRescheduledRoom", fields: [rescheduledRoomId], references: [id])
+  unit             Unit           @relation(fields: [unitId], references: [id])
+  mergedSession    MergedSession? @relation("MergedSessionEntries", fields: [mergedSessionId], references: [id])
 
   @@index([departmentId])
   @@index([courseId])
@@ -479,6 +482,7 @@ model Timetable {
   @@index([day, roomId])
   @@index([day, lecturerId])
   @@index([rescheduledRoomId])
+  @@index([mergedSessionId])
   @@map("Timetable")
 }
 
@@ -756,6 +760,23 @@ model ExtraSession {
   @@index([unitCode])
   @@index([lecturerId])
   @@map("extra_sessions")
+}
+
+// Lecturer-initiated merged session: links multiple timetable entries into one joint class.
+model MergedSession {
+  id              String      @id @default(uuid())
+  lecturerId      String
+  mergedRoom      String?
+  mergedRoomId    String?
+  mergedDay       String?
+  mergedStartTime String?
+  mergedEndTime   String?
+  mergedNote      String?
+  mergedAt        DateTime    @default(now())
+  entries         Timetable[] @relation("MergedSessionEntries")
+
+  @@index([lecturerId])
+  @@map("MergedSession")
 }
 
 // Stores the mobile app's locally-selected enrollment (unit codes + names + year/semester).

@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
           id: true, courseId: true, unitId: true, roomId: true, lecturerId: true,
           day: true, startTime: true, endTime: true, venueName: true,
           yearOfStudy: true, semester: true, status: true, createdAt: true, updatedAt: true, departmentId: true,
+          mergeGroupId: true,
           course: { select: { name: true } },
           unit: { select: { code: true, title: true } },
           lecturer: { select: { fullName: true } },
@@ -74,6 +75,7 @@ export async function GET(req: NextRequest) {
         day: item.day, startTime: item.startTime, endTime: item.endTime, status: item.status,
         createdAt: item.createdAt, updatedAt: item.updatedAt,
         departmentId: item.departmentId,
+        mergeGroupId: item.mergeGroupId,
         department: item.department ? { id: item.department.id, name: item.department.name } : null,
       }));
       return NextResponse.json(result, { headers: { ...corsHeaders, 'Cache-Control': 'private, max-age=30, stale-while-revalidate=300' } });
@@ -113,6 +115,7 @@ export async function GET(req: NextRequest) {
         createdAt: true,
         updatedAt: true,
         departmentId: true,
+        mergeGroupId: true,
         course: { select: { name: true } },
         unit: { select: { code: true, title: true } },
         lecturer: { select: { fullName: true } },
@@ -145,6 +148,7 @@ export async function GET(req: NextRequest) {
       status: item.status,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
+      mergeGroupId: item.mergeGroupId,
       department: item.department ? { id: item.department.id, name: item.department.name } : null,
     }));
 

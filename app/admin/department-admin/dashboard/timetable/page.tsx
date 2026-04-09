@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
-import { Calendar, Search, Plus, X } from "lucide-react";
+import { Calendar, Search, Plus, X, Loader2 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
 interface Entry {
@@ -23,6 +23,7 @@ interface Entry {
   semester?: string;
   yearOfStudy?: string;
   unitId?: string;
+  mergeGroupId?: string | null;
 }
 
 interface Course    { id: string; name: string; departmentId: string }
@@ -30,7 +31,7 @@ interface SemYear   { id: string; name: string; course: { id: string } }
 interface SemRef    { id: string; label: string; yearId: string; year: SemYear }
 interface Unit      { id: string; code: string; title: string; semesters?: SemRef[] }
 interface Lecturer  { id: string; fullName: string }
-interface Room      { id: string; name: string; roomCode: string; capacity: number }
+interface Room      { id: string; name: string; roomCode: string; capacity: number; status?: string }
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const STATUS_STYLES: Record<string, string> = {
@@ -40,9 +41,33 @@ const STATUS_STYLES: Record<string, string> = {
 };
 
 const EMPTY_FORM = {
-  courseId: "", yearId: "", semesterId: "", unitId: "", lecturerId: "", roomId: "",
-  day: "Monday", startTime: "08:00", endTime: "10:00", venueName: "",
+  courseId: "", yearId: "", semesterId: "", unitId: "",
+  lecturerId: "", roomId: "", venueName: "",
+  day: "Monday", startTime: "08:00", endTime: "10:00",
 };
+
+// ── Build startAt / endAt ISO timestamps for a day-name + HH:mm window ────
+// The rooms API derives day-of-week and time from UTC values, so we construct
+// a UTC date falling on the correct day of week in the near future.
+function buildWindowTimestamps(dayName: string, startTime: string, endTime: string) {
+  const DAY_IDX: Record<string, number> = {
+    Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
+    Thursday: 4, Friday: 5, Saturday: 6,
+  };
+  const target = DAY_IDX[dayName] ?? 1;
+  const now = new Date();
+  const todayUTC = now.getUTCDay();
+  let daysAhead = (target - todayUTC + 7) % 7;
+  if (daysAhead === 0) daysAhead = 7; // always a future date
+  const [sh, sm] = startTime.split(":").map(Number);
+  const [eh, em] = endTime.split(":").map(Number);
+  const base = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + daysAhead,
+  ));
+  const startAt = new Date(base); startAt.setUTCHours(sh, sm, 0, 0);
+  const endAt   = new Date(base); endAt.setUTCHours(eh, em, 0, 0);
+  return { startAt: startAt.toISOString(), endAt: endAt.toISOString() };
+}
 
 export default function DeptTimetablePage() {
   const admin = useDepartmentAdmin();
@@ -52,15 +77,17 @@ export default function DeptTimetablePage() {
   const [search, setSearch] = useState("");
 
   // Modal state
-  const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ ...EMPTY_FORM });
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [units, setUnits] = useState<Unit[]>([]);
-  const [lecturers, setLecturers] = useState<Lecturer[]>([]);
-  const [rooms, setRooms] = useState<Room[]>([]);
-  const [modalLoading, setModalLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [showModal, setShowModal]           = useState(false);
+  const [form, setForm]                     = useState({ ...EMPTY_FORM });
+  const [courses, setCourses]               = useState<Course[]>([]);
+  const [units, setUnits]                   = useState<Unit[]>([]);
+  const [lecturers, setLecturers]           = useState<Lecturer[]>([]);
+  const [availableRooms, setAvailableRooms] = useState<Room[]>([]);
+  const [modalLoading, setModalLoading]     = useState(false);
+  const [roomsLoading, setRoomsLoading]     = useState(false);
+  const [submitting, setSubmitting]         = useState(false);
+  const [submitError, setSubmitError]       = useState<string | null>(null);
+  const [mergeConflict, setMergeConflict]   = useState<{ conflictId: string; message: string } | null>(null);
 
   const fetchEntries = useCallback(async () => {
     if (!admin?.departmentId) return;
@@ -76,95 +103,194 @@ export default function DeptTimetablePage() {
   const todayName = DAYS[new Date().getDay() - 1] ?? "Monday";
   useEffect(() => { setActiveDay(todayName); }, [todayName]);
 
+  // Open modal — load courses, units (with semester hierarchy), lecturers.
+  // Rooms are intentionally NOT loaded here — they load dynamically after time is chosen.
   const openModal = useCallback(async () => {
-    if (!admin?.departmentId || !admin.institutionId) return;
+    if (!admin?.departmentId) return;
     setForm({ ...EMPTY_FORM });
     setSubmitError(null);
+    setMergeConflict(null);
+    setAvailableRooms([]);
     setShowModal(true);
     setModalLoading(true);
     try {
-      const [c, u, l, r] = await Promise.all([
-        fetch(`/api/courses?departmentId=${admin.departmentId}`, { credentials: "include" }).then(res => res.ok ? res.json() : {}).catch(() => ({})),
-        fetch(`/api/units?departmentId=${admin.departmentId}`, { credentials: "include" }).then(res => res.ok ? res.json() : {}).catch(() => ({})),
-        fetch(`/api/lecturers?departmentId=${admin.departmentId}`, { credentials: "include" }).then(res => res.ok ? res.json() : []).catch(() => []),
-        fetch(`/api/rooms?institutionId=${admin.institutionId}`, { credentials: "include" }).then(res => res.ok ? res.json() : {}).catch(() => ({})),
+      const [c, u, l] = await Promise.all([
+        fetch(`/api/courses?departmentId=${admin.departmentId}`, { credentials: "include" })
+          .then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        fetch(`/api/units?departmentId=${admin.departmentId}`, { credentials: "include" })
+          .then(r => r.ok ? r.json() : {}).catch(() => ({})),
+        fetch(`/api/lecturers?departmentId=${admin.departmentId}`, { credentials: "include" })
+          .then(r => r.ok ? r.json() : []).catch(() => []),
       ]);
       setCourses(Array.isArray(c) ? c : ((c as any).courses ?? (c as any).data ?? []));
       setUnits(Array.isArray(u) ? u : ((u as any).units ?? (u as any).data ?? []));
       setLecturers(Array.isArray(l) ? l : ((l as any).lecturers ?? (l as any).data ?? []));
-      // Rooms API wraps via jsonOk: { apiVersion, data: { rooms: [...] } }
-      const roomPayload = (r as any)?.data ?? r;
-      setRooms(Array.isArray(roomPayload) ? roomPayload : (roomPayload?.rooms ?? []));
     } catch (err) {
       console.error("[timetable] openModal fetch error:", err);
     } finally {
       setModalLoading(false);
     }
-  }, [admin?.departmentId, admin?.institutionId]);
+  }, [admin?.departmentId]);
 
-  const handleChange = (field: string, value: string) => {
+  // Fetch only rooms that are FREE for the chosen day + time slot.
+  const fetchAvailableRooms = useCallback(async (day: string, startTime: string, endTime: string) => {
+    if (!admin?.institutionId || !day || !startTime || !endTime) return;
+    if (startTime >= endTime) return;
+    setRoomsLoading(true);
+    setAvailableRooms([]);
+    try {
+      const { startAt, endAt } = buildWindowTimestamps(day, startTime, endTime);
+      const url = `/api/rooms?institutionId=${admin.institutionId}&startAt=${encodeURIComponent(startAt)}&endAt=${encodeURIComponent(endAt)}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return;
+      const payload = await res.json();
+      const raw: any[] = Array.isArray(payload) ? payload : (payload?.data?.rooms ?? payload?.rooms ?? []);
+      // Only show rooms that are free for this window
+      const free = raw.filter(r => !r.status || r.status === "free" || r.status === "available");
+      setAvailableRooms(free.map(r => ({
+        id: r.id,
+        name: r.name,
+        roomCode: r.roomCode ?? r.room_code ?? "",
+        capacity: r.capacity ?? 0,
+        status: r.status,
+      })));
+    } catch (err) {
+      console.error("[timetable] fetchAvailableRooms error:", err);
+    } finally {
+      setRoomsLoading(false);
+    }
+  }, [admin?.institutionId]);
+
+  const handleChange = useCallback((field: string, value: string) => {
     setForm(prev => {
       const next = { ...prev, [field]: value };
-      // Cascade resets downstream
+
+      // Cascade resets for scope fields
       if (field === "courseId") { next.yearId = ""; next.semesterId = ""; next.unitId = ""; }
-      else if (field === "yearId") { next.semesterId = ""; next.unitId = ""; }
+      else if (field === "yearId")     { next.semesterId = ""; next.unitId = ""; }
       else if (field === "semesterId") { next.unitId = ""; }
+
+      // Reset room when time/day changes
+      if (field === "day" || field === "startTime" || field === "endTime") {
+        next.roomId = "";
+        next.venueName = "";
+      }
+
       // Auto-fill venueName when room is selected
-      if (field === "roomId" && value && !prev.venueName) {
-        const room = rooms.find(r => r.id === value);
+      if (field === "roomId" && value) {
+        const room = availableRooms.find(r => r.id === value);
         if (room) next.venueName = `${room.roomCode} – ${room.name}`;
       }
+
       return next;
     });
-  };
+  }, [availableRooms]);
+
+  // Trigger room fetch whenever day or time changes (and all three are set)
+  useEffect(() => {
+    if (showModal && form.day && form.startTime && form.endTime && form.startTime < form.endTime) {
+      fetchAvailableRooms(form.day, form.startTime, form.endTime);
+    }
+  }, [showModal, form.day, form.startTime, form.endTime, fetchAvailableRooms]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.courseId || !form.yearId || !form.semesterId || !form.unitId || !form.lecturerId || !form.roomId || !form.venueName) {
+    if (!form.courseId || !form.yearId || !form.semesterId || !form.unitId ||
+        !form.lecturerId || !form.roomId) {
       setSubmitError("Please fill in all required fields."); return;
+    }
+    if (form.startTime >= form.endTime) {
+      setSubmitError("End time must be after start time."); return;
     }
     setSubmitting(true); setSubmitError(null);
     try {
-      const unit = units.find(u => u.id === form.unitId);
+      const unit   = units.find(u => u.id === form.unitId);
       const semObj = unit?.semesters?.find(s => s.id === form.semesterId);
       const yearOfStudy = semObj?.year?.name ?? "";
-      const semester = semObj?.label ?? "";
+      const semester    = semObj?.label ?? "";
       const res = await fetch("/api/timetable", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({
-          courseId: form.courseId,
+          courseId:    form.courseId,
           departmentId: admin!.departmentId,
-          unitId: form.unitId,
-          lecturerId: form.lecturerId,
-          roomId: form.roomId,
-          day: form.day,
-          startTime: form.startTime,
-          endTime: form.endTime,
-          venueName: form.venueName,
-          semester: semester || null,
+          unitId:      form.unitId,
+          lecturerId:  form.lecturerId,
+          roomId:      form.roomId,
+          day:         form.day,
+          startTime:   form.startTime,
+          endTime:     form.endTime,
+          venueName:   form.venueName,
+          semester:    semester || null,
           yearOfStudy: yearOfStudy || null,
-          unitCode: unit?.code ?? "",
+          unitCode:    unit?.code ?? "",
         }),
       });
-      if (res.status === 409) { const d = await res.json(); setSubmitError(d.message ?? d.error ?? "Time slot conflict."); return; }
-      if (!res.ok) { const d = await res.json().catch(() => ({})); setSubmitError(d.error ?? `Error ${res.status}`); return; }
+      if (res.status === 409) {
+        const d = await res.json();
+        if (d.mergePrompt && d.conflictId) {
+          setMergeConflict({
+            conflictId: d.conflictId,
+            message: d.message ?? "This unit is already scheduled at this time by another department.",
+          });
+          return;
+        }
+        setSubmitError(d.message ?? d.error ?? "Time slot conflict — please review.");
+        return;
+      }
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setSubmitError(d.error ?? `Error ${res.status}`);
+        return;
+      }
       setShowModal(false);
       fetchEntries();
     } catch (err: any) {
-      setSubmitError(err?.message ?? "Failed.");
+      setSubmitError(err?.message ?? "Failed to create entry.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const shown = entries
-    .filter(e => e.day === activeDay)
-    .filter(e => !search ||
-      (e.unitCode ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (e.lecturerName ?? "").toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const handleMerge = async () => {
+    if (!mergeConflict || !admin) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      const unit   = units.find(u => u.id === form.unitId);
+      const semObj = unit?.semesters?.find(s => s.id === form.semesterId);
+      const yearOfStudy = semObj?.year?.name ?? "";
+      const semester    = semObj?.label ?? "";
+      const res = await fetch(`/api/timetable/${mergeConflict.conflictId}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          departmentId: admin.departmentId,
+          courseId:     form.courseId,
+          lecturerId:   form.lecturerId || undefined,
+          yearOfStudy:  yearOfStudy || undefined,
+          semester:     semester || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setSubmitError(d.error ?? `Merge failed (${res.status})`);
+        setMergeConflict(null);
+        return;
+      }
+      setMergeConflict(null);
+      setShowModal(false);
+      fetchEntries();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? "Merge failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // ── Derived lists ──────────────────────────────────────────────────────────
 
   const yearsForCourse = useMemo(() => {
     if (!form.courseId) return [];
@@ -192,6 +318,15 @@ export default function DeptTimetablePage() {
       : [],
     [units, form.semesterId]);
 
+  const shown = entries
+    .filter(e => e.day === activeDay)
+    .filter(e => !search ||
+      (e.unitCode  ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (e.lecturerName ?? "").toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  const timeSlotReady = form.day && form.startTime && form.endTime && form.startTime < form.endTime;
+
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between">
@@ -199,8 +334,10 @@ export default function DeptTimetablePage() {
           <h1 className="text-xl font-bold text-gray-800">Timetable</h1>
           <p className="text-sm text-gray-400 mt-0.5">{admin?.departmentName}</p>
         </div>
-        <button onClick={openModal}
-          className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 transition-colors">
+        <button
+          onClick={openModal}
+          className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 transition-colors"
+        >
           <Plus className="h-4 w-4" /> New Entry
         </button>
       </div>
@@ -208,16 +345,30 @@ export default function DeptTimetablePage() {
       <div className="flex flex-wrap gap-2 items-center">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search unit or lecturer…"
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pl-9 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500/50" />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search unit or lecturer…"
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pl-9 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+          />
         </div>
       </div>
 
       <div className="flex flex-wrap gap-2">
         {DAYS.map(d => (
-          <button key={d} onClick={() => setActiveDay(d)}
-            className={`rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors ${activeDay === d ? "bg-teal-600 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
-            {d.slice(0,3)} <span className="text-[10px] opacity-70 ml-1">{entries.filter(e => e.day === d).length}</span>
+          <button
+            key={d}
+            onClick={() => setActiveDay(d)}
+            className={`rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              activeDay === d
+                ? "bg-teal-600 text-white"
+                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+            }`}
+          >
+            {d.slice(0, 3)}{" "}
+            <span className="text-[10px] opacity-70 ml-1">
+              {entries.filter(e => e.day === d).length}
+            </span>
           </button>
         ))}
       </div>
@@ -227,138 +378,374 @@ export default function DeptTimetablePage() {
           <span>Time</span><span>Unit</span><span>Lecturer</span><span>Status</span>
         </div>
         {loading ? (
-          <div className="p-4 space-y-3">{[1,2,3].map(i => <div key={i} className="h-14 rounded-xl bg-gray-100 animate-pulse" />)}</div>
+          <div className="p-4 space-y-3">
+            {[1,2,3].map(i => (
+              <div key={i} className="h-14 rounded-xl bg-gray-100 animate-pulse" />
+            ))}
+          </div>
         ) : shown.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-12"><Calendar className="h-8 w-8 text-slate-400" /><p className="text-sm text-gray-500">No sessions for {activeDay}</p></div>
-        ) : shown.map((e, i) => (
-          <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
-            className="grid grid-cols-1 sm:grid-cols-[auto_1fr_1fr_auto] gap-2 items-center px-4 py-3.5 border-b border-gray-100 last:border-b-0">
-            <div className="text-xs font-mono text-gray-500 whitespace-nowrap">{e.startTime}–{e.endTime}</div>
-            <div>
-              <div className="text-sm font-medium text-gray-900">{e.unitCode ?? "—"}</div>
-              <div className="text-xs text-gray-400">{e.unitTitle ?? e.courseName ?? ""}</div>
-            </div>
-            <div className="text-sm text-gray-500 truncate hidden sm:block">{e.lecturerName ?? "—"}</div>
-            <div className="hidden sm:block">
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[e.status] ?? "bg-slate-100 text-gray-500"}`}>{e.status}</span>
-            </div>
-          </motion.div>
-        ))}
+          <div className="flex flex-col items-center gap-2 py-12">
+            <Calendar className="h-8 w-8 text-slate-400" />
+            <p className="text-sm text-gray-500">No sessions for {activeDay}</p>
+          </div>
+        ) : (
+          shown.map((e, i) => (
+            <motion.div
+              key={e.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: i * 0.02 }}
+              className="grid grid-cols-1 sm:grid-cols-[auto_1fr_1fr_auto] gap-2 items-center px-4 py-3.5 border-b border-gray-100 last:border-b-0"
+            >
+              <div className="text-xs font-mono text-gray-500 whitespace-nowrap">
+                {e.startTime}–{e.endTime}
+              </div>
+              <div>
+                <div className="text-sm font-medium text-gray-900">{e.unitCode ?? "—"}</div>
+                <div className="text-xs text-gray-400">{e.unitTitle ?? e.courseName ?? ""}</div>
+              </div>
+              <div className="text-sm text-gray-500 truncate hidden sm:block">
+                {e.lecturerName ?? "—"}
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5">
+                {e.mergeGroupId && (
+                  <span className="rounded-full px-2 py-0.5 text-xs font-medium bg-violet-500/15 text-violet-600">
+                    Joint
+                  </span>
+                )}
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[e.status] ?? "bg-slate-100 text-gray-500"}`}>
+                  {e.status}
+                </span>
+              </div>
+            </motion.div>
+          ))
+        )}
       </div>
 
-      {/* Modal */}
+      {/* ── New Entry Modal ──────────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white text-gray-900 p-6 shadow-xl">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white text-gray-900 p-6 shadow-xl"
+          >
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-lg font-bold text-gray-800">New Timetable Entry</h2>
-              <button onClick={() => setShowModal(false)} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"><X className="h-5 w-5" /></button>
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">New Timetable Entry</h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Select scope → unit → lecturer → time → available room
+                </p>
+              </div>
+              <button
+                onClick={() => setShowModal(false)}
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
+
             {modalLoading ? (
-              <div className="space-y-3">{[1,2,3,4].map(i => <div key={i} className="h-10 rounded-lg bg-gray-100 animate-pulse" />)}</div>
+              <div className="space-y-3">
+                {[1,2,3,4].map(i => (
+                  <div key={i} className="h-10 rounded-lg bg-gray-100 animate-pulse" />
+                ))}
+              </div>
             ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <form onSubmit={handleSubmit} className="space-y-5">
 
-                  {/* 1. Course */}
-                  <div className="sm:col-span-2">
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Course <span className="text-red-500">*</span></label>
-                    <select required value={form.courseId} onChange={e => handleChange("courseId", e.target.value)}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50">
-                      <option value="">Select course…</option>
-                      {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
+                {/* ── Step 1: Scope ──────────────────────────────────────── */}
+                <div>
+                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-3">
+                    1 · Scope
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
 
-                  {/* 2. Year of Study */}
-                  <div>
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Year of Study <span className="text-red-500">*</span></label>
-                    <select required value={form.yearId} onChange={e => handleChange("yearId", e.target.value)}
-                      disabled={!form.courseId || yearsForCourse.length === 0}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed">
-                      <option value="">{form.courseId ? (yearsForCourse.length === 0 ? "No years found" : "Select year…") : "Select course first"}</option>
-                      {yearsForCourse.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
-                    </select>
-                  </div>
-
-                  {/* 3. Semester */}
-                  <div>
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Semester <span className="text-red-500">*</span></label>
-                    <select required value={form.semesterId} onChange={e => handleChange("semesterId", e.target.value)}
-                      disabled={!form.yearId || semestersForYear.length === 0}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed">
-                      <option value="">{form.yearId ? (semestersForYear.length === 0 ? "No semesters found" : "Select semester…") : "Select year first"}</option>
-                      {semestersForYear.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                    </select>
-                  </div>
-
-                  {/* 4. Unit — only after course + year + semester */}
-                  <div className="sm:col-span-2">
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Unit <span className="text-red-500">*</span></label>
-                    <select required value={form.unitId} onChange={e => handleChange("unitId", e.target.value)}
-                      disabled={!form.semesterId || filteredUnits.length === 0}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed">
-                      <option value="">{form.semesterId ? (filteredUnits.length === 0 ? "No units in this semester" : "Select unit…") : "Select semester first"}</option>
-                      {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.code} – {u.title}</option>)}
-                    </select>
-                  </div>
-
-                  {/* 5. Lecturer */}
-                  <div>
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Lecturer <span className="text-red-500">*</span></label>
-                    <select required value={form.lecturerId} onChange={e => handleChange("lecturerId", e.target.value)}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50">
-                      <option value="">Select lecturer…</option>
-                      {lecturers.map(l => <option key={l.id} value={l.id}>{l.fullName}</option>)}
-                    </select>
-                  </div>
-
-                  {/* 6. Room */}
-                  <div>
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Room <span className="text-red-500">*</span></label>
-                    <select required value={form.roomId} onChange={e => handleChange("roomId", e.target.value)}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50">
-                      <option value="">Select room…</option>
-                      {rooms.map(r => <option key={r.id} value={r.id}>{r.roomCode} – {r.name} (cap: {r.capacity})</option>)}
-                    </select>
-                  </div>
-
-                  {/* 7. Day */}
-                  <div>
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Day <span className="text-red-500">*</span></label>
-                    <select required value={form.day} onChange={e => handleChange("day", e.target.value)}
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50">
-                      {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-
-                  {/* 8. Venue Name */}
-                  <div>
-                    <label className="text-xs font-medium text-gray-600 mb-1 block">Venue Name <span className="text-red-500">*</span></label>
-                    <input required value={form.venueName} onChange={e => handleChange("venueName", e.target.value)} placeholder="e.g. Room 101"
-                      className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50" />
-                  </div>
-
-                  {/* 9. Start Time | End Time */}
-                  {(["startTime", "endTime"] as const).map(field => (
-                    <div key={field}>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">{field === "startTime" ? "Start Time" : "End Time"} <span className="text-red-500">*</span></label>
-                      <input required type="time" value={form[field]} onChange={e => handleChange(field, e.target.value)}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50" />
+                    {/* Course */}
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">
+                        Course <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={form.courseId}
+                        onChange={e => handleChange("courseId", e.target.value)}
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                      >
+                        <option value="">Select course…</option>
+                        {courses.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
                     </div>
-                  ))}
 
+                    {/* Year of Study */}
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">
+                        Year <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={form.yearId}
+                        onChange={e => handleChange("yearId", e.target.value)}
+                        disabled={!form.courseId || yearsForCourse.length === 0}
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <option value="">
+                          {!form.courseId
+                            ? "Select course first"
+                            : yearsForCourse.length === 0
+                              ? "No years found"
+                              : "Select year…"}
+                        </option>
+                        {yearsForCourse.map(y => (
+                          <option key={y.id} value={y.id}>{y.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Semester */}
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">
+                        Semester <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={form.semesterId}
+                        onChange={e => handleChange("semesterId", e.target.value)}
+                        disabled={!form.yearId || semestersForYear.length === 0}
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <option value="">
+                          {!form.yearId
+                            ? "Select year first"
+                            : semestersForYear.length === 0
+                              ? "No semesters found"
+                              : "Select semester…"}
+                        </option>
+                        {semestersForYear.map(s => (
+                          <option key={s.id} value={s.id}>{s.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                {submitError && <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">{submitError}</div>}
+
+                {/* ── Step 2: Unit ───────────────────────────────────────── */}
+                <div>
+                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-3">
+                    2 · Unit
+                  </p>
+                  <select
+                    required
+                    value={form.unitId}
+                    onChange={e => handleChange("unitId", e.target.value)}
+                    disabled={!form.semesterId || filteredUnits.length === 0}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <option value="">
+                      {!form.semesterId
+                        ? "Complete scope first"
+                        : filteredUnits.length === 0
+                          ? "No units in this semester"
+                          : "Select unit…"}
+                    </option>
+                    {filteredUnits.map(u => (
+                      <option key={u.id} value={u.id}>{u.code} – {u.title}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* ── Step 3: Lecturer ───────────────────────────────────── */}
+                <div>
+                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-3">
+                    3 · Lecturer
+                  </p>
+                  <select
+                    required
+                    value={form.lecturerId}
+                    onChange={e => handleChange("lecturerId", e.target.value)}
+                    disabled={!form.unitId}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <option value="">
+                      {!form.unitId ? "Select unit first" : "Select lecturer…"}
+                    </option>
+                    {lecturers.map(l => (
+                      <option key={l.id} value={l.id}>{l.fullName}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* ── Step 4: Time Slot ──────────────────────────────────── */}
+                <div>
+                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-3">
+                    4 · Time Slot
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+                    {/* Day */}
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">
+                        Day <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        required
+                        value={form.day}
+                        onChange={e => handleChange("day", e.target.value)}
+                        disabled={!form.lecturerId}
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {DAYS.map(d => (
+                          <option key={d} value={d}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Start Time */}
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">
+                        Start Time <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        required
+                        type="time"
+                        value={form.startTime}
+                        onChange={e => handleChange("startTime", e.target.value)}
+                        disabled={!form.lecturerId}
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      />
+                    </div>
+
+                    {/* End Time */}
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">
+                        End Time <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        required
+                        type="time"
+                        value={form.endTime}
+                        onChange={e => handleChange("endTime", e.target.value)}
+                        disabled={!form.lecturerId}
+                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      />
+                    </div>
+                  </div>
+                  {form.startTime && form.endTime && form.startTime >= form.endTime && (
+                    <p className="mt-1.5 text-xs text-red-600">End time must be after start time.</p>
+                  )}
+                </div>
+
+                {/* ── Step 5: Room ───────────────────────────────────────── */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider">
+                      5 · Venue / Room
+                    </p>
+                    {roomsLoading && (
+                      <span className="flex items-center gap-1.5 text-xs text-teal-600">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Checking availability…
+                      </span>
+                    )}
+                    {!roomsLoading && timeSlotReady && availableRooms.length > 0 && (
+                      <span className="text-xs text-emerald-600 font-medium">
+                        {availableRooms.length} room{availableRooms.length !== 1 ? "s" : ""} free
+                      </span>
+                    )}
+                  </div>
+
+                  <select
+                    required
+                    value={form.roomId}
+                    onChange={e => handleChange("roomId", e.target.value)}
+                    disabled={!timeSlotReady || roomsLoading || availableRooms.length === 0}
+                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <option value="">
+                      {!timeSlotReady
+                        ? "Select day and time first"
+                        : roomsLoading
+                          ? "Checking availability…"
+                          : availableRooms.length === 0
+                            ? "No rooms free for this time slot"
+                            : "Select room…"}
+                    </option>
+                    {availableRooms.map(r => (
+                      <option key={r.id} value={r.id}>
+                        {r.roomCode} – {r.name} (capacity: {r.capacity})
+                      </option>
+                    ))}
+                  </select>
+
+                  {!roomsLoading && timeSlotReady && availableRooms.length === 0 && (
+                    <p className="mt-1.5 text-xs text-amber-600">
+                      All rooms are booked for this time slot. Try a different time or day.
+                    </p>
+                  )}
+                  {form.roomId && !roomsLoading && (
+                    <p className="mt-1.5 text-xs text-gray-400">
+                      Venue: {form.venueName}
+                    </p>
+                  )}
+                </div>
+
+                {mergeConflict && (
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-4 space-y-3">
+                    <div className="flex items-start gap-2">
+                      <span className="text-amber-500 text-base leading-none mt-0.5">⚠</span>
+                      <div>
+                        <p className="text-sm font-semibold text-amber-800">Joint Class Opportunity</p>
+                        <p className="text-xs text-amber-700 mt-0.5">{mergeConflict.message}</p>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Your department's students will share this session with the existing group.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setMergeConflict(null)}
+                        className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleMerge}
+                        disabled={submitting}
+                        className="flex-1 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                      >
+                        {submitting ? "Joining…" : "Join as Joint Class"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {submitError && (
+                  <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+                    {submitError}
+                  </div>
+                )}
+
                 <div className="flex gap-3 pt-2">
-                  <button type="button" onClick={() => setShowModal(false)}
-                    className="flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
-                  <button type="submit" disabled={submitting}
-                    className="flex-1 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50">
+                  <button
+                    type="button"
+                    onClick={() => setShowModal(false)}
+                    className="flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting || !form.roomId}
+                    className="flex-1 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+                  >
                     {submitting ? "Creating…" : "Create Entry"}
                   </button>
                 </div>
+
               </form>
             )}
           </motion.div>

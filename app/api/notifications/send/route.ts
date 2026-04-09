@@ -15,7 +15,7 @@ export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
-const VALID_TYPES = ['announcement', 'reminder', 'urgent', 'schedule', 'assignment'] as const;
+const VALID_TYPES = ['announcement', 'reminder', 'urgent', 'schedule', 'assignment', 'MERGED_LESSON'] as const;
 
 export async function POST(req: NextRequest) {
   // ── Auth ────────────────────────────────────────────────────────────────────
@@ -69,7 +69,9 @@ export async function POST(req: NextRequest) {
 
   try {
     // ── 1. Resolve unit codes → student IDs ───────────────────────────────────
-    // Try exact code match first, then stripped (e.g. "SCH2170" == "SCH 2170")
+    // Look up students enrolled in ANY of the requested units, across ALL courses
+    // and departments. This is intentional for MERGED_LESSON where the audience
+    // spans multiple programmes.
     const normalised = (recipients as string[]).map(r => r.replace(/\s+/g, '').toUpperCase());
 
     const units = await prisma.unit.findMany({
@@ -86,6 +88,7 @@ export async function POST(req: NextRequest) {
 
     let studentIds: string[] = [];
     if (unitIds.length > 0) {
+      // Enrollment has no course filter — returns students from all courses.
       const enrollments = await prisma.enrollment.findMany({
         where: { unitId: { in: unitIds } },
         select: { studentId: true },
@@ -94,7 +97,6 @@ export async function POST(req: NextRequest) {
       studentIds = enrollments.map(e => e.studentId);
     }
 
-    // Deduplicate (distinct already handles this, but belt + braces)
     studentIds = [...new Set(studentIds)];
 
     if (studentIds.length === 0) {
@@ -109,6 +111,9 @@ export async function POST(req: NextRequest) {
       title: title.trim(),
       body: message.trim(),
       data: {
+        // Forward the entire meta payload so the mobile app receives all
+        // fields (e.g. mergedRoom, mergedDay, unitCode) for MERGED_LESSON.
+        ...(meta && typeof meta === 'object' ? meta : {}),
         type,
         category,
         severity,
@@ -120,12 +125,11 @@ export async function POST(req: NextRequest) {
     // Override Android priority for urgent messages — buildPayloads doesn't support it natively.
     // We send individually so we can track successes.
     const sendPromises = payloads.map(async (p) => {
-      // Inject android priority into the token-level message via a patched payload flag
       return sendPushNotification({
         ...p,
         data: {
           ...(p.data ?? {}),
-          priority: type === 'urgent' ? 'high' : 'normal',
+          priority: type === 'urgent' || type === 'MERGED_LESSON' ? 'high' : 'normal',
         },
       });
     });

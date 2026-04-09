@@ -37,6 +37,16 @@ export async function GET(req: NextRequest) {
         room: true,
         course: true,
         department: true,
+        mergedSession: {
+          select: {
+            id: true,
+            mergedRoom: true,
+            mergedDay: true,
+            mergedStartTime: true,
+            mergedEndTime: true,
+            mergedNote: true,
+          },
+        },
       },
       orderBy: [{ day: 'asc' }, { startTime: 'asc' }],
     });
@@ -54,6 +64,13 @@ export async function GET(req: NextRequest) {
       // Course / programme
       courseId:   entry.courseId,
       courseName: entry.course?.name ?? '',
+      courseCode: entry.course?.code ?? '',
+
+      // Department
+      departmentId:  entry.departmentId,
+      department:    entry.department
+        ? { id: entry.department.id, name: entry.department.name }
+        : null,
 
       // Scheduling
       day:       entry.day,
@@ -88,10 +105,14 @@ export async function GET(req: NextRequest) {
       semester:      entry.semester ?? '',
       semesterLabel: entry.semester ?? '',
       lecturerId:    entry.lecturerId,
-      departmentId:  entry.departmentId,
-      department:    entry.department
-        ? { id: entry.department.id, name: entry.department.name }
-        : null,
+
+      // Merge state (Change 4)
+      isMerged:    entry.isMerged ?? false,
+      mergedRoom:  entry.mergedSession?.mergedRoom ?? null,
+      mergedDay:   entry.mergedSession?.mergedDay ?? null,
+      mergedStart: entry.mergedSession?.mergedStartTime ?? null,
+      mergedEnd:   entry.mergedSession?.mergedEndTime ?? null,
+      mergedNote:  entry.mergedSession?.mergedNote ?? null,
     }));
 
     return NextResponse.json(result, { headers: corsHeaders });

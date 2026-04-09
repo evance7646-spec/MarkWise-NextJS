@@ -74,9 +74,20 @@ export async function GET(request: Request) {
       where: { lecturerId },
       include: {
         unit: { select: { id: true, code: true, title: true } },
-        course: { select: { id: true, name: true } },
+        course: { select: { id: true, name: true, code: true } },
+        department: { select: { id: true, name: true } },
         lecturer: { select: { fullName: true } },
         room: { select: { name: true, roomCode: true } },
+        mergedSession: {
+          select: {
+            id: true,
+            mergedRoom: true,
+            mergedDay: true,
+            mergedStartTime: true,
+            mergedEndTime: true,
+            mergedNote: true,
+          },
+        },
       },
     });
 
@@ -101,6 +112,9 @@ export async function GET(request: Request) {
           id: item.id,
           courseId: item.courseId,
           courseName: item.course?.name ?? "",
+          courseCode: item.course?.code ?? "",
+          department: item.department?.name ?? "",
+          departmentId: item.departmentId,
           yearOfStudy: item.yearOfStudy,
           semester: item.semester,
           unitCode: normalizeUnitCode(item.unit?.code ?? ""),
@@ -122,6 +136,13 @@ export async function GET(request: Request) {
           createdAt: item.createdAt.toISOString(),
           updatedAt: item.updatedAt?.toISOString(),
           updatedBy: wasReset ? "system" : (item.updatedBy ?? null),
+          // Merge state (Change 4)
+          isMerged: item.isMerged ?? false,
+          mergedRoom: item.mergedSession?.mergedRoom ?? null,
+          mergedDay: item.mergedSession?.mergedDay ?? null,
+          mergedStart: item.mergedSession?.mergedStartTime ?? null,
+          mergedEnd: item.mergedSession?.mergedEndTime ?? null,
+          mergedNote: item.mergedSession?.mergedNote ?? null,
         };
       })
       .sort((a, b) => {
