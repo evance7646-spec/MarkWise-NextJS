@@ -192,22 +192,22 @@ export async function POST(req: NextRequest) {
               // Check if a unit with the same code exists
               const existingUnit = await prisma.unit.findUnique({ where: { code: unitCode } });
               if (existingUnit) {
-                // Update the existing unit
+                // Unit already exists (possibly owned by another department).
+                // Only update the title — never overwrite departmentId so we don't
+                // steal the unit from its original owning department.
                 await prisma.unit.update({
                   where: { code: unitCode },
                   data: {
                     title: unitTitle,
-                    departmentId,
+                    // Connect to this dept's course without changing ownership
+                    courses: { connect: [{ id: course.id }] },
                   },
                 });
-                // Connect unit to course if not already connected
-                await prisma.unit.update({
-                  where: { code: unitCode },
-                  data: {
-                    courses: {
-                      connect: [{ id: course.id }],
-                    },
-                  },
+                // Record that this department uses the unit (many-to-many link)
+                await prisma.departmentUnit.upsert({
+                  where: { departmentId_unitId: { departmentId, unitId: existingUnit.id } },
+                  update: {},
+                  create: { departmentId, unitId: existingUnit.id },
                 });
               } else {
                 // Create new unit — assign BLE ID in U0–U199, scoped to this institution
@@ -215,17 +215,21 @@ export async function POST(req: NextRequest) {
                 const nextBleId = dept?.institutionId
                   ? await BLEIdManager.getNextUnitId(dept.institutionId)
                   : BLEIdManager.UNIT_RANGE.min;
-                await prisma.unit.create({
+                const created = await prisma.unit.create({
                   data: {
                     id: unit.id,
                     code: unitCode,
                     title: unitTitle,
                     departmentId,
                     bleId: nextBleId,
-                    courses: {
-                      connect: [{ id: course.id }],
-                    },
+                    courses: { connect: [{ id: course.id }] },
                   },
+                });
+                // Populate DepartmentUnit for the owning department
+                await prisma.departmentUnit.upsert({
+                  where: { departmentId_unitId: { departmentId, unitId: created.id } },
+                  update: {},
+                  create: { departmentId, unitId: created.id },
                 });
               }
             } catch (unitError) {
