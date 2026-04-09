@@ -138,6 +138,7 @@ export async function GET(request: Request) {
           updatedBy: wasReset ? "system" : (item.updatedBy ?? null),
           // Merge state (Change 4)
           isMerged: item.isMerged ?? false,
+          mergedSessionId: item.mergedSessionId ?? null,
           mergedRoom: item.mergedSession?.mergedRoom ?? null,
           mergedDay: item.mergedSession?.mergedDay ?? null,
           mergedStart: item.mergedSession?.mergedStartTime ?? null,
