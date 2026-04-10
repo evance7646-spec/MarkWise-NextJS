@@ -128,23 +128,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-
-export const runtime = "nodejs";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
-
-export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders });
-}
-
-export async function POST(req: NextRequest) {
-  // ── Auth ──────────────────────────────────────────────────────────────────
-  const token =
-    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
   if (!token) {
     return NextResponse.json(
       { error: "Unauthorized." },
