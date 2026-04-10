@@ -87,7 +87,6 @@ export async function GET(
   }
 
   // ── Find the unit (case-insensitive match on stored code) ─────────────────
-  // Unit.code may have variant spacing — normalize on DB side too.
   const unitRows = await prisma.$queryRaw<{ id: string; departmentId: string }[]>`
     SELECT id, "departmentId"
     FROM "Unit"
@@ -95,23 +94,23 @@ export async function GET(
     LIMIT 1
   `;
   if (unitRows.length === 0) {
-    // Unit not in DB — no enrolled students possible
-    return NextResponse.json([], { status: 200, headers: corsHeaders });
+    return NextResponse.json(
+      { message: "Unit not found" },
+      { status: 404, headers: corsHeaders },
+    );
   }
   const unit = unitRows[0];
 
-  // ── Institution boundary check ────────────────────────────────────────────
-  // Unit → Department → institutionId must match the resolved institutionId.
-  // No timetable-assignment check — any lecturer from the same institution
-  // may fetch the roster.
-  const department = await prisma.department.findUnique({
-    where: { id: unit.departmentId },
-    select: { institutionId: true },
+  // ── Timetable assignment check ────────────────────────────────────────────
+  // Per spec: 404 if this lecturer is not assigned to the unit.
+  const timetableEntry = await prisma.timetable.findFirst({
+    where: { lecturerId, unitId: unit.id },
+    select: { id: true },
   });
-  if (!department || department.institutionId !== institutionId) {
+  if (!timetableEntry) {
     return NextResponse.json(
-      { message: "Forbidden: unit does not belong to your institution" },
-      { status: 403, headers: corsHeaders },
+      { message: "Unit not found or not assigned to you" },
+      { status: 404, headers: corsHeaders },
     );
   }
 

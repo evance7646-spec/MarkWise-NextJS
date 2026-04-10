@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
   if (bodyLecturerId !== lecturerIdFromJwt) {
     return NextResponse.json(
       { message: "Lecturer identity mismatch" },
-      { status: 401, headers: corsHeaders },
+      { status: 403, headers: corsHeaders },
     );
   }
 
@@ -185,8 +185,8 @@ export async function POST(req: NextRequest) {
   });
   if (!conductedSession) {
     return NextResponse.json(
-      { message: "No active session found for this unit and room" },
-      { status: 404, headers: corsHeaders },
+      { message: "Session not found" },
+      { status: 400, headers: corsHeaders },
     );
   }
 
@@ -226,11 +226,7 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json(
-    {
-      message: "Attendance marked successfully",
-      studentName: student.name,
-      attendanceMethod: "manual_lecturer",
-    },
+    { message: "Marked present" },
     { status: 201, headers: corsHeaders },
   );
 }
