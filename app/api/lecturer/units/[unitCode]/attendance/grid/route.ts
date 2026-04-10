@@ -1,0 +1,272 @@
+/**
+ * GET /api/lecturer/units/:unitCode/attendance/grid
+ *
+ * Returns a session-by-session attendance grid for the given unit.
+ * Rows = enrolled students, columns = conducted sessions (LEC1 … LECN).
+ *
+ * Auth:  Bearer lecturer JWT
+ * 401   token missing or invalid
+ * 403   lecturer not timetable-assigned to this unit
+ * 404   unit not found
+ * 200 { sessions: [], students: [] }   unit exists but no sessions conducted yet
+ *
+ * Response shape:
+ * {
+ *   sessions: ["LEC1", "LEC2", …],        // ordered column labels
+ *   students: [                            // sorted alphabetically by name
+ *     {
+ *       admissionNumber: string,
+ *       name: string,
+ *       attendance: boolean[]              // index-aligned with sessions[]
+ *     },
+ *     …
+ *   ]
+ * }
+ *
+ * Sessions include both offline ConductedSessions (QR/BLE/Manual/GD) and
+ * ended OnlineAttendanceSessions, merged and ordered by time ascending.
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+
+export const runtime = "nodejs";
+
+const PRESENT_METHODS = ["qr", "ble", "manual", "manual_lecturer", "proxy_leader", "GD"];
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
+export function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders });
+}
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ unitCode: string }> },
+) {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const token = (req.headers.get("authorization") ?? "")
+    .replace(/^Bearer\s+/i, "")
+    .trim();
+  if (!token) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: corsHeaders },
+    );
+  }
+
+  let lecturerId: string;
+  try {
+    ({ lecturerId } = verifyLecturerAccessToken(token));
+  } catch {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401, headers: corsHeaders },
+    );
+  }
+
+  // ── Normalize unit code ───────────────────────────────────────────────────
+  const { unitCode: rawParam } = await params;
+  const unitCode = decodeURIComponent(rawParam).replace(/\s+/g, "").toUpperCase();
+  if (!unitCode) {
+    return NextResponse.json(
+      { error: "Unit not found" },
+      { status: 404, headers: corsHeaders },
+    );
+  }
+
+  try {
+    // ── Resolve unit (case-insensitive, space-tolerant) ───────────────────────
+    const unitRows = await prisma.$queryRaw<
+      { id: string; code: string }[]
+    >`
+      SELECT id, code
+      FROM "Unit"
+      WHERE UPPER(REPLACE(code, ' ', '')) = ${unitCode}
+      LIMIT 1
+    `;
+    if (unitRows.length === 0) {
+      return NextResponse.json(
+        { error: "Unit not found" },
+        { status: 404, headers: corsHeaders },
+      );
+    }
+    const unit = unitRows[0];
+    // OnlineAttendanceSession stores the raw (un-normalised) unit code
+    const rawUnitCode = unit.code;
+
+    // ── Authorization: lecturer must be timetable-assigned to this unit ───────
+    const timetableEntry = await prisma.timetable.findFirst({
+      where: { lecturerId, unitId: unit.id },
+      select: { id: true },
+    });
+    if (!timetableEntry) {
+      return NextResponse.json(
+        { error: "Forbidden" },
+        { status: 403, headers: corsHeaders },
+      );
+    }
+
+    // ── Resolve institution (needed for enrollment snapshot query) ────────────
+    const lecturer = await prisma.lecturer.findUnique({
+      where: { id: lecturerId },
+      select: { institutionId: true },
+    });
+    if (!lecturer?.institutionId) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders },
+      );
+    }
+    const { institutionId } = lecturer;
+
+    // ── Parallel fetch: students + conducted sessions ─────────────────────────
+    const [enrolledStudents, offlineSessions, onlineSessions] = await Promise.all([
+      // Enrolled students sorted alphabetically by name
+      prisma.$queryRaw<
+        { studentId: string; name: string; admissionNumber: string }[]
+      >`
+        SELECT
+          s.id              AS "studentId",
+          s.name            AS "name",
+          s."admissionNumber"
+        FROM "StudentEnrollmentSnapshot" es
+        JOIN "Student" s ON s.id = es."studentId"
+        WHERE s."institutionId" = ${institutionId}
+          AND EXISTS (
+            SELECT 1
+            FROM unnest(es."unitCodes") AS uc
+            WHERE UPPER(REPLACE(uc, ' ', '')) = ${unitCode}
+          )
+        ORDER BY s.name ASC
+      `,
+
+      // Offline conducted sessions (QR / BLE / Manual / GD windows)
+      prisma.conductedSession.findMany({
+        where: { lecturerId, unitCode },
+        orderBy: { sessionStart: "asc" },
+        select: { id: true, sessionStart: true, lectureRoom: true },
+      }),
+
+      // Online ended sessions
+      prisma.onlineAttendanceSession.findMany({
+        where: { lecturerId, unitCode: rawUnitCode, endedAt: { not: null } },
+        orderBy: { createdAt: "asc" },
+        select: { id: true, createdAt: true },
+      }),
+    ]);
+
+    // ── Merge and sort all sessions by time, then label LEC1 … LECN ──────────
+    type OfflineSession = { type: "offline"; id: string; time: Date; lectureRoom: string; sessionStart: Date };
+    type OnlineSession  = { type: "online";  id: string; time: Date };
+    type AnySession = OfflineSession | OnlineSession;
+
+    const allSessions: AnySession[] = [
+      ...offlineSessions.map((s): OfflineSession => ({
+        type: "offline",
+        id: s.id,
+        time: s.sessionStart,
+        lectureRoom: s.lectureRoom,
+        sessionStart: s.sessionStart,
+      })),
+      ...onlineSessions.map((s): OnlineSession => ({
+        type: "online",
+        id: s.id,
+        time: s.createdAt,
+      })),
+    ].sort((a, b) => a.time.getTime() - b.time.getTime());
+
+    // No sessions yet — return empty grid (not a 404)
+    if (allSessions.length === 0) {
+      return NextResponse.json(
+        { sessions: [], students: [] },
+        { status: 200, headers: corsHeaders },
+      );
+    }
+
+    // Build column-index lookup: sessionKey → 0-based column index
+    const sessionIndexMap = new Map<string, number>();
+    const sessionLabels: string[] = [];
+
+    allSessions.forEach((s, i) => {
+      const key =
+        s.type === "offline"
+          ? `off_${s.lectureRoom}_${s.sessionStart.getTime()}`
+          : `on_${s.id}`;
+      sessionIndexMap.set(key, i);
+      sessionLabels.push(`LEC${i + 1}`);
+    });
+
+    // ── Fetch attendance records for those sessions ───────────────────────────
+    const offlineSessionFilters = offlineSessions.map((s) => ({
+      lectureRoom: s.lectureRoom,
+      sessionStart: s.sessionStart,
+    }));
+    const onlineSessionIds = onlineSessions.map((s) => s.id);
+
+    const [offlineRecords, onlineRecords] = await Promise.all([
+      offlineSessionFilters.length > 0
+        ? prisma.offlineAttendanceRecord.findMany({
+            where: {
+              unitCode,
+              method: { in: PRESENT_METHODS },
+              OR: offlineSessionFilters,
+            },
+            select: { studentId: true, lectureRoom: true, sessionStart: true },
+          })
+        : Promise.resolve([] as { studentId: string; lectureRoom: string; sessionStart: Date }[]),
+
+      onlineSessionIds.length > 0
+        ? prisma.onlineAttendanceRecord.findMany({
+            where: { sessionId: { in: onlineSessionIds } },
+            select: { studentId: true, sessionId: true },
+          })
+        : Promise.resolve([] as { studentId: string; sessionId: string }[]),
+    ]);
+
+    // Build presence set: `${studentId}_${columnIndex}` → present
+    const presenceSet = new Set<string>();
+
+    for (const r of offlineRecords) {
+      const key = `off_${r.lectureRoom}_${r.sessionStart.getTime()}`;
+      const idx = sessionIndexMap.get(key);
+      if (idx !== undefined) {
+        presenceSet.add(`${r.studentId}_${idx}`);
+      }
+    }
+
+    for (const r of onlineRecords) {
+      const key = `on_${r.sessionId}`;
+      const idx = sessionIndexMap.get(key);
+      if (idx !== undefined) {
+        presenceSet.add(`${r.studentId}_${idx}`);
+      }
+    }
+
+    // ── Build grid rows ───────────────────────────────────────────────────────
+    const N = allSessions.length;
+    const students = enrolledStudents.map((s) => ({
+      admissionNumber: s.admissionNumber,
+      name: s.name,
+      attendance: Array.from({ length: N }, (_, i) =>
+        presenceSet.has(`${s.studentId}_${i}`),
+      ),
+    }));
+
+    return NextResponse.json(
+      { sessions: sessionLabels, students },
+      { status: 200, headers: corsHeaders },
+    );
+  } catch (err: unknown) {
+    console.error("[lecturer/units/attendance/grid] error:", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500, headers: corsHeaders },
+    );
+  }
+}
