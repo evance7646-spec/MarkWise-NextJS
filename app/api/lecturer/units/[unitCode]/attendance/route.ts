@@ -127,7 +127,8 @@ export async function GET(
       onlineSessionIds,
       offlineAttendanceGroups,
       conductedOnlineCount,
-      conductedOfflineCount,
+      offlineSessionStarts,
+      delegationSessions,
     ] = await Promise.all([
       // All students enrolled in this unit (including those with 0 attendance)
       prisma.$queryRaw<
@@ -166,13 +167,30 @@ export async function GET(
         where: { lecturerId, unitCode: rawUnitCode, endedAt: { not: null } },
       }),
 
-      // Conducted offline/GD session count (ConductedSession is the unified table)
-      prisma.conductedSession.count({
+      // Conducted offline sessions — fetch with sessionStart for delegation dedup
+      prisma.conductedSession.findMany({
         where: { lecturerId, unitCode },
+        select: { sessionStart: true },
+      }),
+
+      // Delegation sessions (used, created by this lecturer, raw unitCode)
+      prisma.delegation.findMany({
+        where: { createdBy: lecturerId, unitCode: rawUnitCode, used: true },
+        select: { validFrom: true },
       }),
     ]);
 
-    const conducted = conductedOnlineCount + conductedOfflineCount;
+    // Compute unified conducted count across all three sources.
+    // Delegation sessions within ±5 min of an offline session represent the
+    // same real lecture and must not be double-counted.
+    const FIVE_MIN_MS = 5 * 60 * 1000;
+    const offlineTimes = offlineSessionStarts.map((s) => s.sessionStart.getTime());
+    const standaloneDelCount = delegationSessions.filter((d) => {
+      const delegMs = Number(d.validFrom);
+      return !offlineTimes.some((t) => Math.abs(t - delegMs) <= FIVE_MIN_MS);
+    }).length;
+    const conducted =
+      conductedOnlineCount + offlineSessionStarts.length + standaloneDelCount;
 
     // ── Online marks grouped by student ──────────────────────────────────────
     const sessionIds = onlineSessionIds.map((s) => s.id);

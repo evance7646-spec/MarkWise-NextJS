@@ -81,23 +81,30 @@ export async function GET(req: NextRequest) {
     );
 
     // ── 4. Session counts + attendance totals ─────────────────────────────────
-    // Two session sources:
+    // Three session sources:
     //  • OnlineAttendanceSession — online QR sessions explicitly ended
-    //  • ConductedSession        — offline BLE/manual (from sync) AND GD delegation
-    //                              sessions (upserted by /end on delegation close)
-    const [onlineSessions, offlineSessions, offlineRecords] =
+    //  • ConductedSession        — offline BLE/manual sessions (from sync)
+    //  • Delegation              — GD group leader sessions (used = true, createdBy = lecturerId)
+    //    Delegation sessions that overlap a ConductedSession within ±5 min are deduped.
+    //    Delegation attendance marks (method='GD') are already in OfflineAttendanceRecord.
+    const [onlineSessions, offlineSessions, delegationSessions, offlineRecords] =
       await Promise.all([
-        // Online sessions (ended only) — includes records relation count (= present marks).
+        // Online sessions (ended only)
         prisma.onlineAttendanceSession.findMany({
           where: { lecturerId, unitCode: { in: unitCodes }, endedAt: { not: null } },
           select: { unitCode: true, _count: { select: { records: true } } },
         }),
 
-        // Offline / delegation sessions — ConductedSession is the unified table.
-        // The /end route upserts a row here on every successful delegation close.
+        // Offline sessions — fetch with sessionStart for deduplication
         prisma.conductedSession.findMany({
           where: { lecturerId, unitCode: { in: unitCodes } },
-          select: { unitCode: true },
+          select: { unitCode: true, sessionStart: true },
+        }),
+
+        // Delegation sessions (used, created by this lecturer)
+        prisma.delegation.findMany({
+          where: { createdBy: lecturerId, unitCode: { in: unitCodes }, used: true },
+          select: { unitCode: true, validFrom: true },
         }),
 
         // Present marks across all offline submission paths
@@ -111,6 +118,19 @@ export async function GET(req: NextRequest) {
       ]);
 
     // ── 5. Aggregate per unitCode ──────────────────────────────────────────────
+    const FIVE_MIN_MS = 5 * 60 * 1000;
+    const normalizeCode = (c: string) => c.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+    // Build map of normalized unitCode → array of offline session start times (ms)
+    // Used to dedup delegation sessions that represent the same real lecture.
+    const offlineSessionTimes = new Map<string, number[]>();
+    for (const s of offlineSessions) {
+      const key = normalizeCode(s.unitCode);
+      const times = offlineSessionTimes.get(key) ?? [];
+      times.push(s.sessionStart.getTime());
+      offlineSessionTimes.set(key, times);
+    }
+
     type UnitStats = { conductedSessions: number; totalAttendances: number };
     const sessionStats = new Map<string, UnitStats>();
     const stat = (code: string): UnitStats => {
@@ -127,6 +147,16 @@ export async function GET(req: NextRequest) {
     }
     for (const s of offlineSessions) {
       stat(s.unitCode).conductedSessions += 1;
+    }
+    // Add delegation sessions not already covered by a ConductedSession (±5 min window)
+    for (const d of delegationSessions) {
+      const key = normalizeCode(d.unitCode);
+      const offlineTimes = offlineSessionTimes.get(key) ?? [];
+      const delegMs = Number(d.validFrom);
+      const overlaps = offlineTimes.some((t) => Math.abs(t - delegMs) <= FIVE_MIN_MS);
+      if (!overlaps) {
+        stat(d.unitCode).conductedSessions += 1;
+      }
     }
     for (const r of offlineRecords) {
       stat(r.unitCode).totalAttendances += 1;

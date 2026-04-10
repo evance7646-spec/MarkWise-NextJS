@@ -126,7 +126,7 @@ export async function GET(
     const { institutionId } = lecturer;
 
     // ── Parallel fetch: students + conducted sessions ─────────────────────────
-    const [enrolledStudents, offlineSessions, onlineSessions] = await Promise.all([
+    const [enrolledStudents, offlineSessions, onlineSessions, delegationSessions] = await Promise.all([
       // Enrolled students sorted alphabetically by name
       prisma.$queryRaw<
         { studentId: string; name: string; admissionNumber: string }[]
@@ -146,7 +146,7 @@ export async function GET(
         ORDER BY s.name ASC
       `,
 
-      // Offline conducted sessions (QR / BLE / Manual / GD windows)
+      // Offline conducted sessions (QR / BLE / Manual)
       prisma.conductedSession.findMany({
         where: { lecturerId, unitCode },
         orderBy: { sessionStart: "asc" },
@@ -159,12 +159,29 @@ export async function GET(
         orderBy: { createdAt: "asc" },
         select: { id: true, createdAt: true },
       }),
+
+      // Delegation / GD group sessions (used, created by this lecturer)
+      prisma.delegation.findMany({
+        where: { createdBy: lecturerId, unitCode: rawUnitCode, used: true },
+        orderBy: { validFrom: "asc" },
+        select: { id: true, validFrom: true },
+      }),
     ]);
 
-    // ── Merge and sort all sessions by time, then label LEC1 … LECN ──────────
-    type OfflineSession = { type: "offline"; id: string; time: Date; lectureRoom: string; sessionStart: Date };
-    type OnlineSession  = { type: "online";  id: string; time: Date };
-    type AnySession = OfflineSession | OnlineSession;
+    // ── Merge and sort all sessions by time, dedup delegation ±5 min ─────────
+    type OfflineSession  = { type: "offline";    id: string; time: Date; lectureRoom: string; sessionStart: Date };
+    type OnlineSession   = { type: "online";     id: string; time: Date };
+    type DelegSession    = { type: "delegation"; id: string; time: Date };
+    type AnySession = OfflineSession | OnlineSession | DelegSession;
+
+    const FIVE_MIN_MS = 5 * 60 * 1000;
+    const offlineTimes = offlineSessions.map((s) => s.sessionStart.getTime());
+
+    // Only include delegation sessions that don't overlap an offline session (±5 min)
+    const standaloneDelSessions = delegationSessions.filter((d) => {
+      const delegMs = Number(d.validFrom);
+      return !offlineTimes.some((t) => Math.abs(t - delegMs) <= FIVE_MIN_MS);
+    });
 
     const allSessions: AnySession[] = [
       ...offlineSessions.map((s): OfflineSession => ({
@@ -178,6 +195,11 @@ export async function GET(
         type: "online",
         id: s.id,
         time: s.createdAt,
+      })),
+      ...standaloneDelSessions.map((d): DelegSession => ({
+        type: "delegation",
+        id: d.id,
+        time: new Date(Number(d.validFrom)),
       })),
     ].sort((a, b) => a.time.getTime() - b.time.getTime());
 
@@ -194,10 +216,14 @@ export async function GET(
     const sessionLabels: string[] = [];
 
     allSessions.forEach((s, i) => {
-      const key =
-        s.type === "offline"
-          ? `off_${s.lectureRoom}_${s.sessionStart.getTime()}`
-          : `on_${s.id}`;
+      let key: string;
+      if (s.type === "offline") {
+        key = `off_${s.lectureRoom}_${s.sessionStart.getTime()}`;
+      } else if (s.type === "online") {
+        key = `on_${s.id}`;
+      } else {
+        key = `del_${s.id}`;
+      }
       sessionIndexMap.set(key, i);
       sessionLabels.push(`LEC${i + 1}`);
     });
@@ -208,8 +234,9 @@ export async function GET(
       sessionStart: s.sessionStart,
     }));
     const onlineSessionIds = onlineSessions.map((s) => s.id);
+    const delegationIds = standaloneDelSessions.map((d) => d.id);
 
-    const [offlineRecords, onlineRecords] = await Promise.all([
+    const [offlineRecords, onlineRecords, delegationRecords] = await Promise.all([
       offlineSessionFilters.length > 0
         ? prisma.offlineAttendanceRecord.findMany({
             where: {
@@ -227,6 +254,17 @@ export async function GET(
             select: { studentId: true, sessionId: true },
           })
         : Promise.resolve([] as { studentId: string; sessionId: string }[]),
+
+      // Delegation attendance: OfflineAttendanceRecord rows linked via delegationId
+      delegationIds.length > 0
+        ? prisma.offlineAttendanceRecord.findMany({
+            where: {
+              delegationId: { in: delegationIds },
+              method: { in: PRESENT_METHODS },
+            },
+            select: { studentId: true, delegationId: true },
+          })
+        : Promise.resolve([] as { studentId: string; delegationId: string | null }[]),
     ]);
 
     // Build presence set: `${studentId}_${columnIndex}` → present
@@ -242,6 +280,15 @@ export async function GET(
 
     for (const r of onlineRecords) {
       const key = `on_${r.sessionId}`;
+      const idx = sessionIndexMap.get(key);
+      if (idx !== undefined) {
+        presenceSet.add(`${r.studentId}_${idx}`);
+      }
+    }
+
+    for (const r of delegationRecords) {
+      if (!r.delegationId) continue;
+      const key = `del_${r.delegationId}`;
       const idx = sessionIndexMap.get(key);
       if (idx !== undefined) {
         presenceSet.add(`${r.studentId}_${idx}`);
