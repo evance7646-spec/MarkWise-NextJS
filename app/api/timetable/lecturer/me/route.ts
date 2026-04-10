@@ -86,6 +86,7 @@ export async function GET(request: Request) {
             mergedStartTime: true,
             mergedEndTime: true,
             mergedNote: true,
+            mergedBy: true,
           },
         },
       },
@@ -136,7 +137,7 @@ export async function GET(request: Request) {
           createdAt: item.createdAt.toISOString(),
           updatedAt: item.updatedAt?.toISOString(),
           updatedBy: wasReset ? "system" : (item.updatedBy ?? null),
-          // Merge state (Change 4)
+          // Merge state
           isMerged: item.isMerged ?? false,
           mergedSessionId: item.mergedSessionId ?? null,
           mergedRoom: item.mergedSession?.mergedRoom ?? null,
@@ -144,6 +145,7 @@ export async function GET(request: Request) {
           mergedStart: item.mergedSession?.mergedStartTime ?? null,
           mergedEnd: item.mergedSession?.mergedEndTime ?? null,
           mergedNote: item.mergedSession?.mergedNote ?? null,
+          mergedBy: (item.mergedSession?.mergedBy ?? null) as "Lecturer" | "Admin" | null,
         };
       })
       .sort((a, b) => {

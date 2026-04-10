@@ -1,33 +1,34 @@
 /**
  * POST /api/timetable/merge-lessons
  *
- * Lecturer-initiated merge: links multiple existing timetable entries into a
- * single joint MergedSession record and marks each entry with isMerged = true.
+ * Merges multiple timetable entries into a single MergedSession record.
+ * Supports both Lecturer-initiated and Admin-initiated merges.
  *
- * Auth: Bearer <lecturerToken>
+ * Auth: Bearer <lecturerToken> or Bearer <adminToken>
  *
  * Body:
  * {
- *   entryIds:       string[]  – IDs of timetable entries to merge
- *   mergedRoom?:    string    – display name of the venue for the merged class
- *   mergedRoomId?:  string    – DB room ID (optional)
- *   mergedDay?:     string    – e.g. "Wednesday"
- *   mergedStartTime?: string  – "HH:MM"
- *   mergedEndTime?:   string  – "HH:MM"
- *   mergedNote?:    string    – free-text note shown to students
+ *   entryIds:   string[]  — IDs of timetable entries to merge (min 2)
+ *   unitCode?:  string    — shared unit code
+ *   roomCode?:  string    — room code / display name for the merged session
+ *   roomId?:    string|number — DB room ID (optional)
+ *   note?:      string    — free-text note
+ *   day?:       string    — e.g. "Monday"
+ *   startTime?: string    — "HH:MM"
+ *   endTime?:   string    — "HH:MM"
+ *   mergedBy?:  "Lecturer" | "Admin"   — defaults to caller's role
  * }
  *
  * Success 200:
  * {
- *   success: true,
  *   mergedSessionId: string,
- *   mergedCount: number
+ *   message: "Lessons merged successfully."
  * }
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+import { resolveAdminOrLecturerScope } from "@/lib/adminLecturerAuth";
 import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
@@ -43,20 +44,15 @@ export function OPTIONS() {
 }
 
 export async function POST(req: NextRequest) {
-  // ── Auth ──────────────────────────────────────────────────────────────────
-  const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: corsHeaders });
+  // ── Auth — accept lecturer or admin token ─────────────────────────────────
+  const scope = resolveAdminOrLecturerScope(req);
+  if (!scope.ok) {
+    return NextResponse.json({ error: scope.error }, { status: scope.status, headers: corsHeaders });
   }
-  let lecturerId: string;
-  try {
-    ({ lecturerId } = verifyLecturerAccessToken(token));
-  } catch {
-    return NextResponse.json({ error: "Invalid or expired token." }, { status: 401, headers: corsHeaders });
-  }
+  const { role, userId } = scope;
 
   // ── Parse body ────────────────────────────────────────────────────────────
-  let body: any;
+  let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
@@ -65,6 +61,15 @@ export async function POST(req: NextRequest) {
 
   const {
     entryIds,
+    unitCode,
+    roomCode,
+    roomId,
+    note,
+    day,
+    startTime,
+    endTime,
+    mergedBy: rawMergedBy,
+    // Legacy field aliases the old app may still send:
     mergedRoom,
     mergedRoomId,
     mergedDay,
@@ -73,16 +78,31 @@ export async function POST(req: NextRequest) {
     mergedNote,
   } = body ?? {};
 
-  // ── Validate entryIds ────────────────────────────────────────────────────
+  // ── Validate entryIds ─────────────────────────────────────────────────────
   if (!Array.isArray(entryIds) || entryIds.length < 2) {
     return NextResponse.json(
       { error: "entryIds must be an array of at least 2 timetable entry IDs." },
       { status: 400, headers: corsHeaders },
     );
   }
-  const ids: string[] = [...new Set((entryIds as any[]).map(String))];
+  const ids: string[] = [...new Set((entryIds as unknown[]).map(String))];
 
-  // ── Fetch the target entries ──────────────────────────────────────────────
+  // ── Resolve mergedBy ───────────────────────────────────────────────────────
+  // The app sends "Lecturer" or "Admin". Fall back to caller's actual role.
+  const resolvedMergedBy: "Lecturer" | "Admin" =
+    rawMergedBy === "Admin" || rawMergedBy === "Lecturer"
+      ? (rawMergedBy as "Lecturer" | "Admin")
+      : role === "admin" ? "Admin" : "Lecturer";
+
+  // If app says "Admin" but caller is lecturer → reject
+  if (resolvedMergedBy === "Admin" && role !== "admin") {
+    return NextResponse.json(
+      { error: "Only admins can create admin-merged sessions." },
+      { status: 403, headers: corsHeaders },
+    );
+  }
+
+  // ── Fetch entries ─────────────────────────────────────────────────────────
   const entries = await prisma.timetable.findMany({
     where: { id: { in: ids } },
     include: { unit: { select: { code: true } } },
@@ -97,40 +117,63 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Ownership check: every entry must belong to this lecturer ─────────────
-  const unauthorized = entries.filter((e) => e.lecturerId !== lecturerId);
-  if (unauthorized.length > 0) {
+  // ── Conflict check: any entry already merged? ─────────────────────────────
+  const alreadyMerged = entries.filter((e) => e.isMerged && e.mergedSessionId);
+  if (alreadyMerged.length > 0) {
     return NextResponse.json(
-      { error: "You are not assigned to one or more of these timetable entries." },
-      { status: 403, headers: corsHeaders },
+      { error: "One or more entries are already part of a merged session." },
+      { status: 409, headers: corsHeaders },
     );
   }
 
-  // ── Unit code consistency: all entries must share the same unit code ───────
-  const unitCodes = [
-    ...new Set(entries.map((e) => normalizeUnitCode(e.unit?.code ?? ""))),
-  ].filter(Boolean);
-  if (unitCodes.length > 1) {
-    return NextResponse.json(
-      {
-        error: `All entries must share the same unit code. Found: ${unitCodes.join(", ")}`,
-      },
-      { status: 400, headers: corsHeaders },
-    );
+  // ── Ownership check for lecturers ─────────────────────────────────────────
+  if (role === "lecturer") {
+    const ownedIds = new Set(entries.filter((e) => e.lecturerId === userId).map((e) => e.id));
+    if (ownedIds.size === 0) {
+      return NextResponse.json(
+        { error: "You must own at least one of the timetable entries to merge them." },
+        { status: 403, headers: corsHeaders },
+      );
+    }
   }
+
+  // ── Normalize field values (accept both old + new field names) ─────────────
+  const effectiveRoomCode    = (roomCode ?? mergedRoom   ?? null) as string | null;
+  const effectiveRoomId      = (roomId   ?? mergedRoomId ?? null);
+  const effectiveDay         = (day      ?? mergedDay    ?? null) as string | null;
+  const effectiveStartTime   = (startTime ?? mergedStartTime ?? null) as string | null;
+  const effectiveEndTime     = (endTime   ?? mergedEndTime   ?? null) as string | null;
+  const effectiveNote        = (note      ?? mergedNote      ?? null) as string | null;
+  const effectiveUnitCode    = unitCode
+    ? normalizeUnitCode(unitCode as string)
+    : (entries[0]?.unit?.code ? normalizeUnitCode(entries[0].unit.code) : null);
+
+  // ── Institution — pull from first entry's department → institution ─────────
+  const firstEntry = entries[0];
+  const department = firstEntry.departmentId
+    ? await prisma.department.findUnique({
+        where: { id: firstEntry.departmentId },
+        select: { institutionId: true },
+      })
+    : null;
+  const institutionId = department?.institutionId ?? null;
 
   try {
-    // ── Create MergedSession and mark entries in a transaction ────────────────
+    // ── Transaction: create MergedSession + mark entries ───────────────────
     const mergedSession = await prisma.$transaction(async (tx) => {
       const session = await tx.mergedSession.create({
         data: {
-          lecturerId,
-          mergedRoom:      mergedRoom     ?? null,
-          mergedRoomId:    mergedRoomId   ?? null,
-          mergedDay:       mergedDay      ?? null,
-          mergedStartTime: mergedStartTime ?? null,
-          mergedEndTime:   mergedEndTime  ?? null,
-          mergedNote:      mergedNote     ?? null,
+          mergedBy:       resolvedMergedBy,
+          mergedByUserId: userId,
+          lecturerId:     (role === "lecturer" ? userId : null) as string,
+          unitCode:       effectiveUnitCode,
+          mergedRoom:     effectiveRoomCode,
+          mergedRoomId:   effectiveRoomId ? String(effectiveRoomId) : null,
+          mergedDay:      effectiveDay,
+          mergedStartTime: effectiveStartTime,
+          mergedEndTime:  effectiveEndTime,
+          mergedNote:     effectiveNote,
+          institutionId,
         },
       });
 
@@ -149,6 +192,7 @@ export async function POST(req: NextRequest) {
       {
         success: true,
         mergedSessionId: mergedSession.id,
+        message: "Lessons merged successfully.",
         mergedCount: ids.length,
       },
       { status: 200, headers: corsHeaders },

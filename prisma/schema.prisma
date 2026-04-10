@@ -765,17 +765,31 @@ model ExtraSession {
 // Lecturer-initiated merged session: links multiple timetable entries into one joint class.
 model MergedSession {
   id              String      @id @default(uuid())
-  lecturerId      String
-  mergedRoom      String?
-  mergedRoomId    String?
+  // Ownership — who created the merge
+  mergedBy        String      @default("Lecturer") // "Lecturer" | "Admin"
+  mergedByUserId  String?                          // lecturerId or adminId
+  // Legacy lecturer FK (kept for backwards compat)
+  lecturerId      String?
+  // Shared unit code
+  unitCode        String?
+  // Venue
+  mergedRoom      String?     // room display name / code
+  mergedRoomId    String?     // FK to Room (optional)
+  // Schedule overrides
   mergedDay       String?
   mergedStartTime String?
   mergedEndTime   String?
+  // Note
   mergedNote      String?
+  // Institution
+  institutionId   String?
+  // Timestamps
   mergedAt        DateTime    @default(now())
+  updatedAt       DateTime    @default(now()) @updatedAt
   entries         Timetable[] @relation("MergedSessionEntries")
 
-  @@index([lecturerId])
+  @@index([mergedByUserId])
+  @@index([unitCode])
   @@map("MergedSession")
 }
 
