@@ -147,17 +147,51 @@ async function gatherAttendanceData(lecturerId: string, unitCodes: string[], sta
     u.students.set(r.studentId, (u.students.get(r.studentId) ?? 0) + 1);
   }
 
-  return Array.from(byUnit.entries()).map(([unitCode, data]) => ({
-    unitCode,
-    totalSessions: data.sessions.size,
-    totalStudentAttendances: allRecords.filter((r) => r.unitCode === unitCode).length,
-    uniqueStudents: data.students.size,
-    perStudent: Array.from(data.students.entries()).map(([studentId, count]) => ({
+  // Build weekly trend: bucket sessions by ISO week (Monday-based)
+  function isoWeekKey(d: Date): string {
+    const dt = new Date(d);
+    dt.setUTCHours(0, 0, 0, 0);
+    const day = dt.getUTCDay() || 7; // 1=Mon … 7=Sun
+    dt.setUTCDate(dt.getUTCDate() + 1 - day);
+    return dt.toISOString().slice(0, 10);
+  }
+
+  return Array.from(byUnit.entries()).map(([unitCode, data]) => {
+    const totalSessions = data.sessions.size;
+    const perStudent = Array.from(data.students.entries()).map(([studentId, count]) => ({
       studentId,
       attendanceCount: count,
-      attendanceRate: data.sessions.size > 0 ? Math.round((count / data.sessions.size) * 100) : 0,
-    })),
-  }));
+      attendanceRate: totalSessions > 0 ? Math.round((count / totalSessions) * 100) : 0,
+    }));
+
+    // Weekly trend — unique sessions per week → weekly avg attendance rate
+    const weekSessions: Record<string, Set<string>> = {};
+    const weekAttendances: Record<string, number> = {};
+    for (const r of allRecords.filter((x) => x.unitCode === unitCode)) {
+      const wk = isoWeekKey(new Date(r.sessionKey));
+      if (!weekSessions[wk]) { weekSessions[wk] = new Set(); weekAttendances[wk] = 0; }
+      weekSessions[wk].add(r.sessionKey);
+      weekAttendances[wk]++;
+    }
+    const weeklyTrend = Object.keys(weekSessions).sort().map((week) => ({
+      week,
+      sessions: weekSessions[week].size,
+      totalAttendances: weekAttendances[week],
+      rate: data.students.size > 0 && weekSessions[week].size > 0
+        ? Math.round((weekAttendances[week] / (weekSessions[week].size * data.students.size)) * 100)
+        : 0,
+    }));
+
+    return {
+      unitCode,
+      totalSessions,
+      totalStudentAttendances: allRecords.filter((r) => r.unitCode === unitCode).length,
+      uniqueStudents: data.students.size,
+      perStudent,
+      atRisk: perStudent.filter((s) => s.attendanceRate < 75),
+      weeklyTrend,
+    };
+  });
 }
 
 async function gatherPerformanceData(lecturerId: string, unitCodes: string[], start: Date, end: Date) {
@@ -306,25 +340,71 @@ async function gatherStudentsData(
     return { studentId, ...info, attended, totalPossible, attendanceRate: rate };
   });
 
-  const atRisk = studentList.filter((s) => s.attendanceRate < 60 && s.totalPossible > 0);
+  const atRisk = studentList.filter((s) => s.attendanceRate < 75 && s.totalPossible > 0);
   const topAttendees = [...studentList].sort((a, b) => b.attendanceRate - a.attendanceRate).slice(0, 10);
 
   return { total: studentList.length, atRisk, topAttendees, all: studentList };
 }
 
 async function gatherSessionsData(lecturerId: string, unitCodes: string[], start: Date, end: Date) {
-  const sessions = await prisma.conductedSession.findMany({
-    where: { lecturerId, unitCode: { in: unitCodes }, sessionStart: { gte: start, lte: end } },
-    orderBy: { sessionStart: "asc" },
-  });
+  const [sessions, units, enrollments] = await Promise.all([
+    prisma.conductedSession.findMany({
+      where: { lecturerId, unitCode: { in: unitCodes }, sessionStart: { gte: start, lte: end } },
+      orderBy: { sessionStart: "asc" },
+    }),
+    prisma.unit.findMany({
+      where: { code: { in: unitCodes } },
+      select: { code: true, title: true, id: true },
+    }),
+    prisma.enrollment.findMany({
+      where: { unit: { code: { in: unitCodes } } },
+      select: { unitId: true, studentId: true },
+    }),
+  ]);
 
-  return sessions.map((s) => ({
-    unitCode: normalizeUnitCode(s.unitCode),
-    room: s.lectureRoom,
-    lessonType: s.lessonType ?? "LEC",
-    start: s.sessionStart.toISOString(),
-    end: s.sessionEnd?.toISOString() ?? null,
-  }));
+  const unitTitles = new Map(units.map((u) => [normalizeUnitCode(u.code), u.title]));
+  const unitIdToCode = new Map(units.map((u) => [u.id, normalizeUnitCode(u.code)]));
+  const enrolledByUnit: Record<string, number> = {};
+  for (const e of enrollments) {
+    const uc = unitIdToCode.get(e.unitId) ?? "";
+    enrolledByUnit[uc] = (enrolledByUnit[uc] ?? 0) + 1;
+  }
+
+  // Count attendance per conducted-session key (sessionStart ISO)
+  const attendanceRecords = await prisma.offlineAttendanceRecord.findMany({
+    where: { unitCode: { in: unitCodes }, markedByLecturerId: lecturerId, sessionStart: { gte: start, lte: end } },
+    select: { sessionStart: true, studentId: true, unitCode: true },
+  });
+  const attendanceByKey: Record<string, number> = {};
+  for (const r of attendanceRecords) {
+    const key = `${normalizeUnitCode(r.unitCode)}|${r.sessionStart.toISOString()}`;
+    attendanceByKey[key] = (attendanceByKey[key] ?? 0) + 1;
+  }
+
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+  return sessions.map((s) => {
+    const uc = normalizeUnitCode(s.unitCode);
+    const key = `${uc}|${s.sessionStart.toISOString()}`;
+    const presentCount = attendanceByKey[key] ?? 0;
+    const enrolledCount = enrolledByUnit[uc] ?? 0;
+    return {
+      date: s.sessionStart.toISOString().slice(0, 10),
+      day: DAYS[s.sessionStart.getUTCDay()],
+      unitCode: uc,
+      unitName: unitTitles.get(uc) ?? "",
+      startTime: s.sessionStart.toISOString().slice(11, 16),
+      endTime: s.sessionEnd?.toISOString().slice(11, 16) ?? "",
+      room: s.lectureRoom,
+      lessonType: s.lessonType ?? "LEC",
+      status: "Conducted",
+      attendanceCount: presentCount,
+      enrolledCount,
+      // legacy keys kept for file builders that reference them
+      start: s.sessionStart.toISOString(),
+      end: s.sessionEnd?.toISOString() ?? null,
+    };
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -379,10 +459,26 @@ async function buildPdf(
           doc.font("Helvetica-Bold").text(`Unit: ${u.unitCode}`).font("Helvetica");
           doc.text(`  Sessions: ${u.totalSessions}  |  Unique Students: ${u.uniqueStudents}  |  Total Attendances: ${u.totalStudentAttendances}`);
           doc.moveDown(0.3);
+          // At-risk students
+          if (u.atRisk?.length) {
+            doc.font("Helvetica-Bold").text(`  At-Risk Students (<75% attendance): ${u.atRisk.length}`).font("Helvetica");
+            for (const s of u.atRisk.slice(0, 20)) {
+              doc.text(`    ${s.studentId}: ${s.attendanceCount}/${u.totalSessions} sessions (${s.attendanceRate}%)`);
+            }
+            doc.moveDown(0.3);
+          }
+          // Per-student breakdown
+          doc.font("Helvetica-Bold").text("  All Students:").font("Helvetica");
           for (const s of u.perStudent.slice(0, 30)) {
             doc.text(`    ${s.studentId}: ${s.attendanceCount} / ${u.totalSessions} sessions (${s.attendanceRate}%)`);
           }
           if (u.perStudent.length > 30) doc.text(`    ... and ${u.perStudent.length - 30} more students`);
+          // Weekly trend
+          if (u.weeklyTrend?.length) {
+            doc.moveDown(0.3);
+            doc.font("Helvetica-Bold").text("  Weekly Trend:").font("Helvetica");
+            for (const w of u.weeklyTrend) doc.text(`    w/c ${w.week}: ${w.sessions} session(s), ${w.totalAttendances} attendances (avg ${w.rate}%)`);
+          }
           doc.moveDown(0.5);
         }
       } else if (type === "performance") {
@@ -433,8 +529,10 @@ async function buildPdf(
       } else if (type === "sessions") {
         const rows = data.sessions as Awaited<ReturnType<typeof gatherSessionsData>>;
         if (!rows?.length) { doc.text("No sessions recorded in this period."); continue; }
+        doc.font("Helvetica-Bold").text("  Date        Day        Unit    Name                    Start  End    Room           Type  Status       Present/Enrolled").font("Helvetica");
         for (const s of rows) {
-          doc.text(`  ${new Date(s.start).toLocaleDateString("en-GB")}  ${s.start.slice(11, 16)}–${(s.end ?? "").slice(11, 16)}  ${s.unitCode}  ${s.lessonType}  ${s.room}`);
+          const present = `${s.attendanceCount}/${s.enrolledCount}`;
+          doc.text(`  ${s.date}  ${(s.day ?? "").slice(0,3)}  ${s.unitCode.padEnd(8)}  ${(s.unitName ?? "").slice(0, 20).padEnd(20)}  ${s.startTime}  ${s.endTime}  ${(s.room ?? "").slice(0, 14).padEnd(14)}  ${(s.lessonType ?? "").padEnd(4)}  ${(s.status ?? "").padEnd(11)}  ${present}`);
         }
       }
     }
@@ -505,9 +603,9 @@ function buildCsv(
       }
     } else if (type === "sessions") {
       const rows = data.sessions as Awaited<ReturnType<typeof gatherSessionsData>>;
-      row("Unit Code", "Lesson Type", "Room", "Start", "End");
+      row("Date", "Day", "Unit Code", "Unit Name", "Start", "End", "Room", "Type", "Status", "Present", "Enrolled");
       for (const s of rows ?? []) {
-        row(s.unitCode, s.lessonType, s.room, s.start, s.end ?? "");
+        row(s.date, s.day, s.unitCode, s.unitName, s.startTime, s.endTime, s.room, s.lessonType, s.status, s.attendanceCount, s.enrolledCount);
       }
     }
     lines.push("");
@@ -599,9 +697,9 @@ function buildExcel(
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetData), sheetName);
     } else if (type === "sessions") {
       const rows = data.sessions as Awaited<ReturnType<typeof gatherSessionsData>>;
-      const sheetData: (string | null)[][] = [
-        ["Unit Code", "Lesson Type", "Room", "Start", "End"],
-        ...(rows ?? []).map((s) => [s.unitCode, s.lessonType, s.room, s.start, s.end]),
+      const sheetData: (string | number | null)[][] = [
+        ["Date", "Day", "Unit Code", "Unit Name", "Start", "End", "Room", "Type", "Status", "Present", "Enrolled"],
+        ...(rows ?? []).map((s) => [s.date, s.day, s.unitCode, s.unitName, s.startTime, s.endTime, s.room, s.lessonType, s.status, s.attendanceCount, s.enrolledCount]),
       ];
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sheetData), sheetName);
     }
@@ -740,6 +838,7 @@ export async function POST(req: NextRequest) {
       {
         success:       true,
         reportId:      report.id,
+        id:            report.id,
         fileUrl:       report.fileUrl,
         url:           report.fileUrl,
         downloadUrl:   report.fileUrl,
