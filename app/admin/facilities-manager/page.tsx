@@ -417,7 +417,7 @@ function BuildingNameEditor({
 
 // ==================== MAIN COMPONENT ====================
 
-export default function RoomManagerPage() {
+export default function FacilitiesManagerPage() {
   const router = useRouter();
   const manager = useFacilitiesManager();
   

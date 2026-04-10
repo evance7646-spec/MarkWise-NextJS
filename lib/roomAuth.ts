@@ -1,9 +1,9 @@
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
-import { verifyRoomManagerJwt } from "@/lib/roomManagerAuthJwt";
+import { verifyFacilitiesManagerJwt } from "@/lib/facilitiesManagerAuthJwt";
 import { verifyAdminAuthToken } from "@/lib/adminAuthJwt";
 
 export type RoomScope =
-  | { ok: true; role: "admin" | "lecturer" | "roomManager"; userId: string }
+  | { ok: true; role: "admin" | "lecturer" | "facilitiesManager"; userId: string }
   | { ok: false; status: number; error: string };
 
 const extractBearerToken = (authorizationHeader: string | null) => {
@@ -53,11 +53,11 @@ export async function resolveRoomScope(request: Request): Promise<RoomScope> {
 
   // Try room manager token
   try {
-    const payload = verifyRoomManagerJwt(token);
+    const payload = verifyFacilitiesManagerJwt(token);
     if (payload && payload.id) {
       return {
         ok: true,
-        role: "roomManager",
+        role: "facilitiesManager",
         userId: payload.id,
       };
     }
@@ -66,6 +66,6 @@ export async function resolveRoomScope(request: Request): Promise<RoomScope> {
   return {
     ok: false,
     status: 401,
-    error: "Invalid or expired admin, lecturer, or room manager token.",
+    error: "Invalid or expired admin, lecturer, or facilities manager token.",
   };
 }

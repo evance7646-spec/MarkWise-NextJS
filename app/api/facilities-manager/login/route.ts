@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { comparePassword } from "@/lib/hash";
-import { signRoomManagerToken } from "@/lib/roomManagerAuthJwt";
+import { signFacilitiesManagerToken } from "@/lib/facilitiesManagerAuthJwt";
 
 export const runtime = "nodejs";
 
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const manager = await prisma.roomManager.findUnique({ where: { email } });
+  const manager = await prisma.facilitiesManager.findUnique({ where: { email } });
   if (!manager) {
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
   }
@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid email or password." }, { status: 401 });
   }
 
-  const token = signRoomManagerToken({
+  const token = signFacilitiesManagerToken({
     id: manager.id,
     email: manager.email,
     institutionId: manager.institutionId,

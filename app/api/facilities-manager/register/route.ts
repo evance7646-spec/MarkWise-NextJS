@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/hash";
-import { signRoomManagerToken } from "@/lib/roomManagerAuthJwt";
+import { signFacilitiesManagerToken } from "@/lib/facilitiesManagerAuthJwt";
 
 export const runtime = "nodejs";
 
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Institution not found." }, { status: 404 });
   }
 
-  const existing = await prisma.roomManager.findUnique({ where: { email } });
+  const existing = await prisma.facilitiesManager.findUnique({ where: { email } });
   if (existing) {
     return NextResponse.json(
       { error: "An account with this email already exists." },
@@ -53,22 +53,22 @@ export async function POST(req: NextRequest) {
   }
 
   // Each institution can have at most one room manager
-  const existingForInstitution = await prisma.roomManager.findUnique({
+  const existingForInstitution = await prisma.facilitiesManager.findUnique({
     where: { institutionId },
   });
   if (existingForInstitution) {
     return NextResponse.json(
-      { error: "A room manager account already exists for this institution." },
+      { error: "A facilities manager account already exists for this institution." },
       { status: 409 }
     );
   }
 
   const passwordHash = await hashPassword(password);
-  const manager = await prisma.roomManager.create({
+  const manager = await prisma.facilitiesManager.create({
     data: { email, passwordHash, fullName, institutionId },
   });
 
-  const token = signRoomManagerToken({
+  const token = signFacilitiesManagerToken({
     id: manager.id,
     email: manager.email,
     institutionId: manager.institutionId,

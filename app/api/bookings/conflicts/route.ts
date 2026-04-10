@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAdminScope } from "@/lib/adminScope";
-import { verifyRoomManagerJwt } from "@/lib/roomManagerAuthJwt";
+import { verifyFacilitiesManagerJwt } from "@/lib/facilitiesManagerAuthJwt";
 
 export const runtime = "nodejs";
 
@@ -14,7 +14,7 @@ async function resolveInstitutionId(req: NextRequest): Promise<string | null> {
   if (adminScope.ok && adminScope.institutionId) return adminScope.institutionId;
 
   try {
-    const payload = verifyRoomManagerJwt(token);
+    const payload = verifyFacilitiesManagerJwt(token);
     if (payload?.institutionId) return payload.institutionId;
   } catch {}
 

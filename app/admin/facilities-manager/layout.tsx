@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "../../globals.css";
 
-import RoomManagerShell from "./RoomManagerShell";
+import FacilitiesManagerShell from "./FacilitiesManagerShell";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -11,14 +11,14 @@ export const metadata: Metadata = {
   description: "Manage rooms, bookings, and campus facilities",
 };
 
-export default function RoomManagerLayout({
+export default function FacilitiesManagerLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
   return (
     <div className={inter.className}>
-      <RoomManagerShell>{children}</RoomManagerShell>
+      <FacilitiesManagerShell>{children}</FacilitiesManagerShell>
     </div>
   );
 }

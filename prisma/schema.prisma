@@ -145,12 +145,12 @@ model Institution {
   logoUrl     String?
   metadata    Json?                   @default("{}")
   settings    Json?                   @default("{}")
-  admins      Admin[]
-  departments Department[]
-  lecturers   Lecturer[]
-  mappingSets InstitutionMappingSet[]
-  roomManager RoomManager?
-  students    Student[]
+  admins             Admin[]
+  departments        Department[]
+  lecturers          Lecturer[]
+  mappingSets        InstitutionMappingSet[]
+  facilitiesManager  FacilitiesManager?
+  students           Student[]
 
   @@map("Institution")
 }
@@ -853,7 +853,7 @@ enum GroupSubmissionStatus {
   cancelled
 }
 
-model RoomManager {
+model FacilitiesManager {
   id            String      @id @default(uuid())
   email         String      @unique
   passwordHash  String
@@ -864,7 +864,7 @@ model RoomManager {
   institution   Institution @relation(fields: [institutionId], references: [id])
 
   @@index([institutionId])
-  @@map("RoomManager")
+  @@map("FacilitiesManager")
 }
 
 model InstitutionMappingSet {

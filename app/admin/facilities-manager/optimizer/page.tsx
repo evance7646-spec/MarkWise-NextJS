@@ -19,7 +19,7 @@ import {
 // ─── Auth helper ────────────────────────────────────────────────────────────
 function getAuth(): { token: string; institutionId: string } | null {
   if (typeof window === "undefined") return null;
-  const token = localStorage.getItem("roomManagerToken");
+  const token = localStorage.getItem("facilitiesManagerToken");
   if (!token) return null;
   try {
     const payload = JSON.parse(atob(token.split(".")[1]));

@@ -9,7 +9,7 @@ import Footer from "../../components/footer";
 import { Sparkles, LogOut } from "lucide-react";
 import { FacilitiesManagerContext, FacilitiesManagerInfo } from "./context";
 
-export default function RoomManagerShell({ children }: { children: React.ReactNode }) {
+export default function FacilitiesManagerShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [admin, setAdmin] = useState<FacilitiesManagerInfo | null>(null);

@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 
-export type RoomManagerJwtPayload = {
+export type FacilitiesManagerJwtPayload = {
   id: string;
   email: string;
   institutionId: string;
@@ -12,10 +12,10 @@ const getJwtSecret = () => {
   return secret;
 };
 
-export const signRoomManagerToken = (payload: RoomManagerJwtPayload): string => {
+export const signFacilitiesManagerToken = (payload: FacilitiesManagerJwtPayload): string => {
   return jwt.sign(payload, getJwtSecret(), { expiresIn: "7d" });
 };
 
-export const verifyRoomManagerJwt = (token: string): RoomManagerJwtPayload => {
-  return jwt.verify(token, getJwtSecret()) as RoomManagerJwtPayload;
+export const verifyFacilitiesManagerJwt = (token: string): FacilitiesManagerJwtPayload => {
+  return jwt.verify(token, getJwtSecret()) as FacilitiesManagerJwtPayload;
 };

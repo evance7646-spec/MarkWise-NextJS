@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { RoomStatus } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { resolveAdminScope } from '@/lib/adminScope';
-import { verifyRoomManagerJwt } from '@/lib/roomManagerAuthJwt';
+import { verifyFacilitiesManagerJwt } from '@/lib/facilitiesManagerAuthJwt';
 import { emitRoomEvent } from '@/lib/roomEvents';
 
 export const runtime = 'nodejs';
@@ -30,7 +30,7 @@ async function resolveAuth(
 
   // Try room manager JWT
   try {
-    const payload = verifyRoomManagerJwt(token);
+    const payload = verifyFacilitiesManagerJwt(token);
     if (payload?.id && payload?.institutionId) {
       return { institutionId: payload.institutionId, actorId: payload.id };
     }
