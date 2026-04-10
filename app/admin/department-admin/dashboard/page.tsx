@@ -47,10 +47,10 @@ export default function DepartmentDashboard() {
   return (
     <div className="space-y-6">
       {/* Welcome banner */}
-      <div className="rounded-2xl bg-gradient-to-br from-teal-900/40 to-slate-900/60 border border-teal-500/20 p-5">
-        <p className="text-sm text-teal-300 font-medium">Welcome back,</p>
-        <h1 className="text-2xl font-bold text-gray-900 mt-0.5">{admin?.fullName?.split(" ")[0] ?? "Admin"} 👋</h1>
-        <p className="text-sm text-gray-500 mt-1">Department Admin · {admin?.departmentName} · {admin?.institutionName}</p>
+      <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-800 p-5">
+        <p className="text-sm text-indigo-200 font-medium">Welcome back,</p>
+        <h1 className="text-2xl font-bold text-white mt-0.5">{admin?.fullName?.split(" ")[0] ?? "Admin"} 👋</h1>
+        <p className="text-sm text-indigo-200 mt-1">Department Admin · {admin?.departmentName} · {admin?.institutionName}</p>
       </div>
 
       {/* Stats */}
