@@ -901,3 +901,19 @@ model StudentPoints {
   @@index([institutionId, totalPoints(sort: Desc)])
   @@map("StudentPoints")
 }
+
+// Lecturer-generated academic reports (attendance, performance, etc.)
+model LecturerReport {
+  id            String   @id @default(uuid())
+  lecturerId    String
+  period        String   // "weekly" | "monthly" | "semester"
+  types         String[] // ["attendance", "performance", "assignments", ...]
+  format        String   // "pdf" | "csv" | "excel"
+  filePath      String?  // server-side path (private, served via /api/reports/:id/download)
+  fileSizeBytes Int      @default(0)
+  generatedAt   DateTime @default(now())
+
+  @@index([lecturerId])
+  @@index([lecturerId, generatedAt])
+  @@map("LecturerReport")
+}
