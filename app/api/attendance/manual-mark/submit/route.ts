@@ -172,8 +172,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Session gate — a conducted session must exist ─────────────────────────
-  const conductedSession = await prisma.conductedSession.findUnique({
+  // ── Session upsert — create session record if it doesn't exist yet ───────
+  // The sync request and manual mark can race; offline replay may also arrive
+  // before the session was synced. Upserting here ensures the mark is never
+  // lost due to ordering issues. The mark body contains all fields needed to
+  // define a valid conducted session.
+  const conductedSession = await prisma.conductedSession.upsert({
     where: {
       unitCode_lectureRoom_sessionStart: {
         unitCode,
@@ -181,14 +185,16 @@ export async function POST(req: NextRequest) {
         sessionStart: sessionStartDate,
       },
     },
+    update: {},  // session already exists — leave it unchanged
+    create: {
+      unitCode,
+      lectureRoom,
+      sessionStart: sessionStartDate,
+      lecturerId: lecturerIdFromJwt,
+      createdAt: markedAtDate,   // best available approximation
+    },
     select: { id: true, lessonType: true },
   });
-  if (!conductedSession) {
-    return NextResponse.json(
-      { message: "Session not found" },
-      { status: 400, headers: corsHeaders },
-    );
-  }
 
   // ── Duplicate check ───────────────────────────────────────────────────────
   const existing = await prisma.offlineAttendanceRecord.findUnique({
