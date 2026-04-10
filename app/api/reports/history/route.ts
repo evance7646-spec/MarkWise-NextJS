@@ -42,13 +42,13 @@ export async function GET(req: NextRequest) {
   // Auth
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
   if (!token) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: corsHeaders });
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401, headers: corsHeaders });
   }
   let lecturerId: string;
   try {
     ({ lecturerId } = verifyLecturerAccessToken(token));
   } catch {
-    return NextResponse.json({ error: "Invalid or expired token." }, { status: 401, headers: corsHeaders });
+    return NextResponse.json({ message: "Invalid or expired token." }, { status: 401, headers: corsHeaders });
   }
 
   const url = new URL(req.url);
@@ -74,7 +74,10 @@ export async function GET(req: NextRequest) {
           periodLabel: PERIOD_LABELS[r.period] ?? r.period,
           types: r.types,
           format: r.format,
-          fileUrl: `/api/reports/${r.id}/download`,
+          unitCodes: r.unitCodes,
+          startDate: r.startDate?.toISOString().slice(0, 10) ?? null,
+          endDate: r.endDate?.toISOString().slice(0, 10) ?? null,
+          fileUrl: r.fileUrl ?? `/api/reports/${r.id}/download`,
           fileSizeBytes: r.fileSizeBytes,
           generatedAt: r.generatedAt.toISOString(),
         })),
@@ -84,6 +87,6 @@ export async function GET(req: NextRequest) {
     );
   } catch (err) {
     console.error("[reports/history] error:", err);
-    return NextResponse.json({ error: "Failed to fetch report history." }, { status: 500, headers: corsHeaders });
+    return NextResponse.json({ message: "Failed to fetch report history." }, { status: 500, headers: corsHeaders });
   }
 }

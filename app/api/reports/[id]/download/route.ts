@@ -46,27 +46,33 @@ export async function GET(
   // Auth
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
   if (!token) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: corsHeaders });
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401, headers: corsHeaders });
   }
   let lecturerId: string;
   try {
     ({ lecturerId } = verifyLecturerAccessToken(token));
   } catch {
-    return NextResponse.json({ error: "Invalid or expired token." }, { status: 401, headers: corsHeaders });
+    return NextResponse.json({ message: "Invalid or expired token." }, { status: 401, headers: corsHeaders });
   }
 
   // Resolve report
   const report = await prisma.lecturerReport.findUnique({ where: { id } });
   if (!report) {
-    return NextResponse.json({ error: "Report not found." }, { status: 404, headers: corsHeaders });
+    return NextResponse.json({ message: "Report not found." }, { status: 404, headers: corsHeaders });
   }
   if (report.lecturerId !== lecturerId) {
-    return NextResponse.json({ error: "Forbidden." }, { status: 403, headers: corsHeaders });
+    return NextResponse.json({ message: "Forbidden." }, { status: 403, headers: corsHeaders });
   }
 
+  // Prefer the public Vercel Blob URL (new reports)
+  if (report.fileUrl) {
+    return NextResponse.redirect(report.fileUrl, { status: 302 });
+  }
+
+  // Legacy fallback: stream from local filePath
   if (!report.filePath || !fs.existsSync(report.filePath)) {
     return NextResponse.json(
-      { error: "Report file not found on server. It may have expired — please regenerate." },
+      { message: "Report file not found. It may have expired — please regenerate." },
       { status: 404, headers: corsHeaders },
     );
   }

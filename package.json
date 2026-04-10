@@ -26,6 +26,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node-cron": "^3.0.11",
     "@types/pdfkit": "^0.17.5",
+    "@vercel/blob": "^2.3.3",
     "axios": "^1.13.5",
     "axios-cookiejar-support": "^6.0.5",
     "bcryptjs": "^3.0.3",

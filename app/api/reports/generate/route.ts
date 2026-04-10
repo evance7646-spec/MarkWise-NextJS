@@ -1,34 +1,38 @@
 /**
  * POST /api/reports/generate
  *
- * Generates an academic report for the authenticated lecturer.
+ * Generates an academic report for the authenticated lecturer and uploads it
+ * to Vercel Blob storage, returning a publicly-accessible URL.
  *
  * Auth: Bearer <lecturerToken>
  *
  * Body:
  * {
- *   period:  "weekly" | "monthly" | "semester"
- *   types:   string[]  — "attendance" | "performance" | "assignments" | "students" | "sessions" | "comprehensive"
- *   format:  "pdf" | "csv" | "excel"
+ *   period:     "weekly" | "monthly" | "semester"
+ *   types:      string[]   – "attendance"|"performance"|"assignments"|"students"|"sessions"|"comprehensive"
+ *   format:     "pdf" | "csv" | "excel"
+ *   unitCodes:  string[]   – unit codes to scope the report (required, non-empty)
+ *   startDate:  "YYYY-MM-DD"
+ *   endDate:    "YYYY-MM-DD"
  * }
  *
  * Returns:
  * {
  *   success: true,
  *   reportId: string,
- *   fileUrl: string,        // /api/reports/:id/download
+ *   fileUrl: string,        // publicly accessible Vercel Blob URL
  *   fileSizeBytes: number,
  *   generatedAt: string
  * }
+ *
+ * Errors use { message: "..." } (not { error: "..." }).
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { normalizeUnitCode } from "@/lib/unitCode";
-import path from "path";
-import fs from "fs";
-import os from "os";
+import { put } from "@vercel/blob";
 
 export const runtime = "nodejs";
 
@@ -53,45 +57,26 @@ type Period = (typeof VALID_PERIODS)[number];
 type ReportType = (typeof VALID_TYPES)[number];
 type Format = (typeof VALID_FORMATS)[number];
 
-const PERIOD_LABELS: Record<Period, string> = {
-  weekly: "Weekly (Last 7 Days)",
-  monthly: "Monthly (Last 30 Days)",
-  semester: "Semester",
+const MIME_MAP: Record<Format, string> = {
+  pdf:   "application/pdf",
+  csv:   "text/csv",
+  excel: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 };
 
 // ─────────────────────────────────────────────────────────────────
-// Date range helpers
+// Small helpers
 // ─────────────────────────────────────────────────────────────────
-function getDateRange(period: Period): { start: Date; end: Date; label: string } {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
+function apiErr(msg: string, status: number): NextResponse {
+  return NextResponse.json({ message: msg }, { status, headers: corsHeaders });
+}
 
-  if (period === "weekly") {
-    const start = new Date(end);
-    start.setDate(start.getDate() - 7);
-    start.setHours(0, 0, 0, 0);
-    return { start, end, label: PERIOD_LABELS.weekly };
-  }
+function parseCalendarDate(s: string): Date | null {
+  const d = new Date(s + "T00:00:00.000Z");
+  return isNaN(d.getTime()) ? null : d;
+}
 
-  if (period === "monthly") {
-    const start = new Date(end);
-    start.setDate(start.getDate() - 30);
-    start.setHours(0, 0, 0, 0);
-    return { start, end, label: PERIOD_LABELS.monthly };
-  }
-
-  // semester: Jan–Jun or Jul–Dec of current year
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = now.getMonth(); // 0-indexed
-  let start: Date;
-  if (month < 6) {
-    start = new Date(year, 0, 1); // Jan 1
-  } else {
-    start = new Date(year, 6, 1); // Jul 1
-  }
-  start.setHours(0, 0, 0, 0);
-  return { start, end, label: PERIOD_LABELS.semester };
+function fmtDate(d: Date): string {
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -175,14 +160,14 @@ async function gatherAttendanceData(lecturerId: string, unitCodes: string[], sta
   }));
 }
 
-async function gatherPerformanceData(lecturerId: string, start: Date, end: Date) {
+async function gatherPerformanceData(lecturerId: string, unitCodes: string[], start: Date, end: Date) {
   const [sessions, timetable] = await Promise.all([
     prisma.conductedSession.findMany({
-      where: { lecturerId, sessionStart: { gte: start, lte: end } },
+      where: { lecturerId, unitCode: { in: unitCodes }, sessionStart: { gte: start, lte: end } },
       orderBy: { sessionStart: "asc" },
     }),
     prisma.timetable.findMany({
-      where: { lecturerId },
+      where: { lecturerId, unit: { code: { in: unitCodes } } },
       select: { status: true, lessonType: true, unit: { select: { code: true } } },
     }),
   ]);
@@ -212,10 +197,17 @@ async function gatherPerformanceData(lecturerId: string, start: Date, end: Date)
   };
 }
 
-async function gatherAssignmentsData(lecturerId: string, start: Date, end: Date) {
+async function gatherAssignmentsData(lecturerId: string, unitCodes: string[], start: Date, end: Date) {
+  const units = await prisma.unit.findMany({
+    where: { code: { in: unitCodes } },
+    select: { id: true },
+  });
+  const unitIds = units.map((u) => u.id);
+
   const assignments = await prisma.assignment.findMany({
     where: {
       lecturerId,
+      unitId: { in: unitIds },
       dueDate: { gte: start, lte: end },
     },
     include: {
@@ -320,9 +312,9 @@ async function gatherStudentsData(
   return { total: studentList.length, atRisk, topAttendees, all: studentList };
 }
 
-async function gatherSessionsData(lecturerId: string, start: Date, end: Date) {
+async function gatherSessionsData(lecturerId: string, unitCodes: string[], start: Date, end: Date) {
   const sessions = await prisma.conductedSession.findMany({
-    where: { lecturerId, sessionStart: { gte: start, lte: end } },
+    where: { lecturerId, unitCode: { in: unitCodes }, sessionStart: { gte: start, lte: end } },
     orderBy: { sessionStart: "asc" },
   });
 
@@ -343,14 +335,16 @@ async function buildPdf(
   lecturerName: string,
   period: Period,
   types: ReportType[],
-  dateRange: { start: Date; end: Date; label: string },
-  filePath: string,
-): Promise<void> {
+  startDate: Date,
+  endDate: Date,
+): Promise<Buffer> {
   const PDFDocument = (await import("pdfkit")).default;
   return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
     const doc = new PDFDocument({ margin: 50, size: "A4" });
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
 
     const fmt = (d: Date) =>
       d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
@@ -365,7 +359,7 @@ async function buildPdf(
       .fontSize(11)
       .font("Helvetica")
       .text(`Lecturer: ${lecturerName}`, { align: "center" })
-      .text(`Period: ${dateRange.label} (${fmt(dateRange.start)} – ${fmt(dateRange.end)})`, { align: "center" })
+      .text(`Period: ${period.charAt(0).toUpperCase() + period.slice(1)} (${fmt(startDate)} – ${fmt(endDate)})`, { align: "center" })
       .text(`Generated: ${fmt(new Date())}`, { align: "center" })
       .moveDown(1);
 
@@ -446,8 +440,6 @@ async function buildPdf(
     }
 
     doc.end();
-    stream.on("finish", resolve);
-    stream.on("error", reject);
   });
 }
 
@@ -457,7 +449,9 @@ async function buildPdf(
 function buildCsv(
   data: Record<string, unknown>,
   types: ReportType[],
-  dateRange: { start: Date; end: Date; label: string },
+  period: Period,
+  startDate: Date,
+  endDate: Date,
   lecturerName: string,
 ): string {
   const lines: string[] = [];
@@ -466,7 +460,8 @@ function buildCsv(
 
   row("MarkWise Academic Report");
   row("Lecturer", lecturerName);
-  row("Period", dateRange.label);
+  row("Period", period.charAt(0).toUpperCase() + period.slice(1));
+  row("Date Range", `${fmtDate(startDate)} to ${fmtDate(endDate)}`);
   row("Generated", new Date().toISOString());
   lines.push("");
 
@@ -527,9 +522,12 @@ function buildCsv(
 function buildExcel(
   data: Record<string, unknown>,
   types: ReportType[],
-  dateRange: { start: Date; end: Date; label: string },
+  period: Period,
+  startDate: Date,
+  endDate: Date,
   lecturerName: string,
 ): Buffer {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const XLSX = require("xlsx");
   const wb = XLSX.utils.book_new();
 
@@ -537,8 +535,8 @@ function buildExcel(
   const coverData = [
     ["MarkWise Academic Report"],
     ["Lecturer", lecturerName],
-    ["Period", dateRange.label],
-    ["Date Range", `${dateRange.start.toLocaleDateString()} – ${dateRange.end.toLocaleDateString()}`],
+    ["Period", period.charAt(0).toUpperCase() + period.slice(1)],
+    ["Date Range", `${fmtDate(startDate)} – ${fmtDate(endDate)}`],
     ["Generated", new Date().toISOString()],
   ];
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(coverData), "Cover");
@@ -616,141 +614,142 @@ function buildExcel(
 // POST handler
 // ─────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
-  // Auth
+  // ── Auth ──────────────────────────────────────────────────────
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-  if (!token) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401, headers: corsHeaders });
-  }
+  if (!token) return apiErr("Unauthorized", 401);
+
   let lecturerId: string;
   try {
     ({ lecturerId } = verifyLecturerAccessToken(token));
   } catch {
-    return NextResponse.json({ error: "Invalid or expired token." }, { status: 401, headers: corsHeaders });
+    return apiErr("Unauthorized", 401);
   }
 
-  // Parse body
-  let body: { period?: unknown; types?: unknown; format?: unknown };
+  // ── Parse body ────────────────────────────────────────────────
+  let body: Record<string, unknown>;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400, headers: corsHeaders });
+    return apiErr("Invalid JSON body.", 400);
   }
 
-  const { period, types, format } = body ?? {};
+  const { period, types, format, unitCodes, startDate, endDate } = body ?? {};
 
-  // Validate
-  if (!period || !VALID_PERIODS.includes(period as Period)) {
-    return NextResponse.json(
-      { error: `period must be one of: ${VALID_PERIODS.join(", ")}` },
-      { status: 400, headers: corsHeaders },
-    );
-  }
-  if (!Array.isArray(types) || types.length === 0 || types.some((t) => !VALID_TYPES.includes(t as ReportType))) {
-    return NextResponse.json(
-      { error: `types must be a non-empty array of: ${VALID_TYPES.join(", ")}` },
-      { status: 400, headers: corsHeaders },
-    );
-  }
-  if (!format || !VALID_FORMATS.includes(format as Format)) {
-    return NextResponse.json(
-      { error: `format must be one of: ${VALID_FORMATS.join(", ")}` },
-      { status: 400, headers: corsHeaders },
-    );
+  // ── Validate ──────────────────────────────────────────────────
+  if (!period || !VALID_PERIODS.includes(period as Period))
+    return apiErr(`period must be one of: ${VALID_PERIODS.join(", ")}`, 400);
+
+  if (!Array.isArray(types) || types.length === 0)
+    return apiErr("types is required and must be a non-empty array", 400);
+  for (const t of types as unknown[]) {
+    if (!VALID_TYPES.includes(t as ReportType))
+      return apiErr(`Invalid report type: ${t}`, 400);
   }
 
-  const validPeriod = period as Period;
-  const validTypes = types as ReportType[];
-  const validFormat = format as Format;
-  const dateRange = getDateRange(validPeriod);
+  if (!format || !VALID_FORMATS.includes(format as Format))
+    return apiErr(`format must be one of: ${VALID_FORMATS.join(", ")}`, 400);
+
+  if (!unitCodes) return apiErr("unitCodes is required", 400);
+  if (!Array.isArray(unitCodes) || unitCodes.length === 0) return apiErr("No unit codes provided", 400);
+
+  if (!startDate || typeof startDate !== "string") return apiErr("startDate is required (YYYY-MM-DD)", 400);
+  if (!endDate   || typeof endDate   !== "string") return apiErr("endDate is required (YYYY-MM-DD)", 400);
+
+  const parsedStart = parseCalendarDate(startDate);
+  const parsedEnd   = parseCalendarDate(endDate);
+  if (!parsedStart) return apiErr("startDate is not a valid date (use YYYY-MM-DD)", 400);
+  if (!parsedEnd)   return apiErr("endDate is not a valid date (use YYYY-MM-DD)", 400);
+  parsedEnd.setUTCHours(23, 59, 59, 999);
+
+  const validPeriod  = period  as Period;
+  const validTypes   = types   as ReportType[];
+  const validFormat  = format  as Format;
+  const normalizedCodes = (unitCodes as string[]).map((c) => normalizeUnitCode(c)).filter(Boolean);
 
   try {
-    // Get lecturer info
+    // ── Gather reporter identity ──────────────────────────────
     const lecturer = await prisma.lecturer.findUnique({
       where: { id: lecturerId },
       select: { fullName: true },
     });
     const lecturerName = lecturer?.fullName ?? lecturerId;
 
-    // Get lecturer's unit codes from timetable
-    const timetableEntries = await prisma.timetable.findMany({
-      where: { lecturerId },
-      select: { unit: { select: { code: true } } },
-    });
-    const unitCodes = [
-      ...new Set(timetableEntries.map((e) => normalizeUnitCode(e.unit?.code ?? "")).filter(Boolean)),
-    ];
-
-    // Check there's any timetable data
-    if (unitCodes.length === 0) {
-      return NextResponse.json(
-        { error: "No timetable entries found for this lecturer. Nothing to report." },
-        { status: 422, headers: corsHeaders },
-      );
-    }
-
-    // Gather data for requested types
+    // ── Gather data ───────────────────────────────────────────
     const effectiveTypes = validTypes.includes("comprehensive")
       ? (["attendance", "performance", "assignments", "students", "sessions"] as ReportType[])
       : validTypes;
 
     const data: Record<string, unknown> = {};
-    await Promise.all(
-      effectiveTypes.map(async (type) => {
-        if (type === "attendance") data.attendance = await gatherAttendanceData(lecturerId, unitCodes, dateRange.start, dateRange.end);
-        else if (type === "performance") data.performance = await gatherPerformanceData(lecturerId, dateRange.start, dateRange.end);
-        else if (type === "assignments") data.assignments = await gatherAssignmentsData(lecturerId, dateRange.start, dateRange.end);
-        else if (type === "students") data.students = await gatherStudentsData(lecturerId, unitCodes, dateRange.start, dateRange.end);
-        else if (type === "sessions") data.sessions = await gatherSessionsData(lecturerId, dateRange.start, dateRange.end);
-      }),
-    );
+    await Promise.all(effectiveTypes.map(async (type) => {
+      if (type === "attendance")  data.attendance  = await gatherAttendanceData(lecturerId, normalizedCodes, parsedStart, parsedEnd);
+      if (type === "performance") data.performance = await gatherPerformanceData(lecturerId, normalizedCodes, parsedStart, parsedEnd);
+      if (type === "assignments") data.assignments = await gatherAssignmentsData(lecturerId, normalizedCodes, parsedStart, parsedEnd);
+      if (type === "students")    data.students    = await gatherStudentsData(lecturerId, normalizedCodes, parsedStart, parsedEnd);
+      if (type === "sessions")    data.sessions    = await gatherSessionsData(lecturerId, normalizedCodes, parsedStart, parsedEnd);
+    }));
 
-    // Build file
-    const reportsDir = path.join(os.tmpdir(), "markwise-reports");
-    fs.mkdirSync(reportsDir, { recursive: true });
-
-    const timestamp = Date.now();
+    // ── Build file buffer ─────────────────────────────────────
+    let fileBuffer: Buffer;
     const ext = validFormat === "pdf" ? "pdf" : validFormat === "csv" ? "csv" : "xlsx";
-    const filename = `report_${lecturerId.slice(0, 8)}_${timestamp}.${ext}`;
-    const filePath = path.join(reportsDir, filename);
 
-    if (validFormat === "pdf") {
-      await buildPdf(data, lecturerName, validPeriod, validTypes, dateRange, filePath);
-    } else if (validFormat === "csv") {
-      const csv = buildCsv(data, validTypes, dateRange, lecturerName);
-      fs.writeFileSync(filePath, csv, "utf-8");
-    } else {
-      const buf = buildExcel(data, validTypes, dateRange, lecturerName);
-      fs.writeFileSync(filePath, buf);
+    try {
+      if (validFormat === "pdf") {
+        fileBuffer = await buildPdf(data, lecturerName, validPeriod, validTypes, parsedStart, parsedEnd);
+      } else if (validFormat === "csv") {
+        fileBuffer = Buffer.from(buildCsv(data, validTypes, validPeriod, parsedStart, parsedEnd, lecturerName), "utf-8");
+      } else {
+        fileBuffer = buildExcel(data, validTypes, validPeriod, parsedStart, parsedEnd, lecturerName);
+      }
+    } catch (buildErr) {
+      console.error("[reports/generate] file build error:", buildErr);
+      return apiErr("Failed to generate report file", 500);
     }
 
-    const fileSizeBytes = fs.statSync(filePath).size;
+    // ── Upload to Vercel Blob ─────────────────────────────────
+    const blobName = `reports/${lecturerId.slice(0, 8)}_${Date.now()}.${ext}`;
+    const mimeType = MIME_MAP[validFormat];
 
-    // Persist to DB
+    let fileUrl: string;
+    try {
+      const blob = await put(blobName, fileBuffer, {
+        access: "public",
+        contentType: mimeType,
+      });
+      fileUrl = blob.url;
+    } catch (uploadErr) {
+      console.error("[reports/generate] upload error:", uploadErr);
+      return apiErr("Failed to upload report", 500);
+    }
+
+    // ── Persist report record ─────────────────────────────────
     const report = await prisma.lecturerReport.create({
       data: {
         lecturerId,
-        period: validPeriod,
-        types: validTypes,
-        format: validFormat,
-        filePath,
-        fileSizeBytes,
+        period:        validPeriod,
+        types:         validTypes,
+        format:        validFormat,
+        unitCodes:     normalizedCodes,
+        startDate:     parsedStart,
+        endDate:       parsedEnd,
+        fileUrl,
+        fileSizeBytes: fileBuffer.length,
       },
     });
 
-    const fileUrl = `/api/reports/${report.id}/download`;
-
     return NextResponse.json(
       {
-        success: true,
-        reportId: report.id,
-        fileUrl,
-        fileSizeBytes,
-        generatedAt: report.generatedAt.toISOString(),
+        success:       true,
+        reportId:      report.id,
+        fileUrl:       report.fileUrl,
+        url:           report.fileUrl,
+        downloadUrl:   report.fileUrl,
+        fileSizeBytes: report.fileSizeBytes,
+        generatedAt:   report.generatedAt.toISOString(),
       },
       { status: 200, headers: corsHeaders },
     );
-  } catch (err) {
-    console.error("[reports/generate] error:", err);
-    return NextResponse.json({ error: "Report generation failed." }, { status: 500, headers: corsHeaders });
+  } catch (fatal) {
+    console.error("[reports/generate] fatal error:", fatal);
+    return apiErr("An unexpected error occurred while generating the report", 500);
   }
 }
