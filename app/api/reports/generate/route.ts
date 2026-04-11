@@ -87,7 +87,6 @@ async function gatherAttendanceData(lecturerId: string, unitCodes: string[], sta
     prisma.offlineAttendanceRecord.findMany({
       where: {
         unitCode: { in: unitCodes },
-        markedByLecturerId: lecturerId,
         sessionStart: { gte: start, lte: end },
       },
       select: {
@@ -290,14 +289,13 @@ async function gatherStudentsData(
 
   const enrollments = await prisma.enrollment.findMany({
     where: { unitId: { in: unitIds } },
-    select: { studentId: true, unitId: true, student: { select: { fullName: true, admissionNumber: true } } },
+    select: { studentId: true, unitId: true, student: { select: { name: true, admissionNumber: true } } },
   });
 
   // Offline attendance in range
   const attendance = await prisma.offlineAttendanceRecord.findMany({
     where: {
       unitCode: { in: unitCodes },
-      markedByLecturerId: lecturerId,
       sessionStart: { gte: start, lte: end },
     },
     select: { studentId: true, unitCode: true, sessionStart: true },
@@ -322,7 +320,7 @@ async function gatherStudentsData(
     const unitCode = units.find((u) => u.id === e.unitId)?.code ?? "";
     if (!studentMap.has(e.studentId)) {
       studentMap.set(e.studentId, {
-        fullName: e.student?.fullName ?? e.studentId,
+        fullName: e.student?.name ?? e.studentId,
         admissionNumber: e.student?.admissionNumber ?? "",
         unitCodes: [],
       });
@@ -372,7 +370,7 @@ async function gatherSessionsData(lecturerId: string, unitCodes: string[], start
 
   // Count attendance per conducted-session key (sessionStart ISO)
   const attendanceRecords = await prisma.offlineAttendanceRecord.findMany({
-    where: { unitCode: { in: unitCodes }, markedByLecturerId: lecturerId, sessionStart: { gte: start, lte: end } },
+    where: { unitCode: { in: unitCodes }, sessionStart: { gte: start, lte: end } },
     select: { sessionStart: true, studentId: true, unitCode: true },
   });
   const attendanceByKey: Record<string, number> = {};
