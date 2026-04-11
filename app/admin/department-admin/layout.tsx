@@ -494,7 +494,7 @@ export default function DepartmentAdminLayout({ children }: { children: ReactNod
           </motion.header>
 
           {/* Main Content */}
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-y-auto bg-white text-gray-900">
             {/* Decorative gradient at top */}
             <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-indigo-500/5 to-transparent pointer-events-none" />
             

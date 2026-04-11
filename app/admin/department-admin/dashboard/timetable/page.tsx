@@ -385,7 +385,7 @@ export default function DeptTimetablePage() {
         </div>
         <button
           onClick={openModal}
-          className="flex items-center gap-2 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 transition-colors"
+          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
         >
           <Plus className="h-4 w-4" /> New Entry
         </button>
@@ -410,8 +410,8 @@ export default function DeptTimetablePage() {
             onClick={() => setActiveDay(d)}
             className={`rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors ${
               activeDay === d
-                ? "bg-teal-600 text-white"
-                : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                ? "bg-indigo-600 text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
             }`}
           >
             {d.slice(0, 3)}{" "}
@@ -885,7 +885,7 @@ export default function DeptTimetablePage() {
                   <button
                     type="submit"
                     disabled={submitting || !form.roomId}
-                    className="flex-1 rounded-xl bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
                   >
                     {submitting ? "Creating…" : "Create Entry"}
                   </button>

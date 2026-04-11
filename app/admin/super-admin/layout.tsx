@@ -176,7 +176,7 @@ export default function SuperAdminLayout({ children }: { children: ReactNode }) 
             <div className="w-8" />
           </header>
 
-          <main className="flex-1 overflow-y-auto bg-gray-50 p-4 lg:p-6">
+          <main className="flex-1 overflow-y-auto bg-white text-gray-900 p-4 lg:p-6">
             {children}
           </main>
         </div>

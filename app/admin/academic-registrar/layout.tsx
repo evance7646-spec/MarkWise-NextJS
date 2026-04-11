@@ -121,7 +121,7 @@ export default function AcademicRegistrarLayout({ children }: { children: ReactN
 
   return (
     <AcademicRegistrarContext.Provider value={admin}>
-      <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden">
+      <div className="flex h-screen bg-slate-950 overflow-hidden">
         {/* Desktop sidebar */}
         <aside className="hidden md:flex w-56 shrink-0 flex-col bg-gradient-to-b from-purple-950 to-slate-900 border-r border-white/8 overflow-y-auto">
           <SidebarContent pathname={pathname} />
@@ -160,7 +160,7 @@ export default function AcademicRegistrarLayout({ children }: { children: ReactN
             </div>
           </header>
 
-          <main className="flex-1 overflow-y-auto bg-gray-50 p-5 md:p-6">
+          <main className="flex-1 overflow-y-auto bg-white text-gray-900 p-5 md:p-6">
             {children}
           </main>
         </div>
