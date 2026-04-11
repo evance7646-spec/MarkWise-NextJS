@@ -11,6 +11,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   typescript: { ignoreBuildErrors: true },
+  outputFileTracingIncludes: {
+    "/api/reports/generate": ["./node_modules/pdfkit/data/**/*"],
+  },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },
