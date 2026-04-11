@@ -12,7 +12,7 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   typescript: { ignoreBuildErrors: true },
   outputFileTracingIncludes: {
-    "/api/reports/generate": ["./node_modules/pdfkit/data/**/*"],
+    "/api/reports/generate": ["./node_modules/pdfkit/js/data/**/*"],
   },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
