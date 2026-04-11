@@ -123,7 +123,7 @@ export default function SettingsPage() {
           <button
             onClick={saveProfile}
             disabled={savingProfile}
-            className="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors"
+            className="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 text-sm font-medium text-white transition-colors"
           >
             {savingProfile && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {savingProfile ? "Saving..." : "Save Profile"}
@@ -170,7 +170,7 @@ export default function SettingsPage() {
           <button
             onClick={changePw}
             disabled={savingPw}
-            className="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 text-sm font-medium text-gray-900 transition-colors"
+            className="flex items-center gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-4 py-2.5 text-sm font-medium text-white transition-colors"
           >
             {savingPw && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {savingPw ? "Updating..." : "Update Password"}
