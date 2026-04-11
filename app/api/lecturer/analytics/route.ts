@@ -202,6 +202,7 @@ export async function GET(req: NextRequest) {
           unitName: unit.title,
           enrolledStudents,
           conductedSessions,
+          totalPresent: totalAttendances,
           avgAttended,
           attendancePercent,
         };
