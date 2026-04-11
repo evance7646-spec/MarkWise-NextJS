@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+import { computeAndCachePoints } from "@/lib/gamificationEngine";
 
 export const runtime = "nodejs";
 
@@ -230,6 +231,10 @@ export async function POST(req: NextRequest) {
       institutionId: lecturer.institutionId,
     },
   });
+
+  // Refresh gamification cache so points + streak reflect this mark immediately.
+  // Fire-and-forget: errors here must not fail the 201 response.
+  computeAndCachePoints(student.id).catch(() => {});
 
   return NextResponse.json(
     { message: "Marked present" },

@@ -187,38 +187,71 @@ export async function computeGamification(studentId: string): Promise<Gamificati
   const totalSessions = scheduled.length;
 
   // 6. Fetch all attendance records for this student in the timeframe
-  const attendanceRecords = await prisma.onlineAttendanceRecord.findMany({
-    where: {
-      studentId,
-      markedAt: { gte: semesterStart, lte: now },
-    },
-    select: {
-      id: true,
-      unitCode: true,
-      markedAt: true,
-      session: {
-        select: { createdAt: true, unitCode: true },
+  //    Source A: online QR sessions (OnlineAttendanceRecord)
+  //    Source B: offline BLE / manual / manual_lecturer (OfflineAttendanceRecord)
+  const [attendanceRecords, offlineAttendanceRecords] = await Promise.all([
+    prisma.onlineAttendanceRecord.findMany({
+      where: {
+        studentId,
+        markedAt: { gte: semesterStart, lte: now },
       },
-    },
-    orderBy: { markedAt: "desc" },
-  });
+      select: {
+        id: true,
+        unitCode: true,
+        markedAt: true,
+        session: {
+          select: { createdAt: true, unitCode: true },
+        },
+      },
+      orderBy: { markedAt: "desc" },
+    }),
 
-  // Build a set of attended (dateKey, unitCode) pairs
+    // Source B: offline BLE / manual / manual_lecturer
+    prisma.offlineAttendanceRecord.findMany({
+      where: {
+        studentId,
+        scannedAt: { gte: semesterStart, lte: now },
+        unitCode: { not: "" },
+      },
+      select: {
+        id: true,
+        unitCode: true,
+        scannedAt: true,
+        sessionStart: true,
+      },
+      orderBy: { scannedAt: "desc" },
+    }),
+  ]);
+
+  // Build a set of attended (dateKey, unitCode) pairs — union of online + offline
   const attendedSet = new Set<string>();
   for (const rec of attendanceRecords) {
     const dk = dateKey(rec.markedAt);
     const uc = (rec.unitCode || rec.session.unitCode).toUpperCase();
     attendedSet.add(`${dk}|${uc}`);
   }
+  for (const rec of offlineAttendanceRecords) {
+    const dk = dateKey(rec.scannedAt);
+    const uc = rec.unitCode.toUpperCase();
+    attendedSet.add(`${dk}|${uc}`);
+  }
 
-  const attended = attendanceRecords.length;
+  const attended = attendedSet.size;
   const missed = Math.max(0, totalSessions - attended);
   const percent = totalSessions > 0 ? Math.round((attended / totalSessions) * 1000) / 10 : 0;
 
-  // 7. On-time count: markedAt within 5 minutes of session createdAt
+  // 7. On-time count: within 5 minutes of session start
+  //    Online: markedAt within 5 min of session.createdAt
+  //    Offline: scannedAt within 5 min of sessionStart
   let ontimeCount = 0;
   for (const rec of attendanceRecords) {
     const diff = rec.markedAt.getTime() - rec.session.createdAt.getTime();
+    if (diff >= 0 && diff <= ONTIME_MS) {
+      ontimeCount++;
+    }
+  }
+  for (const rec of offlineAttendanceRecords) {
+    const diff = rec.scannedAt.getTime() - rec.sessionStart.getTime();
     if (diff >= 0 && diff <= ONTIME_MS) {
       ontimeCount++;
     }
@@ -239,6 +272,13 @@ export async function computeGamification(studentId: string): Promise<Gamificati
   for (const rec of attendanceRecords) {
     const dk = dateKey(rec.markedAt);
     const uc = (rec.unitCode || rec.session.unitCode).toUpperCase();
+    const set = dayAttended.get(dk) ?? new Set();
+    set.add(uc);
+    dayAttended.set(dk, set);
+  }
+  for (const rec of offlineAttendanceRecords) {
+    const dk = dateKey(rec.scannedAt);
+    const uc = rec.unitCode.toUpperCase();
     const set = dayAttended.get(dk) ?? new Set();
     set.add(uc);
     dayAttended.set(dk, set);
@@ -329,6 +369,10 @@ export async function computeGamification(studentId: string): Promise<Gamificati
     const uc = (rec.unitCode || rec.session.unitCode).toUpperCase();
     unitAttendedCount.set(uc, (unitAttendedCount.get(uc) ?? 0) + 1);
   }
+  for (const rec of offlineAttendanceRecords) {
+    const uc = rec.unitCode.toUpperCase();
+    unitAttendedCount.set(uc, (unitAttendedCount.get(uc) ?? 0) + 1);
+  }
   const unitsAbove90: string[] = [];
   for (const [uc, sCount] of unitScheduledCount) {
     const aCount = unitAttendedCount.get(uc) ?? 0;
@@ -361,28 +405,38 @@ export async function computeGamification(studentId: string): Promise<Gamificati
   ];
   const total = breakdown.reduce((s, b) => s + b.pts, 0);
 
-  // ── Recent Activity (most recent 20) ────────────────────────────────────────
-  const recentActivity: RecentActivity[] = [];
-  const recentRecords = attendanceRecords.slice(0, 20);
-  for (const rec of recentRecords) {
+  // ── Recent Activity (most recent 20 across all methods) ─────────────────────
+  // Merge online + offline into a unified list sorted by time desc
+  type ActivityEntry = { id: string; unitCode: string; date: Date; ontime: boolean; method: string };
+  const allActivity: ActivityEntry[] = [];
+  for (const rec of attendanceRecords) {
     const uc = (rec.unitCode || rec.session.unitCode).toUpperCase();
+    const diff = rec.markedAt.getTime() - rec.session.createdAt.getTime();
+    allActivity.push({ id: rec.id, unitCode: uc, date: rec.markedAt, ontime: diff >= 0 && diff <= ONTIME_MS, method: "qr" });
+  }
+  for (const rec of offlineAttendanceRecords) {
+    const uc = rec.unitCode.toUpperCase();
+    const diff = rec.scannedAt.getTime() - rec.sessionStart.getTime();
+    allActivity.push({ id: rec.id, unitCode: uc, date: rec.scannedAt, ontime: diff >= 0 && diff <= ONTIME_MS, method: "offline" });
+  }
+  allActivity.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  const recentActivity: RecentActivity[] = [];
+  for (const entry of allActivity.slice(0, 20)) {
     recentActivity.push({
-      id: rec.id,
-      label: `Attended ${uc} Session`,
+      id: entry.id,
+      label: `Attended ${entry.unitCode} Session`,
       rule: "attend",
       pts: POINTS.attend,
-      date: rec.markedAt.toISOString(),
+      date: entry.date.toISOString(),
     });
-
-    // Check if on-time for this record
-    const diff = rec.markedAt.getTime() - rec.session.createdAt.getTime();
-    if (diff >= 0 && diff <= ONTIME_MS) {
+    if (entry.ontime) {
       recentActivity.push({
-        id: `${rec.id}-ontime`,
+        id: `${entry.id}-ontime`,
         label: "On-time bonus",
         rule: "ontime",
         pts: POINTS.ontime,
-        date: rec.markedAt.toISOString(),
+        date: entry.date.toISOString(),
       });
     }
   }
