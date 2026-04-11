@@ -30,14 +30,7 @@ export async function GET(req: NextRequest) {
     _count: { id: true },
   });
 
-  // Count conducted sessions (total per unit) to derive total possible attendances
-  const sessions = await prisma.conductedSession.groupBy({
-    by: ['unitCode'],
-    _count: { id: true },
-  });
-  const sessionMap = new Map(sessions.map(s => [s.unitCode, s._count.id]));
-
-  // Build unit lookup for metadata
+  // Build unit lookup for metadata (scoped to this institution via unitCodes already filtered above)
   const unitCodes = grouped.map(g => g.unitCode);
   const units = unitCodes.length > 0
     ? await prisma.unit.findMany({
@@ -46,16 +39,46 @@ export async function GET(req: NextRequest) {
       })
     : [];
   const unitMap = new Map(units.map(u => [u.code, u]));
+  const unitIds = units.map(u => u.id);
+
+  // Count conducted sessions scoped to this institution's unit codes
+  const [sessionGroups, enrollmentCounts] = await Promise.all([
+    unitCodes.length > 0
+      ? prisma.conductedSession.groupBy({
+          by: ['unitCode'],
+          where: { unitCode: { in: unitCodes } },
+          _count: { id: true },
+        })
+      : Promise.resolve([] as { unitCode: string; _count: { id: number } }[]),
+    unitIds.length > 0
+      ? prisma.enrollment.groupBy({
+          by: ['unitId'],
+          where: { unitId: { in: unitIds } },
+          _count: { studentId: true },
+        })
+      : Promise.resolve([] as { unitId: string; _count: { studentId: number } }[]),
+  ]);
+
+  const sessionMap = new Map(sessionGroups.map(s => [s.unitCode, s._count.id]));
+
+  // Build unitId → enrolled count, then map to unitCode
+  const unitIdToCode = new Map(units.map(u => [u.id, u.code]));
+  const enrolledByUnitCode = new Map<string, number>();
+  for (const ec of enrollmentCounts) {
+    const code = unitIdToCode.get(ec.unitId);
+    if (code) enrolledByUnitCode.set(code, ec._count.studentId);
+  }
 
   const records = grouped.map(g => {
     const unit = unitMap.get(g.unitCode);
-    const presentCount = g._count.id;
-    const sessionCount = sessionMap.get(g.unitCode) ?? 0;
-    // Each session can have multiple students; use present as raw count and sessions as denominator with a student count estimate
-    // Approximate: rate = present_records / (sessions * estimated_students_per_session) — fallback to raw %
-    // Conservative: if no session count, show present count only
-    const rate = sessionCount > 0
-      ? Math.min(100, Math.round((presentCount / sessionCount) * 100))
+    const presentCount    = g._count.id;
+    const sessionCount    = sessionMap.get(g.unitCode) ?? 0;
+    const enrolledCount   = enrolledByUnitCode.get(g.unitCode) ?? 0;
+
+    // Rate = total attendance marks / (sessions × enrolled students) × 100
+    // Falls back to 0 when either denominator is unavailable.
+    const rate = sessionCount > 0 && enrolledCount > 0
+      ? Math.min(100, Math.round((presentCount / (sessionCount * enrolledCount)) * 100))
       : 0;
 
     return {
@@ -65,6 +88,7 @@ export async function GET(req: NextRequest) {
       departmentId: unit?.departmentId ?? null,
       present: presentCount,
       total: sessionCount,
+      enrolled: enrolledCount,
       rate,
     };
   });

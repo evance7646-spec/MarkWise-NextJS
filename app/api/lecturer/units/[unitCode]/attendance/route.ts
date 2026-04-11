@@ -155,12 +155,20 @@ export async function GET(
         select: { id: true },
       }),
 
-      // Offline present marks grouped by student
-      prisma.offlineAttendanceRecord.groupBy({
-        by: ["studentId"],
-        where: { unitCode, method: { in: PRESENT_METHODS } },
-        _count: { id: true },
-      }),
+      // Offline present marks grouped by student — scoped to THIS lecturer's
+      // conducted sessions (inner join on lectureRoom + sessionStart) so marks
+      // from sessions run by other lecturers sharing the unit code are excluded.
+      prisma.$queryRaw<{ studentId: string; cnt: bigint }[]>`
+        SELECT oar."studentId", COUNT(*) AS cnt
+        FROM "OfflineAttendanceRecord" oar
+        INNER JOIN "ConductedSession" cs
+          ON  UPPER(REPLACE(cs."unitCode",    ' ', '')) = UPPER(REPLACE(oar."unitCode",    ' ', ''))
+          AND cs."sessionStart" = oar."sessionStart"
+          AND cs."lecturerId"   = ${lecturerId}
+        WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) = ${unitCode}
+          AND oar."method" IN ('qr', 'ble', 'manual', 'manual_lecturer', 'proxy_leader', 'GD')
+        GROUP BY oar."studentId"
+      `,
 
       // Conducted online session count
       prisma.onlineAttendanceSession.count({
@@ -206,7 +214,8 @@ export async function GET(
     // ── Merge offline + online attended counts per student ────────────────────
     const attendedMap = new Map<string, number>();
     for (const row of offlineAttendanceGroups) {
-      attendedMap.set(row.studentId, (attendedMap.get(row.studentId) ?? 0) + row._count.id);
+      // offlineAttendanceGroups is now raw SQL → cnt is BigInt
+      attendedMap.set(row.studentId, (attendedMap.get(row.studentId) ?? 0) + Number(row.cnt));
     }
     for (const row of onlineAttendanceGroups) {
       attendedMap.set(row.studentId, (attendedMap.get(row.studentId) ?? 0) + row._count.id);

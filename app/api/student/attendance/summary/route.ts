@@ -141,13 +141,23 @@ export async function GET(req: NextRequest) {
           REPLACE(UPPER(cs."unitCode"), ' ', '') AS unit_code,
           cs."sessionStart"                      AS "sessionStart",
           cs."lessonType"                        AS "lessonType",
-          (oar.id IS NOT NULL)                   AS attended
+          (oar.id IS NOT NULL OR onr.id IS NOT NULL) AS attended
         FROM "ConductedSession" cs
+        -- Offline attendance record for this student
         LEFT JOIN "OfflineAttendanceRecord" oar
           ON  REPLACE(UPPER(oar."unitCode"),    ' ', '') = REPLACE(UPPER(cs."unitCode"),    ' ', '')
           AND REPLACE(UPPER(oar."lectureRoom"), ' ', '') = REPLACE(UPPER(cs."lectureRoom"), ' ', '')
           AND oar."sessionStart" = cs."sessionStart"
           AND oar."studentId"    = ${studentId}
+        -- Online attendance: match session by unit code and time window (±15 min)
+        LEFT JOIN "OnlineAttendanceSession" oas
+          ON  REPLACE(UPPER(oas."unitCode"), ' ', '') = REPLACE(UPPER(cs."unitCode"), ' ', '')
+          AND oas."createdAt" BETWEEN cs."sessionStart" - INTERVAL '15 minutes'
+                                  AND cs."sessionStart" + INTERVAL '15 minutes'
+          AND oas."endedAt" IS NOT NULL
+        LEFT JOIN "OnlineAttendanceRecord" onr
+          ON  onr."sessionId" = oas.id
+          AND onr."studentId" = ${studentId}
         WHERE REPLACE(UPPER(cs."unitCode"), ' ', '') = ANY(${unitCodes})
         ORDER BY cs."sessionStart" ASC
       `

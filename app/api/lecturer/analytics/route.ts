@@ -107,13 +107,14 @@ export async function GET(req: NextRequest) {
           select: { unitCode: true, validFrom: true },
         }),
 
-        // Present marks across all offline submission paths
+        // Present marks across all offline submission paths;
+        // also select sessionStart so we can scope to THIS lecturer's sessions below.
         prisma.offlineAttendanceRecord.findMany({
           where: {
             unitCode: { in: unitCodes },
             method: { in: PRESENT_METHODS },
           },
-          select: { unitCode: true },
+          select: { unitCode: true, sessionStart: true },
         }),
       ]);
 
@@ -122,13 +123,21 @@ export async function GET(req: NextRequest) {
     const normalizeCode = (c: string) => c.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 
     // Build map of normalized unitCode → array of offline session start times (ms)
-    // Used to dedup delegation sessions that represent the same real lecture.
+    // Used to dedup delegation sessions AND to scope offline attendance marks.
     const offlineSessionTimes = new Map<string, number[]>();
     for (const s of offlineSessions) {
       const key = normalizeCode(s.unitCode);
       const times = offlineSessionTimes.get(key) ?? [];
       times.push(s.sessionStart.getTime());
       offlineSessionTimes.set(key, times);
+    }
+
+    // Pre-build a Set of "${normCode}_${sessionStartMs}" for fast membership check.
+    // Only attendance records whose session start matches one of THIS lecturer's
+    // conducted sessions are counted — prevents inflation from other lecturers sharing the unit.
+    const validOfflineKeys = new Set<string>();
+    for (const s of offlineSessions) {
+      validOfflineKeys.add(`${normalizeCode(s.unitCode)}_${s.sessionStart.getTime()}`);
     }
 
     type UnitStats = { conductedSessions: number; totalAttendances: number };
@@ -159,7 +168,11 @@ export async function GET(req: NextRequest) {
       }
     }
     for (const r of offlineRecords) {
-      stat(r.unitCode).totalAttendances += 1;
+      // Only count this mark if it belongs to a session this lecturer conducted
+      const key = `${normalizeCode(r.unitCode)}_${r.sessionStart.getTime()}`;
+      if (validOfflineKeys.has(key)) {
+        stat(r.unitCode).totalAttendances += 1;
+      }
     }
 
     // ── 6. Build response ──────────────────────────────────────────────────────
