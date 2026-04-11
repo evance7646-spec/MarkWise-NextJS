@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "app/api/reports/generate/route.ts": {
+      "includeFiles": "node_modules/pdfkit/data/**"
+    }
+  }
+}
