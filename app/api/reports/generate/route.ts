@@ -160,7 +160,7 @@ async function gatherUnitReportData(
     select: { id: true, title: true, code: true, department: { select: { name: true } } },
   });
   const unitName   = unit?.title                ?? unitCode;
-  const department = departmentLabel || unit?.department?.name ?? "";
+  const department = departmentLabel || (unit?.department?.name ?? "");
 
   // 2. Enrolled students
   const enrollments = unit
