@@ -730,7 +730,8 @@ export async function POST(req: NextRequest) {
     );
 
     // ── Build file buffer ─────────────────────────────────────
-    const ext = validFormat === "pdf" ? "pdf" : validFormat === "csv" ? "csv" : "xlsx";
+    const ext      = validFormat === "pdf" ? "pdf" : validFormat === "csv" ? "csv" : "xlsx";
+    const filename = `MarkWise_Attendance_${validPeriod}_${Date.now()}.${ext}`;
     let fileBuffer: Buffer;
 
     try {
@@ -746,7 +747,35 @@ export async function POST(req: NextRequest) {
       return apiErr(`Report generation failed: ${buildErr instanceof Error ? buildErr.message : String(buildErr)}`, 500);
     }
 
-    // ── Upload to Vercel Blob ─────────────────────────────────
+    // ── PDF: return base64 in-body (no filesystem / no Blob needed) ──
+    if (validFormat === "pdf") {
+      // Persist without a fileUrl (base64 is returned inline)
+      await prisma.lecturerReport.create({
+        data: {
+          lecturerId,
+          period:        validPeriod,
+          types:         validTypes,
+          format:        validFormat,
+          unitCodes:     normalizedCodes,
+          startDate:     parsedStart,
+          endDate:       parsedEnd,
+          fileUrl:       "",
+          fileSizeBytes: fileBuffer.length,
+        },
+      }).catch(() => { /* non-fatal: log record is best-effort */ });
+
+      return NextResponse.json(
+        {
+          fileUrl:  null,
+          base64:   fileBuffer.toString("base64"),
+          mimeType: MIME_MAP.pdf,
+          filename,
+        },
+        { status: 200, headers: corsHeaders },
+      );
+    }
+
+    // ── CSV / Excel: upload to Vercel Blob and return URL ─────
     const blobName = `reports/${lecturerId.slice(0, 8)}_${Date.now()}.${ext}`;
 
     let fileUrl: string;
@@ -757,8 +786,17 @@ export async function POST(req: NextRequest) {
       });
       fileUrl = blob.url;
     } catch (uploadErr) {
-      console.error("[reports/generate] upload error:", uploadErr);
-      return apiErr(`Report generation failed: upload error`, 500);
+      console.error("[reports/generate] blob upload error:", uploadErr);
+      // Fall back to base64 so the caller always gets something usable
+      return NextResponse.json(
+        {
+          fileUrl:  null,
+          base64:   fileBuffer.toString("base64"),
+          mimeType: MIME_MAP[validFormat],
+          filename,
+        },
+        { status: 200, headers: corsHeaders },
+      );
     }
 
     // ── Persist report record ─────────────────────────────────
