@@ -18,6 +18,11 @@ interface StudentPoints {
   breakdownJson?: string | null;
 }
 
+interface PointsResponse {
+  points: StudentPoints | null;
+  enrolledUnitCodes: string[];
+}
+
 interface UnitBreakdown {
   unitCode: string;
   unitTitle?: string;
@@ -34,8 +39,9 @@ function TranscriptCard({ student }: { student: Student }) {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const d = await fetch(`/api/students/${student.id}/points`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as any;
-      const pts: StudentPoints | null = d.points ?? d.data ?? d ?? null;
+      const d = await fetch(`/api/students/${student.id}/points`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as PointsResponse;
+      const pts = d.points ?? null;
+      const enrolledCodes = new Set((d.enrolledUnitCodes ?? []).map((c: string) => c.trim().toUpperCase()));
       setPoints(pts);
       if (pts?.breakdownJson) {
         try {
@@ -44,7 +50,11 @@ function TranscriptCard({ student }: { student: Student }) {
             unitCode, unitTitle: v.title ?? "", attended: v.attended ?? 0, total: v.total ?? 0,
             pct: v.total > 0 ? Math.round((v.attended / v.total) * 100) : 0,
           }));
-          setBreakdown(rows);
+          // Only show units the student is currently enrolled in
+          const filtered = enrolledCodes.size > 0
+            ? rows.filter(u => enrolledCodes.has(u.unitCode.trim().toUpperCase()))
+            : rows;
+          setBreakdown(filtered);
         } catch { /* noop */ }
       }
       setLoading(false);
@@ -88,7 +98,7 @@ function TranscriptCard({ student }: { student: Student }) {
         {loading ? (
           <div className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-8 rounded-lg bg-gray-200 animate-pulse" />)}</div>
         ) : breakdown.length === 0 ? (
-          <p className="text-xs text-gray-500 py-2">No unit attendance data available.</p>
+          <p className="text-xs text-gray-500 py-2">No attendance data for enrolled units.</p>
         ) : (
           <div className="space-y-2">
             {breakdown.map(u => (

@@ -6,7 +6,7 @@ export async function findStudentByAdmissionIndexed(
   if (institutionId) where.institutionId = institutionId;
   const item = await prisma.student.findFirst({
     where,
-    include: { auth: true },
+    include: { auth: true, department: { select: { name: true } } },
   });
   if (!item) return { student: null };
   return {
@@ -17,6 +17,8 @@ export async function findStudentByAdmissionIndexed(
       courseId: item.courseId,
       institutionId: item.institutionId,
       email: item.auth?.email ?? undefined,
+      departmentId: item.departmentId,
+      departmentName: item.department?.name ?? undefined,
     },
   };
 }
@@ -31,6 +33,8 @@ export type StudentRecord = {
   courseId?: string;
   institutionId: string;
   email?: string;
+  departmentId?: string;
+  departmentName?: string;
 };
 
 const dataDir = path.join(process.cwd(), "data");

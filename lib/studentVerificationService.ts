@@ -5,11 +5,13 @@ type VerificationPayload = {
   exists: boolean;
   admissionNumber: string;
   fullName: string | null;
+  email: string | null;
   course: {
     id: string;
     code: string;
     name: string;
   } | null;
+  department: { name: string } | null;
 };
 
 type VerificationCacheEntry = {
@@ -55,7 +57,9 @@ export async function verifyStudentByAdmission(admissionNumber: string, institut
       exists: false,
       admissionNumber: normalizedAdmission,
       fullName: null,
+      email: null,
       course: null,
+      department: null,
     };
 
     verificationCache.set(cacheKey, {
@@ -74,7 +78,9 @@ export async function verifyStudentByAdmission(admissionNumber: string, institut
     exists: true,
     admissionNumber: normalizedAdmission,
     fullName: lookup.student.name,
+    email: lookup.student.email ?? null,
     course: asCoursePayload(course),
+    department: lookup.student.departmentName ? { name: lookup.student.departmentName } : null,
   };
 
   verificationCache.set(cacheKey, {

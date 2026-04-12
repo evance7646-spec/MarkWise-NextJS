@@ -34,21 +34,29 @@ export async function GET(
     }
   }
 
-  const points = await prisma.studentPoints.findUnique({
-    where: { studentId },
-    select: {
-      totalPoints: true,
-      currentStreak: true,
-      longestStreak: true,
-      attendancePct: true,
-      statsJson: true,
-      breakdownJson: true,
-      computedAt: true,
-    },
-  });
+  const [points, enrollments] = await Promise.all([
+    prisma.studentPoints.findUnique({
+      where: { studentId },
+      select: {
+        totalPoints: true,
+        currentStreak: true,
+        longestStreak: true,
+        attendancePct: true,
+        statsJson: true,
+        breakdownJson: true,
+        computedAt: true,
+      },
+    }),
+    prisma.enrollment.findMany({
+      where: { studentId },
+      select: { unit: { select: { code: true } } },
+    }),
+  ]);
+
+  const enrolledUnitCodes = enrollments.map((e) => e.unit.code.trim().toUpperCase());
 
   if (!points) {
-    return NextResponse.json({ points: null });
+    return NextResponse.json({ points: null, enrolledUnitCodes });
   }
 
   return NextResponse.json({
@@ -61,5 +69,6 @@ export async function GET(
       breakdownJson: points.breakdownJson ? JSON.stringify(points.breakdownJson) : null,
       computedAt: points.computedAt,
     },
+    enrolledUnitCodes,
   });
 }

@@ -7,9 +7,9 @@ import {
 import { useAcademicRegistrar } from "../../context";
 
 interface VerifiedStudent {
-  id: string; name: string; admissionNumber: string; email: string;
-  course?: { name: string; code: string }; department?: { name: string };
-  createdAt?: string;
+  fullName: string; admissionNumber: string; email: string | null;
+  course?: { name: string; code: string } | null; department?: { name: string } | null;
+  exists: boolean;
 }
 
 export default function VerificationPage() {
@@ -25,9 +25,13 @@ export default function VerificationPage() {
     const d = await fetch(
       `/api/students/verify?admissionNumber=${encodeURIComponent(query.trim())}&institutionId=${admin.institutionId}`,
       { credentials: "include" }
-    ).then(r => r.ok ? r.json() : null) as any;
-    const student = d?.student ?? d?.data ?? (d?.id ? d : null);
-    setResult(student ?? "notfound");
+    ).then(r => r.ok ? r.json() : null) as VerifiedStudent | null;
+    // API returns { exists: bool, fullName, admissionNumber, course, department, email }
+    if (d?.exists) {
+      setResult(d);
+    } else {
+      setResult("notfound");
+    }
     setLoading(false);
   };
 
@@ -98,12 +102,12 @@ export default function VerificationPage() {
             {/* Student details */}
             <div className="p-5 flex flex-col sm:flex-row gap-5">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/15 text-emerald-700 text-2xl font-bold self-start">
-                {result.name[0]?.toUpperCase()}
+                {result.fullName[0]?.toUpperCase()}
               </div>
               <div className="flex-1 grid sm:grid-cols-2 gap-3">
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5 flex items-center gap-1"><UserCircle className="h-3 w-3" /> Full Name</div>
-                  <div className="text-gray-800 font-semibold">{result.name}</div>
+                  <div className="text-gray-800 font-semibold">{result.fullName}</div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5">Admission No.</div>
@@ -111,17 +115,18 @@ export default function VerificationPage() {
                 </div>
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5 flex items-center gap-1"><BookOpen className="h-3 w-3" /> Course</div>
-                  <div className="text-gray-700">{result.course?.name ?? "—"} <span className="text-gray-400 text-xs">({result.course?.code})</span></div>
+                  <div className="text-gray-700">{result.course?.name ?? "—"} <span className="text-gray-400 text-xs">({result.course?.code ?? "—"})</span></div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-400 mb-0.5 flex items-center gap-1"><Building2 className="h-3 w-3" /> Department</div>
                   <div className="text-gray-700">{result.department?.name ?? "—"}</div>
                 </div>
-                <div>
-                  <div className="text-xs text-gray-400 mb-0.5">Email</div>
-                  <div className="text-gray-700 text-sm">{result.email}</div>
-                </div>
-
+                {result.email && (
+                  <div>
+                    <div className="text-xs text-gray-400 mb-0.5">Email</div>
+                    <div className="text-gray-700 text-sm">{result.email}</div>
+                  </div>
+                )}
               </div>
             </div>
           </motion.div>
