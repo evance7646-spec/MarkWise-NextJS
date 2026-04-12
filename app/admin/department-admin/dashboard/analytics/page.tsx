@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Users, GraduationCap, BarChart3, Activity, AlertTriangle,
   CheckCircle2, AlertCircle, RefreshCw, TrendingDown,
-  Shield, UserX, Cpu, QrCode, Fingerprint,
+  Shield, UserX,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
@@ -19,7 +19,6 @@ interface Overview {
 interface LecturerStat {
   lecturerId: string; lecturerName: string; department: string; departmentId: string;
   totalSessions: number; hoursPerWeek: number; unitCount: number;
-  bleAdoptionRate: number; qrAdoptionRate: number; pinAdoptionRate: number;
   avgClassAttendance: number;
 }
 interface YearBreakdown {
@@ -30,11 +29,6 @@ interface AtRiskStudent {
   studentId: string; studentName: string; admissionNumber: string;
   year: number; department: string; overallAttendance: number; riskLevel: string;
 }
-interface MethodBreakdown { method: string; count: number; pct: number; }
-interface MethodByDept {
-  departmentId: string; name: string; total: number;
-  ble: number; qr: number; pin: number; online: number;
-}
 interface AnalyticsData {
   overview: Overview;
   lecturers: LecturerStat[];
@@ -44,8 +38,6 @@ interface AnalyticsData {
     atRisk: AtRiskStudent[];
     critical: AtRiskStudent[];
   };
-  methods: MethodBreakdown[];
-  methodByDept: MethodByDept[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -69,15 +61,7 @@ function riskBadge(level: string): string {
   return m[level] ?? "bg-gray-100 text-gray-600";
 }
 
-const METHOD_COLOR: Record<string, string> = {
-  ble:             "bg-emerald-500",
-  qr:              "bg-sky-500",
-  manual:          "bg-amber-400",
-  manual_lecturer: "bg-rose-400",
-};
-const METHOD_LABEL: Record<string, string> = {
-  ble: "BLE", qr: "QR Code", manual: "Manual (Student)", manual_lecturer: "Manual (Lecturer)",
-};
+
 
 function Bar({
   pct, color, animated = true,
@@ -123,7 +107,7 @@ function KpiCard({
   );
 }
 
-type Tab = "overview" | "lecturers" | "students" | "methods";
+type Tab = "overview" | "lecturers" | "students";
 
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function DeptAttendanceAnalyticsPage() {
@@ -159,8 +143,6 @@ export default function DeptAttendanceAnalyticsPage() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const ov = data?.overview;
-  // dept-scoped call returns one entry in methodByDept
-  const deptMethods = (data?.methodByDept ?? [])[0];
 
   return (
     <div className="space-y-6 p-6">
@@ -236,7 +218,7 @@ export default function DeptAttendanceAnalyticsPage() {
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
       <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {(["overview", "lecturers", "students", "methods"] as Tab[]).map(t => (
+        {(["overview", "lecturers", "students"] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -246,7 +228,7 @@ export default function DeptAttendanceAnalyticsPage() {
                 : "text-gray-500 hover:text-gray-700"
             }`}
           >
-            {t === "methods" ? "Attendance Methods" : t.charAt(0).toUpperCase() + t.slice(1)}
+            {t.charAt(0).toUpperCase() + t.slice(1)}
           </button>
         ))}
       </div>
@@ -294,11 +276,11 @@ export default function DeptAttendanceAnalyticsPage() {
             )}
           </div>
 
-          {/* Method snapshot */}
+          {/* Critical students */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-emerald-400" />
-              Attendance Methods Used
+              <AlertTriangle className="h-4 w-4 text-rose-400" />
+              Critical Students — Below 40%
             </h2>
             {loading ? (
               <div className="space-y-3">
@@ -306,24 +288,20 @@ export default function DeptAttendanceAnalyticsPage() {
                   <div key={i} className="h-8 rounded bg-gray-100 animate-pulse" />
                 ))}
               </div>
-            ) : (data?.methods ?? []).length === 0 ? (
-              <p className="text-sm text-gray-400">No attendance records in this period.</p>
+            ) : (data?.students.critical ?? []).length === 0 ? (
+              <p className="text-sm text-gray-400 flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                No critical students — great work!
+              </p>
             ) : (
-              <div className="space-y-4">
-                {(data?.methods ?? []).map(m => (
-                  <div key={m.method}>
-                    <div className="flex justify-between text-xs mb-1.5">
-                      <span className="font-medium text-gray-700 flex items-center gap-1.5">
-                        {m.method === "ble"    && <Cpu       className="h-3.5 w-3.5 text-emerald-500" />}
-                        {m.method === "qr"     && <QrCode    className="h-3.5 w-3.5 text-sky-500" />}
-                        {(m.method === "manual" || m.method === "manual_lecturer") && (
-                          <Fingerprint className="h-3.5 w-3.5 text-amber-500" />
-                        )}
-                        {METHOD_LABEL[m.method] ?? m.method}
-                      </span>
-                      <span className="text-gray-400">{m.count.toLocaleString()} · {m.pct}%</span>
+              <div className="space-y-2 max-h-52 overflow-y-auto">
+                {(data?.students.critical ?? []).map(s => (
+                  <div key={s.studentId} className="flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50/60 px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">{s.studentName}</p>
+                      <p className="text-xs text-gray-400">{s.admissionNumber} · Year {s.year}</p>
                     </div>
-                    <Bar pct={m.pct} color={METHOD_COLOR[m.method] ?? "bg-gray-400"} />
+                    <span className="text-sm font-bold text-rose-600">{s.overallAttendance}%</span>
                   </div>
                 ))}
               </div>
@@ -386,9 +364,6 @@ export default function DeptAttendanceAnalyticsPage() {
                       <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Sessions</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Units</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Hrs/Wk</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-emerald-600">BLE %</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-sky-600">QR %</th>
-                      <th className="text-right px-4 py-3 text-xs font-semibold text-amber-600">PIN %</th>
                       <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Avg Class</th>
                     </tr>
                   </thead>
@@ -402,17 +377,6 @@ export default function DeptAttendanceAnalyticsPage() {
                         <td className="px-4 py-3 text-right text-gray-500">{lec.unitCount}</td>
                         <td className="px-4 py-3 text-right text-gray-700">{lec.hoursPerWeek}h</td>
                         <td className="px-4 py-3 text-right">
-                          <span className={lec.bleAdoptionRate >= 70 ? "text-emerald-600 font-medium" : "text-amber-600"}>
-                            {lec.bleAdoptionRate}%
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right text-sky-600">{lec.qrAdoptionRate}%</td>
-                        <td className="px-4 py-3 text-right">
-                          <span className={lec.pinAdoptionRate > 30 ? "text-rose-600 font-medium" : "text-gray-500"}>
-                            {lec.pinAdoptionRate}%
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-right">
                           <span className={`font-semibold ${pctColor(lec.avgClassAttendance)}`}>
                             {lec.avgClassAttendance > 0 ? `${lec.avgClassAttendance} avg` : "—"}
                           </span>
@@ -425,61 +389,27 @@ export default function DeptAttendanceAnalyticsPage() {
             )}
           </div>
 
-          {/* Ranking bars */}
-          {!loading && (data?.lecturers ?? []).length > 0 && (
-            <div className="grid md:grid-cols-2 gap-6">
-
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <h2 className="text-sm font-semibold text-gray-700 mb-4">BLE Adoption Ranking</h2>
-                <div className="space-y-3">
-                  {[...(data?.lecturers ?? [])]
-                    .sort((a, b) => b.bleAdoptionRate - a.bleAdoptionRate)
-                    .map(lec => (
-                      <div key={lec.lecturerId} className="flex items-center gap-3">
-                        <div className="w-28 shrink-0 text-right text-xs text-gray-500 truncate">
-                          {lec.lecturerName.split(" ").slice(0, 2).join(" ")}
-                        </div>
-                        <Bar pct={lec.bleAdoptionRate} color="bg-emerald-500" />
-                        <div className="w-10 shrink-0 text-xs font-semibold text-emerald-600 text-right">
-                          {lec.bleAdoptionRate}%
-                        </div>
+{!loading && (data?.lecturers ?? []).length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-gray-700 mb-4">Avg Class Attendance Ranking</h2>
+              <div className="space-y-3">
+                {[...(data?.lecturers ?? [])]
+                  .sort((a, b) => b.avgClassAttendance - a.avgClassAttendance)
+                  .map(lec => (
+                    <div key={lec.lecturerId} className="flex items-center gap-3">
+                      <div className="w-28 shrink-0 text-right text-xs text-gray-500 truncate">
+                        {lec.lecturerName.split(" ").slice(0, 2).join(" ")}
                       </div>
-                    ))}
-                </div>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-                <h2 className="text-sm font-semibold text-gray-700 mb-4">Avg Class Attendance</h2>
-                <div className="space-y-3">
-                  {[...(data?.lecturers ?? [])]
-                    .sort((a, b) => b.avgClassAttendance - a.avgClassAttendance)
-                    .map(lec => (
-                      <div key={lec.lecturerId} className="flex items-center gap-3">
-                        <div className="w-28 shrink-0 text-right text-xs text-gray-500 truncate">
-                          {lec.lecturerName.split(" ").slice(0, 2).join(" ")}
-                        </div>
-                        <Bar pct={lec.avgClassAttendance} color={barColor(lec.avgClassAttendance)} />
-                        <div className={`w-10 shrink-0 text-xs font-semibold text-right ${pctColor(lec.avgClassAttendance)}`}>
-                          {lec.avgClassAttendance}%
-                        </div>
+                      <Bar pct={lec.avgClassAttendance} color={barColor(lec.avgClassAttendance)} />
+                      <div className={`w-10 shrink-0 text-xs font-semibold text-right ${pctColor(lec.avgClassAttendance)}`}>
+                        {lec.avgClassAttendance}%
                       </div>
-                    ))}
-                </div>
+                    </div>
+                  ))}
               </div>
-
             </div>
           )}
 
-          {/* High manual-mark warning */}
-          {!loading && (data?.lecturers ?? []).some(l => l.pinAdoptionRate > 30) && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800 flex items-start gap-3">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <p>
-                Some lecturers are using PIN/Manual attendance for &gt;30% of sessions.
-                Encourage BLE or QR-based marking to improve accuracy and reduce proxy risk.
-              </p>
-            </div>
-          )}
         </div>
       )}
 
@@ -612,98 +542,6 @@ export default function DeptAttendanceAnalyticsPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ══════════════════════════════════════════════════════════════════
-          Tab: Methods
-      ══════════════════════════════════════════════════════════════════ */}
-      {tab === "methods" && (
-        <div className="space-y-6">
-
-          {/* Global method breakdown */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <h2 className="text-sm font-semibold text-gray-700 mb-5 flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-emerald-400" />
-              Attendance Method Usage — This Department
-            </h2>
-            {loading ? (
-              <div className="space-y-4">
-                {[...Array(4)].map((_, i) => (
-                  <div key={i} className="h-8 rounded bg-gray-100 animate-pulse" />
-                ))}
-              </div>
-            ) : (data?.methods ?? []).length === 0 ? (
-              <p className="text-sm text-gray-400">No attendance records in this period.</p>
-            ) : (
-              <div className="space-y-4">
-                {(data?.methods ?? []).map(m => (
-                  <div key={m.method}>
-                    <div className="flex justify-between text-xs mb-1.5">
-                      <span className="font-medium text-gray-700 flex items-center gap-1.5">
-                        {m.method === "ble"    && <Cpu       className="h-3.5 w-3.5 text-emerald-500" />}
-                        {m.method === "qr"     && <QrCode    className="h-3.5 w-3.5 text-sky-500" />}
-                        {(m.method === "manual" || m.method === "manual_lecturer") && (
-                          <Fingerprint className="h-3.5 w-3.5 text-amber-500" />
-                        )}
-                        {METHOD_LABEL[m.method] ?? m.method}
-                      </span>
-                      <span className="text-gray-400">
-                        {m.count.toLocaleString()} records · {m.pct}%
-                      </span>
-                    </div>
-                    <Bar pct={m.pct} color={METHOD_COLOR[m.method] ?? "bg-gray-400"} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Department method detail */}
-          {!loading && deptMethods && deptMethods.total > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-              <h2 className="text-sm font-semibold text-gray-700 mb-4">Method Breakdown Detail</h2>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                {[
-                  { label: "BLE",           value: deptMethods.ble,  colorText: "text-emerald-600", colorBg: "bg-emerald-50 border-emerald-200" },
-                  { label: "QR Code",       value: deptMethods.qr,   colorText: "text-sky-600",     colorBg: "bg-sky-50 border-sky-200" },
-                  { label: "PIN / Manual",  value: deptMethods.pin,  colorText: "text-amber-600",   colorBg: "bg-amber-50 border-amber-200" },
-                  { label: "Online",        value: deptMethods.online ?? 0, colorText: "text-violet-600", colorBg: "bg-violet-50 border-violet-200" },
-                ].map(c => (
-                  <div key={c.label} className={`rounded-xl border p-4 text-center ${c.colorBg}`}>
-                    <p className={`text-2xl font-bold ${c.colorText}`}>{c.value}%</p>
-                    <p className="text-xs text-gray-500 mt-1">{c.label}</p>
-                  </div>
-                ))}
-              </div>
-              <p className="text-xs text-gray-400 mt-3 text-center">
-                {deptMethods.total.toLocaleString()} total attendance records in this period
-              </p>
-            </div>
-          )}
-
-          {!loading && (data?.methods ?? []).some(m => m.method === "ble") && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-sm text-emerald-800">
-              <p className="font-semibold flex items-center gap-2 mb-1">
-                <CheckCircle2 className="h-4 w-4" />
-                BLE is the most reliable attendance method
-              </p>
-              <p className="text-emerald-700 text-xs">
-                BLE-based attendance is proximity-verified and requires no student action.
-                Target &gt;70% BLE usage for the highest data reliability across all lecturers.
-              </p>
-            </div>
-          )}
-
-          {(!loading && (((data?.methods ?? []).find(m => m.method === "manual" || m.method === "manual_lecturer")?.pct ?? 0) > 20)) && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-sm text-amber-800 flex items-start gap-3">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <p>
-                Manual attendance represents a significant share of records.
-                Consider organising BLE/QR setup sessions for lecturers in this department.
-              </p>
             </div>
           )}
         </div>
