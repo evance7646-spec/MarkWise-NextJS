@@ -338,11 +338,15 @@ async function buildPdf(units: UnitReportData[], period: Period, startDate: Date
     // Track total pages for "Page X of Y" — we add it as a postprocess via range
     const pageRefs: number[] = [];
 
-    function addPageNum() {
-      // Called at end of each page
+    function addPageNum(landscape?: boolean) {
       const pageNum = pageRefs.length;
-      doc.fontSize(8).font(FONT).fillColor("#666666")
-        .text(`Page ${pageNum}`, 0, 780, { align: "center", width: 595 });
+      if (landscape) {
+        doc.fontSize(8).font(FONT).fillColor("#666666")
+          .text(`Page ${pageNum}`, 0, 565, { align: "center", width: 841 });
+      } else {
+        doc.fontSize(8).font(FONT).fillColor("#666666")
+          .text(`Page ${pageNum}`, 0, 780, { align: "center", width: 595 });
+      }
       doc.fillColor("#000000");
     }
 
@@ -460,49 +464,140 @@ async function buildPdf(units: UnitReportData[], period: Period, startDate: Date
 
       y += 8;
 
-      // ── BLOCK 4: PER-SESSION DETAIL ───────────────────────────
-      if (u.sessions.length > 0) {
-        ensureSpace(40);
-        doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke("#1e3a8a");
-        doc.moveDown(0.4);
-        doc.fontSize(10).font(FONT_BOLD).text("PER-SESSION DETAIL");
-        doc.moveDown(0.4);
+      // ── BLOCK 4: ATTENDANCE MATRIX (landscape pages, one per session batch) ──
+      // Close the current portrait page, then render the matrix on A4-landscape pages.
+      addPageNum();
 
-        const colW4 = [50, 70, 75, 165, 80];
-        const hdr4  = ["Lecture #", "Date", "Adm No.", "Name", "Status"];
+      {
+        const LX         = 50;
+        const LEAD_W     = [85, 115];    // Adm No., Name
+        const TRAIL_W    = [52, 60, 45]; // Total Sessions, Sessions Attended, Avg %
+        const LEAD_TOT   = LEAD_W[0] + LEAD_W[1];                 // 200
+        const TRAIL_TOT  = TRAIL_W[0] + TRAIL_W[1] + TRAIL_W[2];  // 157
+        const SESS_W     = 18;
+        const ROW_H      = 16;
+        const LPAGE_W    = 741;  // A4 landscape usable width: 841 − 50 − 50
+        const LPAGE_YMAX = 480;  // reserve ~115 pt for footer + page number
 
-        ensureSpace(20);
-        tableRow(hdr4, colW4, 50, doc.y, "#1e3a8a", true);
-        doc.fillColor("#000000");
-        doc.moveDown(0.05);
+        // Max sessions per horizontal batch (trailing cols always included)
+        const maxSessPerBatch = Math.floor((LPAGE_W - LEAD_TOT - TRAIL_TOT) / SESS_W); // ≈21
 
-        for (const sess of u.sessions) {
-          const dateStr = sess.sessionStart.toISOString().slice(0, 10);
-          for (const stu of u.students) {
-            const present = u.presenceMap.has(`${stu.studentId}__${sess.key}`);
-            ensureSpace(18);
-            tableRow(
-              [`LEC ${sess.index}`, dateStr, stu.admissionNumber, stu.name, present ? "Present" : "Absent"],
-              colW4, 50, doc.y, present ? "#f0fdf4" : "#fff1f2",
-            );
-            doc.moveDown(0.05);
-            doc.moveTo(50, doc.y).lineTo(545, doc.y).stroke("#e5e7eb");
-            doc.moveDown(0.05);
+        // Split sessions into horizontal batches
+        const batches: SessionRow[][] = [];
+        for (let i = 0; i < u.sessions.length; i += maxSessPerBatch) {
+          batches.push(u.sessions.slice(i, Math.min(i + maxSessPerBatch, u.sessions.length)));
+        }
+        if (batches.length === 0) batches.push([]); // always render at least one matrix page
+
+        for (let bi = 0; bi < batches.length; bi++) {
+          const batch       = batches[bi];
+          const isLastBatch = bi === batches.length - 1;
+          const batchSessW  = batch.length * SESS_W;
+          const batchTotW   = LEAD_TOT + batchSessW + TRAIL_TOT;
+
+          doc.addPage({ size: "A4", layout: "landscape" });
+          pageRefs.push(1);
+          let ly = 50;
+
+          // Title
+          doc.fontSize(10).font(FONT_BOLD).fillColor("#1e3a8a")
+            .text("ATTENDANCE MATRIX", LX, ly);
+          if (batches.length > 1) {
+            doc.fontSize(8).font(FONT).fillColor("#6b7280")
+              .text(
+                `  — Lectures ${batch[0]?.index ?? 1}–${batch[batch.length - 1]?.index ?? 0} of ${u.sessions.length}`,
+                LX + 175, ly + 1, { lineBreak: false },
+              );
           }
+          ly += 20;
+
+          // ── draw matrix header row ──
+          const drawHdr = (hy: number) => {
+            doc.save().rect(LX, hy, batchTotW, ROW_H).fill("#1e3a8a").restore();
+            doc.fontSize(7).font(FONT_BOLD).fillColor("#ffffff");
+            let hx = LX;
+            doc.text("Adm No.", hx + 2, hy + 4, { width: LEAD_W[0] - 4, lineBreak: false, ellipsis: true });
+            hx += LEAD_W[0];
+            doc.text("Name",    hx + 2, hy + 4, { width: LEAD_W[1] - 4, lineBreak: false, ellipsis: true });
+            hx += LEAD_W[1];
+            for (const s of batch) {
+              doc.text(`L${s.index}`, hx, hy + 4, { width: SESS_W, align: "center", lineBreak: false });
+              hx += SESS_W;
+            }
+            doc.text("Total",    hx + 2, hy + 4, { width: TRAIL_W[0] - 4, lineBreak: false });
+            hx += TRAIL_W[0];
+            doc.text("Attended", hx + 2, hy + 4, { width: TRAIL_W[1] - 4, lineBreak: false });
+            hx += TRAIL_W[1];
+            doc.text("Avg %",    hx + 2, hy + 4, { width: TRAIL_W[2] - 4, lineBreak: false });
+            doc.fillColor("#000000");
+          };
+
+          drawHdr(ly);
+          ly += ROW_H + 1;
+
+          // ── data rows ──
+          for (const stu of u.students) {
+            // Vertical overflow → new landscape page with repeated header
+            if (ly + ROW_H > LPAGE_YMAX) {
+              addPageNum(true);
+              doc.addPage({ size: "A4", layout: "landscape" });
+              pageRefs.push(1);
+              ly = 50;
+              drawHdr(ly);
+              ly += ROW_H + 1;
+            }
+
+            const bg = STATUS_COLORS[stu.status];
+            let rx = LX;
+
+            // Lead columns (Adm No., Name) — status-colour background
+            doc.save().rect(LX, ly, LEAD_TOT, ROW_H).fill(bg).restore();
+            doc.fontSize(7).font(FONT).fillColor("#000000");
+            doc.text(stu.admissionNumber, rx + 2, ly + 4, { width: LEAD_W[0] - 4, lineBreak: false, ellipsis: true });
+            rx += LEAD_W[0];
+            doc.text(stu.name,            rx + 2, ly + 4, { width: LEAD_W[1] - 4, lineBreak: false, ellipsis: true });
+            rx += LEAD_W[1];
+
+            // Per-session P / A cells  (green = present, red = absent)
+            for (const sess of batch) {
+              const present = u.presenceMap.has(`${stu.studentId}__${sess.key}`);
+              doc.save().rect(rx, ly, SESS_W, ROW_H)
+                .fill(present ? "#D1FAE5" : "#FEE2E2").restore();
+              doc.fontSize(7).font(FONT_BOLD)
+                .fillColor(present ? "#065f46" : "#991b1b")
+                .text(present ? "P" : "A", rx, ly + 4, { width: SESS_W, align: "center", lineBreak: false });
+              rx += SESS_W;
+            }
+
+            // Trailing summary columns — status-colour background
+            doc.save().rect(rx, ly, TRAIL_TOT, ROW_H).fill(bg).restore();
+            doc.fontSize(7).font(FONT).fillColor("#000000");
+            doc.text(String(stu.totalSessions), rx + 2, ly + 4, { width: TRAIL_W[0] - 4, lineBreak: false });
+            rx += TRAIL_W[0];
+            doc.text(String(stu.attended),      rx + 2, ly + 4, { width: TRAIL_W[1] - 4, lineBreak: false });
+            rx += TRAIL_W[1];
+            doc.text(`${stu.rate}%`,             rx + 2, ly + 4, { width: TRAIL_W[2] - 4, lineBreak: false });
+
+            ly += ROW_H;
+            doc.moveTo(LX, ly).lineTo(LX + batchTotW, ly).stroke("#e5e7eb");
+            ly += 1;
+          }
+
+          // ── BLOCK 5: FOOTER — rendered once on the last batch page ──────
+          if (isLastBatch) {
+            ly += 10;
+            doc.moveTo(LX, ly).lineTo(LX + LPAGE_W, ly).stroke("#1e3a8a");
+            ly += 8;
+            doc.fontSize(8).font(FONT).fillColor("#374151")
+              .text("NOTE: Minimum 75% attendance required to sit exams.", LX, ly);
+            ly += 12;
+            doc.text("Lecturer signature: _________________________   Date: ____________", LX, ly);
+            doc.fillColor("#000000");
+          }
+
+          addPageNum(true);
         }
       }
-
-      // ── BLOCK 5: FOOTER ───────────────────────────────────────
-      ensureSpace(60);
-      doc.moveTo(50, doc.y + 4).lineTo(545, doc.y + 4).stroke("#1e3a8a");
-      doc.moveDown(0.6);
-      doc.fontSize(8).font(FONT).fillColor("#374151")
-        .text("NOTE: Minimum 75% attendance required to sit exams.", 50, doc.y);
-      doc.moveDown(0.4);
-      doc.text(`Lecturer signature: _________________________   Date: ____________`, 50, doc.y);
-      doc.fillColor("#000000");
-
-      addPageNum();
     }
 
     doc.end();
@@ -555,15 +650,20 @@ function buildCsv(units: UnitReportData[], period: Period, startDate: Date, endD
     }
     lines.push("");
 
-    // Per-session detail
-    row("PER-SESSION DETAIL");
-    row("Lecture #", "Date", "Adm No.", "Name", "Status");
-    for (const sess of u.sessions) {
-      const dateStr = sess.sessionStart.toISOString().slice(0, 10);
-      for (const stu of u.students) {
+    // Attendance matrix
+    row("ATTENDANCE MATRIX");
+    const matrixHdr: (string | number)[] = ["Adm No.", "Name"];
+    for (const sess of u.sessions) matrixHdr.push(`LEC ${sess.index}`);
+    matrixHdr.push("Total Sessions", "Sessions Attended", "Attendance %");
+    row(...matrixHdr);
+    for (const stu of u.students) {
+      const cells: (string | number)[] = [stu.admissionNumber, stu.name];
+      for (const sess of u.sessions) {
         const present = u.presenceMap.has(`${stu.studentId}__${sess.key}`);
-        row(`LEC ${sess.index}`, dateStr, stu.admissionNumber, stu.name, present ? "Present" : "Absent");
+        cells.push(present ? "P" : "A");
       }
+      cells.push(stu.totalSessions, stu.attended, `${stu.rate}%`);
+      row(...cells);
     }
     lines.push("", "");
   }
@@ -610,14 +710,19 @@ function buildExcel(units: UnitReportData[], period: Period, startDate: Date, en
     }
     data.push([]);
 
-    // Per-session detail
-    data.push(["Lecture #", "Date", "Adm No.", "Name", "Status"]);
-    for (const sess of u.sessions) {
-      const dateStr = sess.sessionStart.toISOString().slice(0, 10);
-      for (const stu of u.students) {
+    // Attendance matrix
+    const matrixHdrExcel: (string | number)[] = ["Adm No.", "Name"];
+    for (const sess of u.sessions) matrixHdrExcel.push(`LEC ${sess.index}`);
+    matrixHdrExcel.push("Total Sessions", "Sessions Attended", "Attendance %");
+    data.push(matrixHdrExcel);
+    for (const stu of u.students) {
+      const cells: (string | number)[] = [stu.admissionNumber, stu.name];
+      for (const sess of u.sessions) {
         const present = u.presenceMap.has(`${stu.studentId}__${sess.key}`);
-        data.push([`LEC ${sess.index}`, dateStr, stu.admissionNumber, stu.name, present ? "Present" : "Absent"]);
+        cells.push(present ? "P" : "A");
       }
+      cells.push(stu.totalSessions, stu.attended, stu.rate);
+      data.push(cells);
     }
 
     const ws = XLSX.utils.aoa_to_sheet(data);
