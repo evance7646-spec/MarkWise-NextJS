@@ -1,5 +1,6 @@
 import { findCourseById, type CourseRecord } from "@/lib/courseStore";
 import { findStudentByAdmissionIndexed, normalizeAdmission } from "@/lib/studentStore.server";
+import { prisma } from "@/lib/prisma";
 
 type VerificationPayload = {
   exists: boolean;
@@ -12,6 +13,8 @@ type VerificationPayload = {
     name: string;
   } | null;
   department: { name: string } | null;
+  hasAppAccount: boolean;   // true = StudentAuth record exists (student registered on mobile app)
+  enrolledUnitCount: number; // current number of unit enrollments
 };
 
 type VerificationCacheEntry = {
@@ -60,6 +63,8 @@ export async function verifyStudentByAdmission(admissionNumber: string, institut
       email: null,
       course: null,
       department: null,
+      hasAppAccount: false,
+      enrolledUnitCount: 0,
     };
 
     verificationCache.set(cacheKey, {
@@ -73,7 +78,11 @@ export async function verifyStudentByAdmission(admissionNumber: string, institut
     };
   }
 
-  const course = await findCourseById(lookup.student.courseId?.trim() ?? "");
+  const [course, enrolledUnitCount] = await Promise.all([
+    findCourseById(lookup.student.courseId?.trim() ?? ""),
+    prisma.enrollment.count({ where: { studentId: lookup.student.id } }),
+  ]);
+
   const payload: VerificationPayload = {
     exists: true,
     admissionNumber: normalizedAdmission,
@@ -81,13 +90,11 @@ export async function verifyStudentByAdmission(admissionNumber: string, institut
     email: lookup.student.email ?? null,
     course: asCoursePayload(course),
     department: lookup.student.departmentName ? { name: lookup.student.departmentName } : null,
+    hasAppAccount: !!lookup.student.email, // email is sourced from StudentAuth
+    enrolledUnitCount,
   };
 
-  verificationCache.set(cacheKey, {
-    payload,
-    expiresAtMs: now + VERIFICATION_CACHE_TTL_MS,
-  });
-
+  // Do not cache found-student payloads — activeness data must always be live
   return {
     payload,
     lookupSource: "db",

@@ -16,7 +16,6 @@ const QUICK_ACTIONS = [
   { label: "View Transcripts",   href: `${BASE}/transcripts`,   icon: FileText,      color: "bg-violet-500/10 text-violet-600 hover:bg-violet-500/20" },
   { label: "Verify Student",     href: `${BASE}/verification`,  icon: ShieldCheck,   color: "bg-rose-500/10 text-rose-600 hover:bg-rose-500/20" },
   { label: "Generate Reports",   href: `${BASE}/reports`,       icon: BarChart3,     color: "bg-cyan-500/10 text-cyan-600 hover:bg-cyan-500/20" },
-  { label: "Browse Courses",     href: `${BASE}/courses`,       icon: BookOpen,      color: "bg-amber-500/10 text-amber-600 hover:bg-amber-500/20" },
 ];
 
 export default function RegistryDashboard() {
@@ -28,15 +27,13 @@ export default function RegistryDashboard() {
   const fetchStats = useCallback(async () => {
     if (!admin?.institutionId) return;
     setLoading(true);
-    const [s, c, d] = await Promise.all([
+    const [s, d] = await Promise.all([
       fetch(`/api/students?institutionId=${admin.institutionId}`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as any,
-      fetch(`/api/courses?institutionId=${admin.institutionId}`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as any,
       fetch(`/api/departments?institutionId=${admin.institutionId}`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as any,
     ]);
     const students = s.students ?? s.data ?? s ?? [];
-    const courses = c.courses ?? c.data ?? c ?? [];
     const depts = d.departments ?? d.data ?? d ?? [];
-    setStats({ students: students.length, courses: courses.length, enrollments: 0, departments: depts.length });
+    setStats({ students: students.length, courses: 0, enrollments: 0, departments: depts.length });
     setRecentStudents([...students].sort(() => -1).slice(0, 6));
     setLoading(false);
   }, [admin?.institutionId]);
@@ -45,7 +42,6 @@ export default function RegistryDashboard() {
 
   const statCards = [
     { label: "Total Students",  value: stats.students,    icon: Users,         color: "text-emerald-600", bg: "bg-emerald-500/10" },
-    { label: "Courses Offered", value: stats.courses,     icon: BookOpen,      color: "text-amber-600",   bg: "bg-amber-500/10" },
     { label: "Departments",     value: stats.departments, icon: ClipboardList, color: "text-sky-600",     bg: "bg-sky-500/10" },
   ];
 

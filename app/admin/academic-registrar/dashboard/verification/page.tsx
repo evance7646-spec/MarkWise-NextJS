@@ -3,6 +3,7 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldCheck, Search, CheckCircle2, XCircle, UserCircle, BookOpen, Building2,
+  Smartphone, GraduationCap,
 } from "lucide-react";
 import { useAcademicRegistrar } from "../../context";
 
@@ -10,6 +11,8 @@ interface VerifiedStudent {
   fullName: string; admissionNumber: string; email: string | null;
   course?: { name: string; code: string } | null; department?: { name: string } | null;
   exists: boolean;
+  hasAppAccount: boolean;
+  enrolledUnitCount: number;
 }
 
 export default function VerificationPage() {
@@ -127,6 +130,30 @@ export default function VerificationPage() {
                     <div className="text-gray-700 text-sm">{result.email}</div>
                   </div>
                 )}
+                <div>
+                  <div className="text-xs text-gray-400 mb-0.5 flex items-center gap-1"><Smartphone className="h-3 w-3" /> App Account</div>
+                  {result.hasAppAccount ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+                      <CheckCircle2 className="h-3 w-3" /> Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                      <XCircle className="h-3 w-3" /> Not Registered
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <div className="text-xs text-gray-400 mb-0.5 flex items-center gap-1"><GraduationCap className="h-3 w-3" /> Enrolled Units</div>
+                  {result.enrolledUnitCount > 0 ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-medium text-violet-700">
+                      {result.enrolledUnitCount} unit{result.enrolledUnitCount !== 1 ? "s" : ""}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                      No enrollments
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
           </motion.div>

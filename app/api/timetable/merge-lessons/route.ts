@@ -30,6 +30,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolveAdminOrLecturerScope } from "@/lib/adminLecturerAuth";
 import { normalizeUnitCode } from "@/lib/unitCode";
+import { buildPayloadsForStudents, sendPushNotificationBatch } from "@/lib/pushNotification";
 
 export const runtime = "nodejs";
 
@@ -197,6 +198,52 @@ export async function POST(req: NextRequest) {
       },
       { status: 200, headers: corsHeaders },
     );
+
+    // ── Fire-and-forget: notify enrolled students ─────────────────────────
+    // (runs after response is returned — failures are logged, not thrown)
+    Promise.resolve().then(async () => {
+      try {
+        // Collect all unitIds from the merged timetable entries
+        const unitIds = [
+          ...new Set(entries.map((e) => e.unitId).filter((id): id is string => !!id)),
+        ];
+        if (unitIds.length === 0) return;
+
+        // Get unit info for notification data (use first entry's unit as canonical)
+        const units = await prisma.unit.findMany({
+          where: { id: { in: unitIds } },
+          select: { id: true, code: true, title: true },
+        });
+        const canonicalUnit = units[0];
+        if (!canonicalUnit) return;
+
+        // Find all enrolled student IDs
+        const enrollments = await prisma.enrollment.findMany({
+          where: { unitId: { in: unitIds } },
+          select: { studentId: true },
+        });
+        const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+        if (studentIds.length === 0) return;
+
+        const mergedUnitCodes = units.map((u) => normalizeUnitCode(u.code)).join(",");
+        const newUnitCode = normalizeUnitCode(effectiveUnitCode ?? canonicalUnit.code);
+        const newUnitName = canonicalUnit.title ?? newUnitCode;
+
+        const payloads = await buildPayloadsForStudents(studentIds, {
+          title: "Unit Update",
+          body: `Your units have been merged into ${newUnitName} (${newUnitCode}). Please refresh your timetable.`,
+          data: {
+            type: "unit_merged",
+            mergedUnits: mergedUnitCodes,
+            newUnitCode,
+            newUnitName,
+          },
+        });
+        await sendPushNotificationBatch(payloads);
+      } catch (notifyErr) {
+        console.error("[merge-lessons] FCM notification failed:", notifyErr);
+      }
+    });
   } catch (err) {
     console.error("[timetable/merge-lessons] error:", err);
     return NextResponse.json({ error: "Internal server error." }, { status: 500, headers: corsHeaders });

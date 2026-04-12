@@ -29,6 +29,7 @@ import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { createTimetableBookings } from "@/lib/timetableBookingSync";
 import { randomUUID } from "crypto";
 import { normalizeUnitCode } from "@/lib/unitCode";
+import { buildPayloadsForStudents, sendPushNotificationBatch } from "@/lib/pushNotification";
 
 export const runtime = "nodejs";
 
@@ -200,7 +201,7 @@ export async function POST(
     endTime: newEntry.endTime,
   }).catch(err => console.error("[timetable/merge] booking creation failed:", err));
 
-  return NextResponse.json(
+  const response = NextResponse.json(
     {
       success: true,
       mergeGroupId,
@@ -224,6 +225,52 @@ export async function POST(
     },
     { status: 201, headers: corsHeaders },
   );
+
+  // ── Fire-and-forget: notify enrolled students ─────────────────────────────
+  // Both departments' students (source + joining) should be notified.
+  Promise.resolve().then(async () => {
+    try {
+      const mergedUnitIds = [source.unitId, newEntry.unitId].filter(
+        (id): id is string => !!id,
+      );
+      const uniqueUnitIds = [...new Set(mergedUnitIds)];
+      if (uniqueUnitIds.length === 0) return;
+
+      const unitRows = await prisma.unit.findMany({
+        where: { id: { in: uniqueUnitIds } },
+        select: { id: true, code: true, title: true },
+      });
+      const canonicalUnit = unitRows[0];
+      if (!canonicalUnit) return;
+
+      const enrollments = await prisma.enrollment.findMany({
+        where: { unitId: { in: uniqueUnitIds } },
+        select: { studentId: true },
+      });
+      const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+      if (studentIds.length === 0) return;
+
+      const mergedUnitCodes = unitRows.map((u) => normalizeUnitCode(u.code)).join(",");
+      const newUnitCode = normalizeUnitCode(canonicalUnit.code);
+      const newUnitName = canonicalUnit.title ?? newUnitCode;
+
+      const payloads = await buildPayloadsForStudents(studentIds, {
+        title: "Unit Update",
+        body: `Your units have been merged into ${newUnitName} (${newUnitCode}). Please refresh your timetable.`,
+        data: {
+          type: "unit_merged",
+          mergedUnits: mergedUnitCodes,
+          newUnitCode,
+          newUnitName,
+        },
+      });
+      await sendPushNotificationBatch(payloads);
+    } catch (notifyErr) {
+      console.error("[timetable/[id]/merge] FCM notification failed:", notifyErr);
+    }
+  });
+
+  return response;
 }
 
 export async function OPTIONS() {
