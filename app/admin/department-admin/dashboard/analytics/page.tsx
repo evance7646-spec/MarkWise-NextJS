@@ -5,7 +5,7 @@ import {
   Users, GraduationCap, BarChart3, Activity, AlertTriangle,
   CheckCircle2, AlertCircle, RefreshCw, TrendingDown,
   Shield, UserX, BookOpen, TrendingUp, Calendar, X,
-  ChevronRight, User,
+  ChevronRight, User, Search, Loader2,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
@@ -124,6 +124,100 @@ function KpiCard({
 }
 
 type Tab = "overview" | "lecturers" | "students" | "units" | "trends";
+
+interface SearchResult { id: string; name: string; admissionNumber: string; year: number; }
+
+// ── Student Search Widget ─────────────────────────────────────────────────
+function StudentSearchWidget({
+  departmentId,
+  onSelect,
+}: {
+  departmentId: string;
+  onSelect: (student: AtRiskStudent) => void;
+}) {
+  const [query, setQuery]       = useState("");
+  const [results, setResults]   = useState<SearchResult[]>([]);
+  const [loading, setLoading]   = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [open, setOpen]         = useState(false);
+
+  // Debounced search
+  useEffect(() => {
+    if (query.trim().length < 2) { setResults([]); setOpen(false); return; }
+    const t = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(
+          `/api/admin/student-search?departmentId=${departmentId}&q=${encodeURIComponent(query)}`,
+          { credentials: "include" },
+        );
+        if (res.ok) { setResults(await res.json()); setOpen(true); }
+      } finally { setLoading(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query, departmentId]);
+
+  async function handleSelect(r: SearchResult) {
+    setOpen(false);
+    setQuery("");
+    setResults([]);
+    setFetching(true);
+    try {
+      const res = await fetch(
+        `/api/admin/student-attendance-detail?departmentId=${departmentId}&studentId=${r.id}`,
+        { credentials: "include" },
+      );
+      if (res.ok) onSelect(await res.json());
+    } finally { setFetching(false); }
+  }
+
+  return (
+    <div className="relative">
+      <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2 shadow-sm focus-within:ring-2 focus-within:ring-indigo-300">
+        {fetching
+          ? <Loader2 className="h-4 w-4 text-indigo-400 animate-spin shrink-0" />
+          : <Search className="h-4 w-4 text-gray-400 shrink-0" />}
+        <input
+          type="text"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder="Search any student by name or admission number…"
+          className="flex-1 text-sm bg-transparent outline-none text-gray-700 placeholder-gray-400"
+        />
+        {loading && <Loader2 className="h-3.5 w-3.5 text-gray-300 animate-spin shrink-0" />}
+        {query && !loading && (
+          <button onClick={() => { setQuery(""); setResults([]); setOpen(false); }} className="text-gray-300 hover:text-gray-500">
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {open && results.length > 0 && (
+        <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white rounded-xl border border-gray-100 shadow-lg overflow-hidden">
+          {results.map(r => (
+            <button
+              key={r.id}
+              onMouseDown={() => handleSelect(r)}
+              className="w-full flex items-center justify-between px-4 py-2.5 text-left hover:bg-indigo-50 transition-colors"
+            >
+              <div>
+                <p className="text-sm font-medium text-gray-800">{r.name}</p>
+                <p className="text-xs text-gray-400">{r.admissionNumber} · Year {r.year}</p>
+              </div>
+              <ChevronRight className="h-4 w-4 text-gray-300 shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+      {open && results.length === 0 && !loading && query.trim().length >= 2 && (
+        <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white rounded-xl border border-gray-100 shadow-lg px-4 py-3">
+          <p className="text-sm text-gray-400">No students found for "{query}".</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Student Detail Drawer ─────────────────────────────────────────────────
 function StudentDrawer({
@@ -251,6 +345,8 @@ export default function DeptAttendanceAnalyticsPage() {
   const [tab, setTab]         = useState<Tab>("overview");
   const [days, setDays]       = useState(30);
   const [selectedStudent, setSelectedStudent] = useState<AtRiskStudent | null>(null);
+  const [searchDrawerStudent, setSearchDrawerStudent] = useState<AtRiskStudent | null>(null);
+  const activeDrawerStudent = searchDrawerStudent ?? selectedStudent;
 
   const fetchData = useCallback(async () => {
     if (!admin?.departmentId) { setLoading(false); return; }
@@ -559,6 +655,20 @@ export default function DeptAttendanceAnalyticsPage() {
       ══════════════════════════════════════════════════════════════════ */}
       {tab === "students" && (
         <div className="space-y-6">
+
+          {/* Find any student */}
+          {admin?.departmentId && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Search className="h-3.5 w-3.5" />
+                Find any student
+              </p>
+              <StudentSearchWidget
+                departmentId={admin.departmentId}
+                onSelect={s => { setSearchDrawerStudent(s); setSelectedStudent(null); }}
+              />
+            </div>
+          )}
 
           {/* Risk cohort cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -909,11 +1019,11 @@ export default function DeptAttendanceAnalyticsPage() {
       )}
 
       <AnimatePresence>
-        {selectedStudent && (
+        {activeDrawerStudent && (
           <StudentDrawer
-            student={selectedStudent}
+            student={activeDrawerStudent}
             unitTitleMap={data?.unitTitleMap ?? {}}
-            onClose={() => setSelectedStudent(null)}
+            onClose={() => { setSelectedStudent(null); setSearchDrawerStudent(null); }}
           />
         )}
       </AnimatePresence>
