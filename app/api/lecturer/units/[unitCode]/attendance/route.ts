@@ -21,6 +21,7 @@
  * full enrollment roster.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 
@@ -175,11 +176,15 @@ export async function GET(
         where: { lecturerId, unitCode: rawUnitCode, endedAt: { not: null } },
       }),
 
-      // Conducted offline sessions — fetch with sessionStart for delegation dedup
-      prisma.conductedSession.findMany({
-        where: { lecturerId, unitCode },
-        select: { sessionStart: true },
-      }),
+      // Conducted offline sessions — normalization-tolerant $queryRaw so that
+      // manual-mark sessions (stored with spaces) and BLE sessions (stored without)
+      // are both found. Used for delegation dedup + conducted count.
+      prisma.$queryRaw<{ sessionStart: Date }[]>(Prisma.sql`
+        SELECT "sessionStart"
+        FROM   "ConductedSession"
+        WHERE  "lecturerId" = ${lecturerId}
+          AND  UPPER(REPLACE("unitCode", ' ', '')) = ${unitCode}
+      `),
 
       // Delegation sessions (used, created by this lecturer, raw unitCode)
       prisma.delegation.findMany({

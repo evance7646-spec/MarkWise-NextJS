@@ -28,6 +28,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 
@@ -146,12 +147,16 @@ export async function GET(
         ORDER BY s.name ASC
       `,
 
-      // Offline conducted sessions (QR / BLE / Manual)
-      prisma.conductedSession.findMany({
-        where: { lecturerId, unitCode },
-        orderBy: { sessionStart: "asc" },
-        select: { id: true, sessionStart: true, lectureRoom: true },
-      }),
+      // Offline conducted sessions — normalization-tolerant $queryRaw so that
+      // manual-mark sessions (stored with spaces) and BLE sessions (stored without)
+      // are both found. sessionStart returned for the response payload.
+      prisma.$queryRaw<{ id: string; sessionStart: Date; lectureRoom: string }[]>(Prisma.sql`
+        SELECT id, "sessionStart", "lectureRoom"
+        FROM   "ConductedSession"
+        WHERE  "lecturerId" = ${lecturerId}
+          AND  UPPER(REPLACE("unitCode", ' ', '')) = ${unitCode}
+        ORDER BY "sessionStart" ASC
+      `),
 
       // Online ended sessions
       prisma.onlineAttendanceSession.findMany({
@@ -173,6 +178,15 @@ export async function GET(
     type OnlineSession   = { type: "online";     id: string; time: Date };
     type DelegSession    = { type: "delegation"; id: string; time: Date };
     type AnySession = OfflineSession | OnlineSession | DelegSession;
+
+    // Session object shape returned to the mobile app — includes sessionStart (Unix ms)
+    // so the app can match locally-cached manual marks to the correct column.
+    interface SessionOut {
+      id: string;
+      sessionStart: number; // Unix ms
+      lectureRoom: string;
+      label: string;
+    }
 
     const FIVE_MIN_MS = 5 * 60 * 1000;
     const offlineTimes = offlineSessions.map((s) => s.sessionStart.getTime());
@@ -206,26 +220,53 @@ export async function GET(
     // No sessions yet — return empty grid (not a 404)
     if (allSessions.length === 0) {
       return NextResponse.json(
-        { sessions: [], students: [] },
+        {
+          sessions: [] as SessionOut[],
+          students: enrolledStudents.map((s) => ({
+            studentId:       s.studentId,
+            admissionNumber: s.admissionNumber,
+            name:            s.name,
+            attendance:      [] as boolean[],
+          })),
+        },
         { status: 200, headers: corsHeaders },
       );
     }
 
     // Build column-index lookup: sessionKey → 0-based column index
     const sessionIndexMap = new Map<string, number>();
-    const sessionLabels: string[] = [];
+    const sessionObjects: SessionOut[] = [];
 
     allSessions.forEach((s, i) => {
       let key: string;
+      let out: SessionOut;
       if (s.type === "offline") {
         key = `off_${s.lectureRoom}_${s.sessionStart.getTime()}`;
+        out = {
+          id:           s.id,
+          sessionStart: s.sessionStart.getTime(),
+          lectureRoom:  s.lectureRoom,
+          label:        `LEC ${i + 1}`,
+        };
       } else if (s.type === "online") {
         key = `on_${s.id}`;
+        out = {
+          id:           s.id,
+          sessionStart: s.time.getTime(),
+          lectureRoom:  "",
+          label:        `LEC ${i + 1}`,
+        };
       } else {
         key = `del_${s.id}`;
+        out = {
+          id:           s.id,
+          sessionStart: s.time.getTime(),
+          lectureRoom:  "",
+          label:        `LEC ${i + 1}`,
+        };
       }
       sessionIndexMap.set(key, i);
-      sessionLabels.push(`LEC${i + 1}`);
+      sessionObjects.push(out);
     });
 
     // ── Fetch attendance records for those sessions ───────────────────────────
@@ -298,15 +339,16 @@ export async function GET(
     // ── Build grid rows ───────────────────────────────────────────────────────
     const N = allSessions.length;
     const students = enrolledStudents.map((s) => ({
+      studentId:       s.studentId,
       admissionNumber: s.admissionNumber,
-      name: s.name,
+      name:            s.name,
       attendance: Array.from({ length: N }, (_, i) =>
         presenceSet.has(`${s.studentId}_${i}`),
       ),
     }));
 
     return NextResponse.json(
-      { sessions: sessionLabels, students },
+      { sessions: sessionObjects, students },
       { status: 200, headers: corsHeaders },
     );
   } catch (err: unknown) {

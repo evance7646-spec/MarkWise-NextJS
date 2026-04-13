@@ -15,6 +15,7 @@
  *    for unitCodes assigned to this lecturer
  */
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { normalizeUnitCode } from "@/lib/unitCode";
@@ -52,6 +53,9 @@ export async function GET(req: NextRequest) {
 
   try {
     // ── 1. Distinct units assigned to this lecturer ──────────────────────────
+    // Helper: strip all non-alphanumeric chars for normalization-tolerant comparisons.
+    const normalizeCode = (c: string) => c.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+
     const timetableUnits = await prisma.timetable.findMany({
       where: { lecturerId },
       select: { unitId: true },
@@ -81,13 +85,12 @@ export async function GET(req: NextRequest) {
     );
 
     // ── 4. Session counts + attendance totals ─────────────────────────────────
-    // Three session sources:
-    //  • OnlineAttendanceSession — online QR sessions explicitly ended
-    //  • ConductedSession        — offline BLE/manual sessions (from sync)
-    //  • Delegation              — GD group leader sessions (used = true, createdBy = lecturerId)
-    //    Delegation sessions that overlap a ConductedSession within ±5 min are deduped.
-    //    Delegation attendance marks (method='GD') are already in OfflineAttendanceRecord.
-    const [onlineSessions, offlineSessions, delegationSessions, offlineRecords] =
+    // Normalised code list for $queryRaw IN() clauses.
+    // normalizeCode strips all non-alphanumeric chars so "SCH 2170" → "SCH2170"
+    // regardless of how the unit code was stored in each table.
+    const normCodes = units.map((u) => normalizeCode(u.code));
+
+    const [onlineSessions, offlineSessions, delegationSessions] =
       await Promise.all([
         // Online sessions (ended only)
         prisma.onlineAttendanceSession.findMany({
@@ -95,58 +98,60 @@ export async function GET(req: NextRequest) {
           select: { unitCode: true, _count: { select: { records: true } } },
         }),
 
-        // Offline sessions — fetch with sessionStart for deduplication
-        prisma.conductedSession.findMany({
-          where: { lecturerId, unitCode: { in: unitCodes } },
-          select: { unitCode: true, sessionStart: true },
-        }),
+        // Offline sessions — normalization-tolerant $queryRaw so that manual-mark
+        // sessions (stored with spaces) and BLE sessions (stored without) are both found.
+        prisma.$queryRaw<{ normCode: string; sessionStart: Date }[]>(Prisma.sql`
+          SELECT UPPER(REPLACE("unitCode", ' ', '')) AS "normCode",
+                 "sessionStart"
+          FROM   "ConductedSession"
+          WHERE  "lecturerId" = ${lecturerId}
+            AND  UPPER(REPLACE("unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+        `),
 
         // Delegation sessions (used, created by this lecturer)
         prisma.delegation.findMany({
           where: { createdBy: lecturerId, unitCode: { in: unitCodes }, used: true },
           select: { unitCode: true, validFrom: true },
         }),
-
-        // Present marks across all offline submission paths;
-        // also select sessionStart so we can scope to THIS lecturer's sessions below.
-        prisma.offlineAttendanceRecord.findMany({
-          where: {
-            unitCode: { in: unitCodes },
-            method: { in: PRESENT_METHODS },
-          },
-          select: { unitCode: true, sessionStart: true },
-        }),
       ]);
 
-    // ── 5. Aggregate per unitCode ──────────────────────────────────────────────
-    const FIVE_MIN_MS = 5 * 60 * 1000;
-    const normalizeCode = (c: string) => c.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    // Offline attendance records — normalization-tolerant JOIN on ConductedSession
+    // scoped to this lecturer so marks from other lecturers sharing the unit are excluded.
+    // Also JOINs ConductedSession so that the session must exist before marks count.
+    const offlineRecords = await prisma.$queryRaw<
+      { normCode: string; sessionStart: Date }[]
+    >(Prisma.sql`
+      SELECT UPPER(REPLACE(oar."unitCode", ' ', '')) AS "normCode",
+             oar."sessionStart"
+      FROM   "OfflineAttendanceRecord" oar
+      INNER JOIN "ConductedSession" cs
+        ON  UPPER(REPLACE(cs."unitCode",  ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
+        AND cs."sessionStart" = oar."sessionStart"
+        AND cs."lecturerId"   = ${lecturerId}
+      WHERE  UPPER(REPLACE(oar."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+        AND  oar."method" IN (${Prisma.join(PRESENT_METHODS)})
+    `);
 
-    // Build map of normalized unitCode → array of offline session start times (ms)
-    // Used to dedup delegation sessions AND to scope offline attendance marks.
+    // ── 5. Aggregate per normCode ──────────────────────────────────────────────
+    const FIVE_MIN_MS = 5 * 60 * 1000;
+
+    // Build map of normCode → array of offline session start times (ms)
+    // Used to dedup delegation sessions that share the same lecture window.
     const offlineSessionTimes = new Map<string, number[]>();
     for (const s of offlineSessions) {
-      const key = normalizeCode(s.unitCode);
-      const times = offlineSessionTimes.get(key) ?? [];
+      const times = offlineSessionTimes.get(s.normCode) ?? [];
       times.push(s.sessionStart.getTime());
-      offlineSessionTimes.set(key, times);
-    }
-
-    // Pre-build a Set of "${normCode}_${sessionStartMs}" for fast membership check.
-    // Only attendance records whose session start matches one of THIS lecturer's
-    // conducted sessions are counted — prevents inflation from other lecturers sharing the unit.
-    const validOfflineKeys = new Set<string>();
-    for (const s of offlineSessions) {
-      validOfflineKeys.add(`${normalizeCode(s.unitCode)}_${s.sessionStart.getTime()}`);
+      offlineSessionTimes.set(s.normCode, times);
     }
 
     type UnitStats = { conductedSessions: number; totalAttendances: number };
     const sessionStats = new Map<string, UnitStats>();
     const stat = (code: string): UnitStats => {
-      if (!sessionStats.has(code)) {
-        sessionStats.set(code, { conductedSessions: 0, totalAttendances: 0 });
+      const key = normalizeCode(code);
+      if (!sessionStats.has(key)) {
+        sessionStats.set(key, { conductedSessions: 0, totalAttendances: 0 });
       }
-      return sessionStats.get(code)!;
+      return sessionStats.get(key)!;
     };
 
     for (const s of onlineSessions) {
@@ -155,7 +160,8 @@ export async function GET(req: NextRequest) {
       st.totalAttendances += s._count.records;
     }
     for (const s of offlineSessions) {
-      stat(s.unitCode).conductedSessions += 1;
+      // offlineSessions comes from $queryRaw — normCode already normalised
+      stat(s.normCode).conductedSessions += 1;
     }
     // Add delegation sessions not already covered by a ConductedSession (±5 min window)
     for (const d of delegationSessions) {
@@ -168,11 +174,10 @@ export async function GET(req: NextRequest) {
       }
     }
     for (const r of offlineRecords) {
-      // Only count this mark if it belongs to a session this lecturer conducted
-      const key = `${normalizeCode(r.unitCode)}_${r.sessionStart.getTime()}`;
-      if (validOfflineKeys.has(key)) {
-        stat(r.unitCode).totalAttendances += 1;
-      }
+      // offlineRecords comes from $queryRaw — normCode + sessionStart already normalised.
+      // The query already scoped records to this lecturer's sessions via the INNER JOIN,
+      // so every row here is for a valid session. No extra validOfflineKeys check needed.
+      stat(r.normCode).totalAttendances += 1;
     }
 
     // ── 6. Build response ──────────────────────────────────────────────────────
@@ -180,7 +185,7 @@ export async function GET(req: NextRequest) {
       .map((unit) => {
         const enrolledStudents = enrolledMap.get(unit.id) ?? 0;
         const { conductedSessions, totalAttendances } =
-          sessionStats.get(unit.code) ?? { conductedSessions: 0, totalAttendances: 0 };
+          sessionStats.get(normalizeCode(unit.code)) ?? { conductedSessions: 0, totalAttendances: 0 };
 
         const avgAttended =
           conductedSessions > 0
