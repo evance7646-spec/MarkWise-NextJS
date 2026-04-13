@@ -28,6 +28,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -117,6 +118,8 @@ export async function POST(req: NextRequest) {
     const normToUnit = new Map(units.map((u) => [norm(u.code), u]));
     const unitIds = units.map((u) => u.id);
     const rawUnitCodes = units.map((u) => u.code);
+    // OnlineAttendanceSession stores the normalizeUnitCode() output at creation ("SCH 2170" format)
+    const normalisedUnitCodes = rawUnitCodes.map(normalizeUnitCode);
 
     // ── 2. Parallel fetch ─────────────────────────────────────────────────
     const [
@@ -137,10 +140,10 @@ export async function POST(req: NextRequest) {
           })
         : Promise.resolve([] as { unitId: string; _count: { studentId: number } }[]),
 
-      // Online ended sessions (unitCode stored raw in DB)
-      rawUnitCodes.length > 0
+      // Online ended sessions — stored with normalizeUnitCode() at creation ("SCH 2170" format)
+      normalisedUnitCodes.length > 0
         ? prisma.onlineAttendanceSession.findMany({
-            where: { lecturerId, unitCode: { in: rawUnitCodes }, endedAt: { not: null } },
+            where: { lecturerId, unitCode: { in: normalisedUnitCodes }, endedAt: { not: null } },
             select: { unitCode: true, _count: { select: { records: true } } },
           })
         : Promise.resolve([] as { unitCode: string; _count: { records: number } }[]),

@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -118,10 +119,11 @@ export async function GET(
     const institutionId = lecturer.institutionId;
 
     // ── Parallel data fetch ───────────────────────────────────────────────────
-    // OnlineAttendanceSession stores unitCode as the raw Unit.code value, so use
-    // unit.code (raw) for online queries. OfflineAttendanceRecord stores the
-    // normalised code (no spaces, uppercase), so use the local `unitCode` var.
+    // rawUnitCode: as stored in Unit table (may vary).
+    // normalisedUnitCode: "SCH 2170" form — matches OnlineAttendanceSession.unitCode
+    // which is written by the POST route using normalizeUnitCode().
     const rawUnitCode = unit.code;
+    const normalisedUnitCode = normalizeUnitCode(rawUnitCode);
 
     const [
       enrolledStudents,
@@ -152,7 +154,7 @@ export async function GET(
 
       // IDs of ended online sessions for this unit (needed to count online marks)
       prisma.onlineAttendanceSession.findMany({
-        where: { lecturerId, unitCode: rawUnitCode, endedAt: { not: null } },
+        where: { lecturerId, unitCode: normalisedUnitCode, endedAt: { not: null } },
         select: { id: true },
       }),
 
@@ -173,7 +175,7 @@ export async function GET(
 
       // Conducted online session count
       prisma.onlineAttendanceSession.count({
-        where: { lecturerId, unitCode: rawUnitCode, endedAt: { not: null } },
+        where: { lecturerId, unitCode: normalisedUnitCode, endedAt: { not: null } },
       }),
 
       // Conducted offline sessions — normalization-tolerant $queryRaw so that

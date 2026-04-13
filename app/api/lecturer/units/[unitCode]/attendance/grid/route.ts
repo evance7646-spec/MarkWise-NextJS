@@ -31,6 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
@@ -96,8 +97,11 @@ export async function GET(
       );
     }
     const unit = unitRows[0];
-    // OnlineAttendanceSession stores the raw (un-normalised) unit code
+    // rawUnitCode: as stored in Unit table (may or may not have spaces)
+    // normalisedUnitCode: canonical "SCH 2170" form — used to query OnlineAttendanceSession
+    // since that table stores the output of normalizeUnitCode() at creation time.
     const rawUnitCode = unit.code;
+    const normalisedUnitCode = normalizeUnitCode(rawUnitCode);
 
     // ── Authorization: lecturer must be timetable-assigned to this unit ───────
     const timetableEntry = await prisma.timetable.findFirst({
@@ -156,9 +160,9 @@ export async function GET(
         ORDER BY "sessionStart" ASC
       `),
 
-      // Online ended sessions
+      // Online ended sessions — stored with normalizeUnitCode() at creation
       prisma.onlineAttendanceSession.findMany({
-        where: { lecturerId, unitCode: rawUnitCode, endedAt: { not: null } },
+        where: { lecturerId, unitCode: normalisedUnitCode, endedAt: { not: null } },
         orderBy: { createdAt: "asc" },
         select: { id: true, createdAt: true },
       }),
