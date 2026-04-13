@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import {
   Users, GraduationCap, BarChart3, Activity, AlertTriangle,
   CheckCircle2, AlertCircle, RefreshCw, TrendingDown,
-  Shield, UserX,
+  Shield, UserX, BookOpen, TrendingUp, Calendar,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
@@ -29,6 +29,14 @@ interface AtRiskStudent {
   studentId: string; studentName: string; admissionNumber: string;
   year: number; department: string; overallAttendance: number; riskLevel: string;
 }
+interface UnitStat {
+  unitId: string; unitCode: string; unitTitle: string; department: string;
+  sessionsHeld: number; enrolled: number; avgAttendance: number;
+  atRiskCount: number; atRiskPct: number; lecturerName: string; lowActivity: boolean;
+}
+interface DistBucket { range: string; count: number; }
+interface WeeklyPoint { week: string; sessions: number; avgPresent: number; }
+interface DowPoint    { day: string; sessions: number; avgAttendancePct: number | null; }
 interface AnalyticsData {
   overview: Overview;
   lecturers: LecturerStat[];
@@ -38,6 +46,10 @@ interface AnalyticsData {
     atRisk: AtRiskStudent[];
     critical: AtRiskStudent[];
   };
+  units: UnitStat[];
+  distribution: DistBucket[];
+  weeklyTrend: WeeklyPoint[];
+  dowAbsenteeism: DowPoint[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
@@ -107,7 +119,7 @@ function KpiCard({
   );
 }
 
-type Tab = "overview" | "lecturers" | "students";
+type Tab = "overview" | "lecturers" | "students" | "units" | "trends";
 
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function DeptAttendanceAnalyticsPage() {
@@ -217,8 +229,8 @@ export default function DeptAttendanceAnalyticsPage() {
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
-      <div className="flex gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {(["overview", "lecturers", "students"] as Tab[]).map(t => (
+      <div className="flex flex-wrap gap-1 bg-gray-100 rounded-xl p-1 w-fit">
+        {(["overview", "lecturers", "students", "units", "trends"] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -544,6 +556,225 @@ export default function DeptAttendanceAnalyticsPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          Tab: Units
+      ══════════════════════════════════════════════════════════════════ */}
+      {tab === "units" && (
+        <div className="space-y-6">
+
+          {/* Low-activity alert */}
+          {!loading && (data?.units ?? []).some(u => u.lowActivity) && (
+            <div className="flex items-start gap-3 rounded-2xl bg-amber-50 border border-amber-200 px-5 py-4">
+              <AlertTriangle className="h-5 w-5 text-amber-600 mt-0.5 shrink-0" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800">
+                  {(data?.units ?? []).filter(u => u.lowActivity).length} unit(s) have fewer than 2 sessions recorded in this period.
+                </p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Attendance percentages for these units may not be meaningful. They are flagged below.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Unit table */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <BookOpen className="h-4 w-4 text-indigo-400" />
+                Unit Attendance Breakdown
+              </h2>
+            </div>
+            {loading ? (
+              <div className="p-6 space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-10 rounded bg-gray-100 animate-pulse" />
+                ))}
+              </div>
+            ) : (data?.units ?? []).length === 0 ? (
+              <div className="p-6 text-sm text-gray-400">No unit data in this period.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100">
+                      <th className="text-left px-6 py-3 text-xs font-semibold text-gray-500">Unit</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Lecturer</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Sessions</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Enrolled</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">At-Risk</th>
+                      <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Avg Att.</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {(data?.units ?? []).map(u => (
+                      <tr key={u.unitId} className={`hover:bg-gray-50/50 transition-colors ${u.lowActivity ? "bg-amber-50/30" : ""}`}>
+                        <td className="px-6 py-3">
+                          <p className="font-medium text-gray-800 leading-tight">{u.unitCode}</p>
+                          <p className="text-xs text-gray-400 truncate max-w-[160px]">{u.unitTitle}</p>
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs max-w-[130px] truncate">{u.lecturerName}</td>
+                        <td className="px-4 py-3 text-right text-gray-700">
+                          {u.sessionsHeld}
+                          {u.lowActivity && (
+                            <span className="ml-1 text-amber-500 text-xs">⚠</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right text-gray-700">{u.enrolled}</td>
+                        <td className="px-4 py-3 text-right">
+                          <span className={`text-xs font-medium ${u.atRiskPct > 20 ? "text-rose-600" : "text-amber-600"}`}>
+                            {u.atRiskCount} ({u.atRiskPct}%)
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${barColor(u.avgAttendance)}`}
+                                style={{ width: `${u.avgAttendance}%` }}
+                              />
+                            </div>
+                            <span className={`font-semibold text-xs ${pctColor(u.avgAttendance)}`}>
+                              {u.avgAttendance}%
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          Tab: Trends
+      ══════════════════════════════════════════════════════════════════ */}
+      {tab === "trends" && (
+        <div className="space-y-6">
+
+          {/* Attendance distribution */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <BarChart3 className="h-4 w-4 text-indigo-400" />
+              Attendance Distribution — Student Count per Band
+            </h2>
+            {loading ? (
+              <div className="flex items-end gap-2 h-32">
+                {[...Array(10)].map((_, i) => (
+                  <div key={i} className="flex-1 rounded-t bg-gray-100 animate-pulse" style={{ height: `${30 + i * 7}%` }} />
+                ))}
+              </div>
+            ) : (
+              (() => {
+                const dist = data?.distribution ?? [];
+                const max  = Math.max(1, ...dist.map(b => b.count));
+                return (
+                  <div className="space-y-1">
+                    {dist.map((b, i) => (
+                      <div key={i} className="flex items-center gap-3">
+                        <div className="w-20 text-xs text-gray-500 text-right shrink-0">{b.range}</div>
+                        <div className="flex-1 h-5 rounded bg-gray-50 overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(b.count / max) * 100}%` }}
+                            transition={{ duration: 0.6, delay: i * 0.04, ease: "easeOut" }}
+                            className={`h-full rounded ${i <= 3 ? "bg-rose-400" : i <= 5 ? "bg-amber-400" : i <= 7 ? "bg-yellow-300" : "bg-emerald-400"}`}
+                          />
+                        </div>
+                        <div className="w-8 text-xs font-semibold text-gray-700 shrink-0">{b.count}</div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            )}
+          </div>
+
+          {/* Weekly trend */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-indigo-400" />
+              Weekly Session Activity
+            </h2>
+            {loading ? (
+              <div className="space-y-2">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-8 rounded bg-gray-100 animate-pulse" />
+                ))}
+              </div>
+            ) : (data?.weeklyTrend ?? []).length === 0 ? (
+              <p className="text-sm text-gray-400">No weekly data for this period.</p>
+            ) : (
+              (() => {
+                const trend = data?.weeklyTrend ?? [];
+                const maxSess = Math.max(1, ...trend.map(w => w.sessions));
+                return (
+                  <div className="space-y-2">
+                    {trend.map(w => (
+                      <div key={w.week} className="flex items-center gap-3">
+                        <div className="w-20 text-xs text-gray-500 shrink-0">{w.week}</div>
+                        <div className="flex-1 h-5 rounded bg-gray-50 overflow-hidden">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${(w.sessions / maxSess) * 100}%` }}
+                            transition={{ duration: 0.6, ease: "easeOut" }}
+                            className="h-full rounded bg-indigo-400"
+                          />
+                        </div>
+                        <div className="w-24 text-xs text-gray-600 shrink-0">
+                          {w.sessions} sess · {w.avgPresent} avg
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()
+            )}
+          </div>
+
+          {/* Day-of-week heatmap */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+            <h2 className="text-sm font-semibold text-gray-700 mb-4 flex items-center gap-2">
+              <Calendar className="h-4 w-4 text-indigo-400" />
+              Attendance by Day of Week
+            </h2>
+            {loading ? (
+              <div className="space-y-3">
+                {[...Array(5)].map((_, i) => (
+                  <div key={i} className="h-8 rounded bg-gray-100 animate-pulse" />
+                ))}
+              </div>
+            ) : (data?.dowAbsenteeism ?? []).length === 0 ? (
+              <p className="text-sm text-gray-400">No day-of-week data available.</p>
+            ) : (
+              <div className="space-y-3">
+                {(data?.dowAbsenteeism ?? []).map(d => {
+                  const pct = d.avgAttendancePct ?? 0;
+                  return (
+                    <div key={d.day} className="flex items-center gap-3">
+                      <div className="w-24 text-xs font-medium text-gray-700 shrink-0">{d.day}</div>
+                      <Bar pct={pct} color={barColor(pct)} />
+                      <div className="w-24 text-xs text-right shrink-0">
+                        {d.avgAttendancePct !== null ? (
+                          <span className={`font-semibold ${pctColor(pct)}`}>{pct}%</span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                        <span className="text-gray-400 ml-1">({d.sessions} sess)</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
         </div>
       )}
 

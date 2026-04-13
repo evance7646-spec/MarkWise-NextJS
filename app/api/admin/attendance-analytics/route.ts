@@ -360,6 +360,129 @@ export async function GET(req: NextRequest) {
     lookbackDays:         days,
   };
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // E. UNIT-LEVEL BREAKDOWN
+  // ─────────────────────────────────────────────────────────────────────────
+  const unitBreakdown = units.map(unit => {
+    const code         = normalizeUnitCode(unit.code);
+    const sessCount    = sessionsPerCode.get(code) ?? 0;
+    const dept         = deptById.get(unit.departmentId)?.name ?? "—";
+
+    // Enrolled students for this unit (via snapshot)
+    const enrolledStudentIds = snapshots
+      .filter(s => s.unitCodes.map(c => normalizeUnitCode(c)).includes(code))
+      .map(s => s.studentId);
+    const enrolled = enrolledStudentIds.length;
+
+    // Per-student attendance for this unit
+    let sumPct = 0;
+    let atRiskCount = 0;
+    for (const sid of enrolledStudentIds) {
+      const attended = recordsByStudentUnit.get(`${sid}::${code}`) ?? 0;
+      const capped   = Math.min(attended, sessCount);
+      const pct      = sessCount > 0 ? Math.round((capped / sessCount) * 100) : 0;
+      sumPct += pct;
+      if (pct < 60) atRiskCount++;
+    }
+    const avgAttendance = enrolled > 0 ? Math.round(sumPct / enrolled) : 0;
+
+    // Lecturer(s) for this unit
+    const lecturerName = lecturers
+      .filter(l => l.timetables.some(t => {
+        const u = unitById.get(t.unitId ?? "");
+        return u && normalizeUnitCode(u.code) === code;
+      }))
+      .map(l => l.fullName)
+      .join(", ") || "—";
+
+    return {
+      unitId:        unit.id,
+      unitCode:      unit.code,
+      unitTitle:     unit.title,
+      department:    dept,
+      sessionsHeld:  sessCount,
+      enrolled,
+      avgAttendance,
+      atRiskCount,
+      atRiskPct:     enrolled > 0 ? Math.round((atRiskCount / enrolled) * 100) : 0,
+      lecturerName,
+      lowActivity:   sessCount < 2,
+    };
+  })
+    .filter(u => u.enrolled > 0)
+    .sort((a, b) => a.avgAttendance - b.avgAttendance);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // F. ATTENDANCE DISTRIBUTION (10% buckets)
+  // ─────────────────────────────────────────────────────────────────────────
+  const buckets: number[] = Array(10).fill(0); // index 0 = 0–9%, index 9 = 90–100%
+  for (const s of activeStudents) {
+    const idx = Math.min(9, Math.floor(s.overallAttendance / 10));
+    buckets[idx]++;
+  }
+  const distribution = buckets.map((count, i) => ({
+    range: `${i * 10}–${i * 10 + 9}%`,
+    count,
+  }));
+  // Merge last bucket to show 90–100%
+  distribution[9] = { range: "90–100%", count: buckets[9] };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // G. WEEKLY TREND
+  // ─────────────────────────────────────────────────────────────────────────
+  // Group conducted sessions + attendance records by ISO week
+  const weeklyMap = new Map<string, { sessions: number; totalPresent: number }>();
+  for (const cs of conductedSessionsReal) {
+    const d    = new Date(cs.sessionStart);
+    // ISO week label: YYYY-Www
+    const year = d.getUTCFullYear();
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const weekNum = Math.ceil(((d.getTime() - jan4.getTime()) / 86400000 + jan4.getUTCDay() + 1) / 7);
+    const label = `${year}-W${String(weekNum).padStart(2, "0")}`;
+
+    const prev = weeklyMap.get(label) ?? { sessions: 0, totalPresent: 0 };
+    const present = attendancePerConductedSession.get(cs.id) ?? 0;
+    weeklyMap.set(label, {
+      sessions:     prev.sessions + 1,
+      totalPresent: prev.totalPresent + present,
+    });
+  }
+  const weeklyTrend = Array.from(weeklyMap.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([week, v]) => ({
+      week,
+      sessions:     v.sessions,
+      avgPresent:   v.sessions > 0 ? Math.round(v.totalPresent / v.sessions) : 0,
+    }));
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // H. DAY-OF-WEEK ABSENTEEISM
+  // ─────────────────────────────────────────────────────────────────────────
+  const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const dowMap = new Map<number, { sessions: number; totalPresent: number; totalEnrolled: number }>();
+  for (const cs of conductedSessionsReal) {
+    const dow     = new Date(cs.sessionStart).getUTCDay();
+    const present = attendancePerConductedSession.get(cs.id) ?? 0;
+    // enrolled in this unit
+    const code    = normalizeUnitCode(cs.unitCode);
+    const enrolledCount = snapshots.filter(s =>
+      s.unitCodes.map(c => normalizeUnitCode(c)).includes(code)
+    ).length;
+    const prev = dowMap.get(dow) ?? { sessions: 0, totalPresent: 0, totalEnrolled: 0 };
+    dowMap.set(dow, {
+      sessions:     prev.sessions + 1,
+      totalPresent: prev.totalPresent + present,
+      totalEnrolled: prev.totalEnrolled + enrolledCount,
+    });
+  }
+  const dowAbsenteeism = DAYS.map((name, i) => {
+    const v          = dowMap.get(i);
+    const avgPct     = v && v.sessions > 0 && v.totalEnrolled > 0
+      ? Math.round((v.totalPresent / v.totalEnrolled) * 100)
+      : null;
+    return { day: name, sessions: v?.sessions ?? 0, avgAttendancePct: avgPct };
+  }).filter(d => d.sessions > 0);
+
   return NextResponse.json({
     overview,
     lecturers:  lecturerStats,
@@ -371,5 +494,9 @@ export async function GET(req: NextRequest) {
     },
     methods,
     methodByDept,
+    units:        unitBreakdown,
+    distribution,
+    weeklyTrend,
+    dowAbsenteeism,
   });
 }
