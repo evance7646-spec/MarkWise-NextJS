@@ -270,23 +270,26 @@ export async function GET(
     });
 
     // ── Fetch attendance records for those sessions ───────────────────────────
-    const offlineSessionFilters = offlineSessions.map((s) => ({
-      lectureRoom: s.lectureRoom,
-      sessionStart: s.sessionStart,
-    }));
     const onlineSessionIds = onlineSessions.map((s) => s.id);
     const delegationIds = standaloneDelSessions.map((d) => d.id);
 
     const [offlineRecords, onlineRecords, delegationRecords] = await Promise.all([
-      offlineSessionFilters.length > 0
-        ? prisma.offlineAttendanceRecord.findMany({
-            where: {
-              unitCode,
-              method: { in: PRESENT_METHODS },
-              OR: offlineSessionFilters,
-            },
-            select: { studentId: true, lectureRoom: true, sessionStart: true },
-          })
+      // Use $queryRaw with UPPER(REPLACE) normalization so that manually-marked
+      // sessions (stored as "SCH 2170") are matched when queried as "SCH2170".
+      // INNER JOIN on ConductedSession scopes marks to this lecturer's sessions
+      // and uses cs.lectureRoom / cs.sessionStart as the canonical key values
+      // so they align exactly with the sessionIndexMap keys built above.
+      offlineSessions.length > 0
+        ? prisma.$queryRaw<{ studentId: string; lectureRoom: string; sessionStart: Date }[]>(Prisma.sql`
+            SELECT DISTINCT oar."studentId", cs."lectureRoom", cs."sessionStart"
+            FROM "OfflineAttendanceRecord" oar
+            INNER JOIN "ConductedSession" cs
+              ON  UPPER(REPLACE(cs."unitCode", ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
+              AND cs."sessionStart" = oar."sessionStart"
+              AND cs."lecturerId"   = ${lecturerId}
+            WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) = ${unitCode}
+              AND oar."method" IN (${Prisma.join(PRESENT_METHODS)})
+          `)
         : Promise.resolve([] as { studentId: string; lectureRoom: string; sessionStart: Date }[]),
 
       onlineSessionIds.length > 0
