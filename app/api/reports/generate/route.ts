@@ -439,8 +439,8 @@ async function buildPdf(units: UnitReportData[], period: Period, startDate: Date
       doc.fontSize(10).font(FONT_BOLD).text("PER-STUDENT BREAKDOWN", 50, y);
       y += 14;
 
-      const colW3 = [75, 155, 75, 70, 40, 60];
-      const hdr3  = ["Adm No.", "Name", "Attended", "Total Sessions", "%", "Status"];
+      const colW3 = [75, 155, 75, 40, 60];
+      const hdr3  = ["Adm No.", "Name", "Attended", "%", "Status"];
 
       ensureSpace(20);
       y = doc.y;
@@ -455,7 +455,7 @@ async function buildPdf(units: UnitReportData[], period: Period, startDate: Date
         y = doc.y;
         const bg = STATUS_COLORS[s.status];
         tableRow(
-          [s.admissionNumber, s.name, String(s.attended), String(s.totalSessions), `${s.rate}%`, s.status],
+          [s.admissionNumber, s.name, String(s.attended), `${s.rate}%`, s.status],
           colW3, 50, y, bg,
         );
         y += 17;
@@ -471,9 +471,9 @@ async function buildPdf(units: UnitReportData[], period: Period, startDate: Date
       {
         const LX         = 50;
         const LEAD_W     = [85, 115];    // Adm No., Name
-        const TRAIL_W    = [52, 60, 45]; // Total Sessions, Sessions Attended, Avg %
+        const TRAIL_W    = [60, 45]; // Sessions Attended, Avg %
         const LEAD_TOT   = LEAD_W[0] + LEAD_W[1];                 // 200
-        const TRAIL_TOT  = TRAIL_W[0] + TRAIL_W[1] + TRAIL_W[2];  // 157
+        const TRAIL_TOT  = TRAIL_W[0] + TRAIL_W[1];               // 105
         const SESS_W     = 18;
         const ROW_H      = 16;
         const LPAGE_W    = 741;  // A4 landscape usable width: 841 − 50 − 50
@@ -524,11 +524,9 @@ async function buildPdf(units: UnitReportData[], period: Period, startDate: Date
               doc.text(`L${s.index}`, hx, hy + 4, { width: SESS_W, align: "center", lineBreak: false });
               hx += SESS_W;
             }
-            doc.text("Total",    hx + 2, hy + 4, { width: TRAIL_W[0] - 4, lineBreak: false });
+            doc.text("Attended", hx + 2, hy + 4, { width: TRAIL_W[0] - 4, lineBreak: false });
             hx += TRAIL_W[0];
-            doc.text("Attended", hx + 2, hy + 4, { width: TRAIL_W[1] - 4, lineBreak: false });
-            hx += TRAIL_W[1];
-            doc.text("Avg %",    hx + 2, hy + 4, { width: TRAIL_W[2] - 4, lineBreak: false });
+            doc.text("Avg %",    hx + 2, hy + 4, { width: TRAIL_W[1] - 4, lineBreak: false });
             doc.fillColor("#000000");
           };
 
@@ -572,11 +570,9 @@ async function buildPdf(units: UnitReportData[], period: Period, startDate: Date
             // Trailing summary columns — status-colour background
             doc.save().rect(rx, ly, TRAIL_TOT, ROW_H).fill(bg).restore();
             doc.fontSize(7).font(FONT).fillColor("#000000");
-            doc.text(String(stu.totalSessions), rx + 2, ly + 4, { width: TRAIL_W[0] - 4, lineBreak: false });
+            doc.text(String(stu.attended),      rx + 2, ly + 4, { width: TRAIL_W[0] - 4, lineBreak: false });
             rx += TRAIL_W[0];
-            doc.text(String(stu.attended),      rx + 2, ly + 4, { width: TRAIL_W[1] - 4, lineBreak: false });
-            rx += TRAIL_W[1];
-            doc.text(`${stu.rate}%`,             rx + 2, ly + 4, { width: TRAIL_W[2] - 4, lineBreak: false });
+            doc.text(`${stu.rate}%`,             rx + 2, ly + 4, { width: TRAIL_W[1] - 4, lineBreak: false });
 
             ly += ROW_H;
             doc.moveTo(LX, ly).lineTo(LX + batchTotW, ly).stroke("#e5e7eb");
@@ -635,26 +631,11 @@ function buildCsv(units: UnitReportData[], period: Period, startDate: Date, endD
     row("Below 60% (warning)",   u.summary.belowThreshold60);
     lines.push("");
 
-    // Per-student breakdown
-    row("PER-STUDENT BREAKDOWN");
-    row("Department", "Unit Code", "Unit Name", "Adm No.", "Student Name",
-        "Sessions Attended", "Total Sessions", "Attendance %", "Status",
-        "Period Start", "Period End", "Lecturer");
-    for (const s of u.students) {
-      row(
-        u.department, u.unitCode, u.unitName,
-        s.admissionNumber, s.name,
-        s.attended, s.totalSessions, s.rate, s.status,
-        fmtDate(startDate), fmtDate(endDate), u.lecturerName,
-      );
-    }
-    lines.push("");
-
     // Attendance matrix
     row("ATTENDANCE MATRIX");
     const matrixHdr: (string | number)[] = ["Adm No.", "Name"];
     for (const sess of u.sessions) matrixHdr.push(`LEC ${sess.index}`);
-    matrixHdr.push("Total Sessions", "Sessions Attended", "Attendance %");
+    matrixHdr.push("Sessions Attended", "Attendance %");
     row(...matrixHdr);
     for (const stu of u.students) {
       const cells: (string | number)[] = [stu.admissionNumber, stu.name];
@@ -662,7 +643,7 @@ function buildCsv(units: UnitReportData[], period: Period, startDate: Date, endD
         const present = u.presenceMap.has(`${stu.studentId}__${sess.key}`);
         cells.push(present ? "P" : "A");
       }
-      cells.push(stu.totalSessions, stu.attended, `${stu.rate}%`);
+      cells.push(stu.attended, `${stu.rate}%`);
       row(...cells);
     }
     lines.push("", "");
@@ -702,18 +683,11 @@ function buildExcel(units: UnitReportData[], period: Period, startDate: Date, en
     data.push(["Below 60% (warning)",   u.summary.belowThreshold60]);
     data.push([]);
 
-    // Per-student header (row index for freeze)
-    const studentTableStart = data.length;
-    data.push(["Adm No.", "Name", "Sessions Attended", "Total Sessions", "Attendance %", "Status"]);
-    for (const s of u.students) {
-      data.push([s.admissionNumber, s.name, s.attended, s.totalSessions, s.rate, s.status]);
-    }
-    data.push([]);
-
     // Attendance matrix
+    const matrixStart = data.length;
     const matrixHdrExcel: (string | number)[] = ["Adm No.", "Name"];
     for (const sess of u.sessions) matrixHdrExcel.push(`LEC ${sess.index}`);
-    matrixHdrExcel.push("Total Sessions", "Sessions Attended", "Attendance %");
+    matrixHdrExcel.push("Sessions Attended", "Attendance %");
     data.push(matrixHdrExcel);
     for (const stu of u.students) {
       const cells: (string | number)[] = [stu.admissionNumber, stu.name];
@@ -721,36 +695,27 @@ function buildExcel(units: UnitReportData[], period: Period, startDate: Date, en
         const present = u.presenceMap.has(`${stu.studentId}__${sess.key}`);
         cells.push(present ? "P" : "A");
       }
-      cells.push(stu.totalSessions, stu.attended, stu.rate);
+      cells.push(stu.attended, stu.rate);
       data.push(cells);
     }
 
     const ws = XLSX.utils.aoa_to_sheet(data);
 
-    // Bold header rows
+    // Bold header rows (report metadata rows 0–5)
     for (let r = 0; r < 6; r++) {
       const cell = ws[XLSX.utils.encode_cell({ r, c: 0 })];
       if (cell) cell.s = { font: { bold: true } };
     }
-    // Bold table header
-    for (let c = 0; c < 6; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r: studentTableStart, c })];
+    // Bold matrix header row
+    for (let c = 0; c < matrixHdrExcel.length; c++) {
+      const cell = ws[XLSX.utils.encode_cell({ r: matrixStart, c })];
       if (cell) cell.s = { font: { bold: true } };
     }
 
-    // Freeze first row of student table
-    ws["!freeze"] = { xSplit: 0, ySplit: studentTableStart + 1 };
+    // Freeze pane at matrix header
+    ws["!freeze"] = { xSplit: 2, ySplit: matrixStart + 1 };
 
-    // Status column colours (col index 5)
-    for (let rowIdx = studentTableStart + 1; rowIdx < studentTableStart + 1 + u.students.length; rowIdx++) {
-      const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: 5 });
-      const cell = ws[cellAddr];
-      if (cell) {
-        const status = u.students[rowIdx - studentTableStart - 1]?.status ?? "Good";
-        const color  = (STATUS_COLORS[status] ?? "#FFFFFF").replace("#", "");
-        cell.s = { fill: { fgColor: { rgb: color } } };
-      }
-    }
+    // Status column is not present in the matrix; no per-row colour needed
 
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
   }
