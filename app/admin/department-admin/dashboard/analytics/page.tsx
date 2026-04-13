@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, GraduationCap, BarChart3, Activity, AlertTriangle,
   CheckCircle2, AlertCircle, RefreshCw, TrendingDown,
-  Shield, UserX, BookOpen, TrendingUp, Calendar,
+  Shield, UserX, BookOpen, TrendingUp, Calendar, X,
+  ChevronRight, User,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
@@ -25,9 +26,11 @@ interface YearBreakdown {
   year: number; totalStudents: number; avgAttendance: number;
   atRiskCount: number; atRiskPct: number;
 }
+interface PerCourseEntry { sessions: number; attended: number; }
 interface AtRiskStudent {
   studentId: string; studentName: string; admissionNumber: string;
   year: number; department: string; overallAttendance: number; riskLevel: string;
+  perCourseAttendance?: Record<string, PerCourseEntry>;
 }
 interface UnitStat {
   unitId: string; unitCode: string; unitTitle: string; department: string;
@@ -47,6 +50,7 @@ interface AnalyticsData {
     critical: AtRiskStudent[];
   };
   units: UnitStat[];
+  unitTitleMap?: Record<string, string>;
   distribution: DistBucket[];
   weeklyTrend: WeeklyPoint[];
   dowAbsenteeism: DowPoint[];
@@ -121,6 +125,123 @@ function KpiCard({
 
 type Tab = "overview" | "lecturers" | "students" | "units" | "trends";
 
+// ── Student Detail Drawer ─────────────────────────────────────────────────
+function StudentDrawer({
+  student,
+  unitTitleMap,
+  onClose,
+}: {
+  student: AtRiskStudent;
+  unitTitleMap: Record<string, string>;
+  onClose: () => void;
+}) {
+  const courses = Object.entries(student.perCourseAttendance ?? {});
+  return (
+    <>
+      {/* Backdrop */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
+        className="fixed inset-0 bg-black/30 z-40"
+        onClick={onClose}
+      />
+      {/* Drawer panel */}
+      <motion.div
+        initial={{ x: "100%" }}
+        animate={{ x: 0 }}
+        exit={{ x: "100%" }}
+        transition={{ type: "spring", stiffness: 320, damping: 30 }}
+        className="fixed right-0 top-0 h-full w-full max-w-md bg-white z-50 shadow-2xl flex flex-col"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between px-6 py-5 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+              <User className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="font-semibold text-gray-800 leading-tight">{student.studentName}</p>
+              <p className="text-xs text-gray-400 mt-0.5">{student.admissionNumber} · Year {student.year}</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-600"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+
+        {/* Overall attendance gauge */}
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex items-center gap-4">
+          <div className="text-center shrink-0">
+            <p className={`text-3xl font-bold ${pctColor(student.overallAttendance)}`}>
+              {student.overallAttendance}%
+            </p>
+            <p className="text-xs text-gray-400 mt-0.5">Overall</p>
+          </div>
+          <div className="flex-1">
+            <div className="h-2.5 rounded-full bg-gray-200 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${barColor(student.overallAttendance)}`}
+                style={{ width: `${student.overallAttendance}%` }}
+              />
+            </div>
+          </div>
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${riskBadge(student.riskLevel)}`}>
+            {student.riskLevel.toUpperCase()}
+          </span>
+        </div>
+
+        {/* Per-unit breakdown */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="px-6 py-4">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+              Per-Unit Attendance
+            </h3>
+            {courses.length === 0 ? (
+              <p className="text-sm text-gray-400 py-8 text-center">No unit-level data available.</p>
+            ) : (
+              <div className="space-y-3">
+                {courses.map(([code, entry]) => {
+                  const pct = entry.sessions > 0
+                    ? Math.round((entry.attended / entry.sessions) * 100)
+                    : 0;
+                  const title = unitTitleMap[code] ?? "";
+                  return (
+                    <div key={code} className="rounded-xl border border-gray-100 bg-gray-50/60 p-3">
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-800 leading-tight">{code}</p>
+                          {title && <p className="text-xs text-gray-400 truncate">{title}</p>}
+                        </div>
+                        <span className={`text-sm font-bold shrink-0 ml-3 ${pctColor(pct)}`}>{pct}%</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${barColor(pct)}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {entry.attended}/{entry.sessions} sessions
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </motion.div>
+    </>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────
 export default function DeptAttendanceAnalyticsPage() {
   const admin = useDepartmentAdmin();
@@ -129,6 +250,7 @@ export default function DeptAttendanceAnalyticsPage() {
   const [error, setError]     = useState<string | null>(null);
   const [tab, setTab]         = useState<Tab>("overview");
   const [days, setDays]       = useState(30);
+  const [selectedStudent, setSelectedStudent] = useState<AtRiskStudent | null>(null);
 
   const fetchData = useCallback(async () => {
     if (!admin?.departmentId) { setLoading(false); return; }
@@ -308,12 +430,19 @@ export default function DeptAttendanceAnalyticsPage() {
             ) : (
               <div className="space-y-2 max-h-52 overflow-y-auto">
                 {(data?.students.critical ?? []).map(s => (
-                  <div key={s.studentId} className="flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50/60 px-3 py-2">
+                  <div
+                    key={s.studentId}
+                    onClick={() => setSelectedStudent(s)}
+                    className="flex items-center justify-between rounded-xl border border-rose-100 bg-rose-50/60 px-3 py-2 cursor-pointer hover:bg-rose-100/60 transition-colors"
+                  >
                     <div>
                       <p className="text-sm font-medium text-gray-800">{s.studentName}</p>
                       <p className="text-xs text-gray-400">{s.admissionNumber} · Year {s.year}</p>
                     </div>
-                    <span className="text-sm font-bold text-rose-600">{s.overallAttendance}%</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-sm font-bold text-rose-600">{s.overallAttendance}%</span>
+                      <ChevronRight className="h-4 w-4 text-rose-400" />
+                    </div>
                   </div>
                 ))}
               </div>
@@ -534,7 +663,8 @@ export default function DeptAttendanceAnalyticsPage() {
                     {(data?.students.atRisk ?? []).map(s => (
                       <tr
                         key={s.studentId}
-                        className={`hover:bg-gray-50/50 ${s.riskLevel === "critical" ? "bg-rose-50/20" : ""}`}
+                        onClick={() => setSelectedStudent(s)}
+                        className={`cursor-pointer hover:bg-indigo-50/30 transition-colors ${s.riskLevel === "critical" ? "bg-rose-50/20" : ""}`}
                       >
                         <td className="px-6 py-3 font-medium text-gray-800 max-w-[180px] truncate">
                           {s.studentName}
@@ -777,6 +907,16 @@ export default function DeptAttendanceAnalyticsPage() {
 
         </div>
       )}
+
+      <AnimatePresence>
+        {selectedStudent && (
+          <StudentDrawer
+            student={selectedStudent}
+            unitTitleMap={data?.unitTitleMap ?? {}}
+            onClose={() => setSelectedStudent(null)}
+          />
+        )}
+      </AnimatePresence>
 
     </div>
   );
