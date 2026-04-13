@@ -248,36 +248,41 @@ export async function GET(
     }
 
     // Build sessionObjects — each session gets a stable sessionId (source table PK)
-    // and a human-readable label. sessionIndexMap is no longer needed since presence
-    // is keyed directly by sessionId.
+    // and a human-readable label. Online sessions are labelled "ONL N" with their own
+    // counter so they are visually distinct from in-person "LEC N" sessions.
     const sessionObjects: SessionOut[] = [];
 
-    allSessions.forEach((s, i) => {
+    let lecCount = 0;
+    let onlCount = 0;
+    allSessions.forEach((s) => {
       let out: SessionOut;
       const isoDate = new Date(s.time).toISOString().slice(0, 10);
-      if (s.type === "offline") {
+      if (s.type === "online") {
+        onlCount++;
+        out = {
+          sessionId:    s.id,
+          sessionStart: s.time.getTime(),
+          session_date: isoDate,
+          lectureRoom:  "",
+          label:        `ONL ${onlCount}`,
+        };
+      } else if (s.type === "offline") {
+        lecCount++;
         out = {
           sessionId:    s.id,
           sessionStart: s.sessionStart.getTime(),
           session_date: isoDate,
           lectureRoom:  s.lectureRoom,
-          label:        `LEC ${i + 1}`,
-        };
-      } else if (s.type === "online") {
-        out = {
-          sessionId:    s.id,
-          sessionStart: s.time.getTime(),
-          session_date: isoDate,
-          lectureRoom:  "",
-          label:        `LEC ${i + 1}`,
+          label:        `LEC ${lecCount}`,
         };
       } else {
+        lecCount++;
         out = {
           sessionId:    s.id,
           sessionStart: s.time.getTime(),
           session_date: isoDate,
           lectureRoom:  "",
-          label:        `LEC ${i + 1}`,
+          label:        `LEC ${lecCount}`,
         };
       }
       sessionObjects.push(out);

@@ -158,12 +158,11 @@ export async function GET(
         select: { id: true },
       }),
 
-      // Offline present marks grouped by student — scoped to THIS lecturer's
-      // conducted sessions (inner join on lectureRoom + sessionStart) so marks
-      // from sessions run by other lecturers sharing the unit code are excluded.
-      // No method filter — count ALL attendance methods.
+      // Offline sessions attended per student — COUNT(DISTINCT cs.id) to prevent JOIN
+      // inflation when one OfflineAttendanceRecord matches multiple ConductedSession rows
+      // (same sessionStart, different lectureRoom for the same unit).
       prisma.$queryRaw<{ studentId: string; cnt: bigint }[]>`
-        SELECT oar."studentId", COUNT(*) AS cnt
+        SELECT oar."studentId", COUNT(DISTINCT cs."id") AS cnt
         FROM "OfflineAttendanceRecord" oar
         INNER JOIN "ConductedSession" cs
           ON  UPPER(REPLACE(cs."unitCode",    ' ', '')) = UPPER(REPLACE(oar."unitCode",    ' ', ''))
@@ -191,7 +190,7 @@ export async function GET(
       // Delegation sessions (used, created by this lecturer, raw unitCode)
       prisma.delegation.findMany({
         where: { createdBy: lecturerId, unitCode: rawUnitCode, used: true },
-        select: { validFrom: true },
+        select: { id: true, validFrom: true },
       }),
     ]);
 
@@ -200,31 +199,46 @@ export async function GET(
     // same real lecture and must not be double-counted.
     const FIVE_MIN_MS = 5 * 60 * 1000;
     const offlineTimes = offlineSessionStarts.map((s) => s.sessionStart.getTime());
-    const standaloneDelCount = delegationSessions.filter((d) => {
+    const standaloneDels = delegationSessions.filter((d) => {
       const delegMs = Number(d.validFrom);
       return !offlineTimes.some((t) => Math.abs(t - delegMs) <= FIVE_MIN_MS);
-    }).length;
+    });
+    const standaloneDelCount = standaloneDels.length;
+    const standaloneDelIds = standaloneDels.map((d) => d.id);
     const conducted =
       conductedOnlineCount + offlineSessionStarts.length + standaloneDelCount;
 
-    // ── Online marks grouped by student ──────────────────────────────────────
+    // ── Online + delegation marks grouped by student ─────────────────────────────────────────
     const sessionIds = onlineSessionIds.map((s) => s.id);
-    const onlineAttendanceGroups =
+    const [onlineAttendanceGroups, delegationAttendanceGroups] = await Promise.all([
       sessionIds.length > 0
-        ? await prisma.onlineAttendanceRecord.groupBy({
+        ? prisma.onlineAttendanceRecord.groupBy({
             by: ["studentId"],
             where: { sessionId: { in: sessionIds } },
             _count: { id: true },
           })
-        : [];
+        : Promise.resolve([]),
+      // GD proxy-mark records — only for standalone delegation sessions that are
+      // counted in `conducted` above.
+      standaloneDelIds.length > 0
+        ? prisma.offlineAttendanceRecord.groupBy({
+            by: ["studentId"],
+            where: { delegationId: { in: standaloneDelIds } },
+            _count: { id: true },
+          })
+        : Promise.resolve([]),
+    ]);
 
-    // ── Merge offline + online attended counts per student ────────────────────
+    // ── Merge offline + online + delegation attended counts per student ───────────────
     const attendedMap = new Map<string, number>();
     for (const row of offlineAttendanceGroups) {
       // offlineAttendanceGroups is now raw SQL → cnt is BigInt
       attendedMap.set(row.studentId, (attendedMap.get(row.studentId) ?? 0) + Number(row.cnt));
     }
     for (const row of onlineAttendanceGroups) {
+      attendedMap.set(row.studentId, (attendedMap.get(row.studentId) ?? 0) + row._count.id);
+    }
+    for (const row of delegationAttendanceGroups) {
       attendedMap.set(row.studentId, (attendedMap.get(row.studentId) ?? 0) + row._count.id);
     }
 

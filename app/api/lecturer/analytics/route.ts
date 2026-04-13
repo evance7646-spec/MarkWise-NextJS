@@ -116,18 +116,21 @@ export async function GET(req: NextRequest) {
         // Delegation sessions (used, created by this lecturer)
         prisma.delegation.findMany({
           where: { createdBy: lecturerId, unitCode: { in: unitCodes }, used: true },
-          select: { unitCode: true, validFrom: true },
+          select: { id: true, unitCode: true, validFrom: true },
         }),
       ]);
 
-    // Offline attendance records — normalization-tolerant JOIN on ConductedSession
-    // scoped to this lecturer so marks from other lecturers sharing the unit are excluded.
-    // No method filter — count ALL attendance methods (qr, qr_scan, ble, manual_lecturer, etc.)
+    // Offline attendance records — DISTINCT (student, session) pair to prevent JOIN
+    // inflation: if one OfflineAttendanceRecord matches multiple ConductedSession rows
+    // (same sessionStart, different lectureRoom) the un-DISTINCTed JOIN would count
+    // that mark more than once.
     const offlineRecords = await prisma.$queryRaw<
-      { normCode: string; sessionStart: Date }[]
+      { normCode: string }[]
     >(Prisma.sql`
-      SELECT UPPER(REPLACE(oar."unitCode", ' ', '')) AS "normCode",
-             oar."sessionStart"
+      SELECT DISTINCT
+             UPPER(REPLACE(oar."unitCode", ' ', '')) AS "normCode",
+             oar."studentId",
+             cs."id" AS "sessionId"
       FROM   "OfflineAttendanceRecord" oar
       INNER JOIN "ConductedSession" cs
         ON  UPPER(REPLACE(cs."unitCode",  ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
@@ -167,7 +170,9 @@ export async function GET(req: NextRequest) {
       // offlineSessions comes from $queryRaw — normCode already normalised
       stat(s.normCode).conductedSessions += 1;
     }
-    // Add delegation sessions not already covered by a ConductedSession (±5 min window)
+    // Add delegation sessions not already covered by a ConductedSession (±5 min window).
+    // standaloneDelMap tracks delegationId → normCode so we can look up attendance marks below.
+    const standaloneDelMap = new Map<string, string>(); // delegationId → normCode
     for (const d of delegationSessions) {
       const key = normalizeCode(d.unitCode);
       const offlineTimes = offlineSessionTimes.get(key) ?? [];
@@ -175,6 +180,7 @@ export async function GET(req: NextRequest) {
       const overlaps = offlineTimes.some((t) => Math.abs(t - delegMs) <= FIVE_MIN_MS);
       if (!overlaps) {
         stat(d.unitCode).conductedSessions += 1;
+        standaloneDelMap.set(d.id, key);
       }
     }
     for (const r of offlineRecords) {
@@ -182,6 +188,21 @@ export async function GET(req: NextRequest) {
       // The query already scoped records to this lecturer's sessions via the INNER JOIN,
       // so every row here is for a valid session. No extra validOfflineKeys check needed.
       stat(r.normCode).totalAttendances += 1;
+    }
+
+    // Delegation attendance marks — students marked present via GD proxy-mark.
+    // Only standalone delegation sessions (not already covered by an offline session)
+    // are counted here, matching the conductedSessions deduplication logic above.
+    const standaloneDelIds = [...standaloneDelMap.keys()];
+    if (standaloneDelIds.length > 0) {
+      const delegationAttendanceRecords = await prisma.offlineAttendanceRecord.findMany({
+        where: { delegationId: { in: standaloneDelIds } },
+        select: { delegationId: true },
+      });
+      for (const r of delegationAttendanceRecords) {
+        const normCode = standaloneDelMap.get(r.delegationId!);
+        if (normCode) stat(normCode).totalAttendances += 1;
+      }
     }
 
     // ── 6. Build response ──────────────────────────────────────────────────────
