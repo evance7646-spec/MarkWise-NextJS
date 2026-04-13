@@ -34,8 +34,6 @@ import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 
 export const runtime = "nodejs";
 
-const PRESENT_METHODS = ["qr", "ble", "manual", "manual_lecturer", "proxy_leader", "GD"];
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -179,17 +177,29 @@ export async function GET(
     type DelegSession    = { type: "delegation"; id: string; time: Date };
     type AnySession = OfflineSession | OnlineSession | DelegSession;
 
-    // Session object shape returned to the mobile app — includes sessionStart (Unix ms)
-    // so the app can match locally-cached manual marks to the correct column.
+    // Session object shape returned to the mobile app.
+    // sessionId is the source-table primary key; session_date is ISO YYYY-MM-DD;
+    // sessionStart (Unix ms) kept for offline manual-mark matching.
     interface SessionOut {
-      id: string;
+      sessionId: string;   // canonical identifier used as key in student records
       sessionStart: number; // Unix ms
+      session_date: string; // "YYYY-MM-DD"
       lectureRoom: string;
       label: string;
     }
 
     const FIVE_MIN_MS = 5 * 60 * 1000;
-    const offlineTimes = offlineSessions.map((s) => s.sessionStart.getTime());
+    // Deduplicate offline sessions by (sessionStart ms + lectureRoom) in case the
+    // ConductedSession table has duplicate rows with different PKs for the same lecture.
+    const seenOfflineKeys = new Set<string>();
+    const dedupedOfflineSessions = offlineSessions.filter((s) => {
+      const k = `${s.sessionStart.getTime()}_${s.lectureRoom}`;
+      if (seenOfflineKeys.has(k)) return false;
+      seenOfflineKeys.add(k);
+      return true;
+    });
+
+    const offlineTimes = dedupedOfflineSessions.map((s) => s.sessionStart.getTime());
 
     // Only include delegation sessions that don't overlap an offline session (±5 min)
     const standaloneDelSessions = delegationSessions.filter((d) => {
@@ -198,7 +208,7 @@ export async function GET(
     });
 
     const allSessions: AnySession[] = [
-      ...offlineSessions.map((s): OfflineSession => ({
+      ...dedupedOfflineSessions.map((s): OfflineSession => ({
         type: "offline",
         id: s.id,
         time: s.sessionStart,
@@ -226,46 +236,46 @@ export async function GET(
             studentId:       s.studentId,
             admissionNumber: s.admissionNumber,
             name:            s.name,
-            attendance:      [] as boolean[],
+            records:         {} as Record<string, boolean>,
           })),
         },
         { status: 200, headers: corsHeaders },
       );
     }
 
-    // Build column-index lookup: sessionKey → 0-based column index
-    const sessionIndexMap = new Map<string, number>();
+    // Build sessionObjects — each session gets a stable sessionId (source table PK)
+    // and a human-readable label. sessionIndexMap is no longer needed since presence
+    // is keyed directly by sessionId.
     const sessionObjects: SessionOut[] = [];
 
     allSessions.forEach((s, i) => {
-      let key: string;
       let out: SessionOut;
+      const isoDate = new Date(s.time).toISOString().slice(0, 10);
       if (s.type === "offline") {
-        key = `off_${s.lectureRoom}_${s.sessionStart.getTime()}`;
         out = {
-          id:           s.id,
+          sessionId:    s.id,
           sessionStart: s.sessionStart.getTime(),
+          session_date: isoDate,
           lectureRoom:  s.lectureRoom,
           label:        `LEC ${i + 1}`,
         };
       } else if (s.type === "online") {
-        key = `on_${s.id}`;
         out = {
-          id:           s.id,
+          sessionId:    s.id,
           sessionStart: s.time.getTime(),
+          session_date: isoDate,
           lectureRoom:  "",
           label:        `LEC ${i + 1}`,
         };
       } else {
-        key = `del_${s.id}`;
         out = {
-          id:           s.id,
+          sessionId:    s.id,
           sessionStart: s.time.getTime(),
+          session_date: isoDate,
           lectureRoom:  "",
           label:        `LEC ${i + 1}`,
         };
       }
-      sessionIndexMap.set(key, i);
       sessionObjects.push(out);
     });
 
@@ -274,14 +284,12 @@ export async function GET(
     const delegationIds = standaloneDelSessions.map((d) => d.id);
 
     const [offlineRecords, onlineRecords, delegationRecords] = await Promise.all([
-      // Use $queryRaw with UPPER(REPLACE) normalization so that manually-marked
-      // sessions (stored as "SCH 2170") are matched when queried as "SCH2170".
-      // INNER JOIN on ConductedSession scopes marks to this lecturer's sessions
-      // and uses cs.lectureRoom / cs.sessionStart as the canonical key values
-      // so they align exactly with the sessionIndexMap keys built above.
+      // Select DISTINCT (studentId, sessionId) — one row per student per session
+      // regardless of how many attendance methods were used.
+      // Uses cs.id as the canonical sessionId so it aligns with sessionObjects.
       offlineSessions.length > 0
-        ? prisma.$queryRaw<{ studentId: string; lectureRoom: string; sessionStart: Date }[]>(Prisma.sql`
-            SELECT DISTINCT oar."studentId", cs."lectureRoom", cs."sessionStart"
+        ? prisma.$queryRaw<{ studentId: string; sessionId: string }[]>(Prisma.sql`
+            SELECT DISTINCT oar."studentId", cs."id" AS "sessionId"
             FROM "OfflineAttendanceRecord" oar
             INNER JOIN "ConductedSession" cs
               ON  UPPER(REPLACE(cs."unitCode", ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
@@ -289,7 +297,7 @@ export async function GET(
               AND cs."lecturerId"   = ${lecturerId}
             WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) = ${unitCode}
           `)
-        : Promise.resolve([] as { studentId: string; lectureRoom: string; sessionStart: Date }[]),
+        : Promise.resolve([] as { studentId: string; sessionId: string }[]),
 
       onlineSessionIds.length > 0
         ? prisma.onlineAttendanceRecord.findMany({
@@ -308,43 +316,34 @@ export async function GET(
         : Promise.resolve([] as { studentId: string; delegationId: string | null }[]),
     ]);
 
-    // Build presence set: `${studentId}_${columnIndex}` → present
+    // Build presence set: "${studentId}_${sessionId}" for O(1) lookup
     const presenceSet = new Set<string>();
 
     for (const r of offlineRecords) {
-      const key = `off_${r.lectureRoom}_${r.sessionStart.getTime()}`;
-      const idx = sessionIndexMap.get(key);
-      if (idx !== undefined) {
-        presenceSet.add(`${r.studentId}_${idx}`);
-      }
+      presenceSet.add(`${r.studentId}_${r.sessionId}`);
     }
 
     for (const r of onlineRecords) {
-      const key = `on_${r.sessionId}`;
-      const idx = sessionIndexMap.get(key);
-      if (idx !== undefined) {
-        presenceSet.add(`${r.studentId}_${idx}`);
-      }
+      presenceSet.add(`${r.studentId}_${r.sessionId}`);
     }
 
     for (const r of delegationRecords) {
       if (!r.delegationId) continue;
-      const key = `del_${r.delegationId}`;
-      const idx = sessionIndexMap.get(key);
-      if (idx !== undefined) {
-        presenceSet.add(`${r.studentId}_${idx}`);
-      }
+      presenceSet.add(`${r.studentId}_${r.delegationId}`);
     }
 
-    // ── Build grid rows ───────────────────────────────────────────────────────
-    const N = allSessions.length;
+    // Build grid rows — student records keyed by sessionId (not column index)
+    // so the client can match by ID regardless of array ordering.
     const students = enrolledStudents.map((s) => ({
       studentId:       s.studentId,
       admissionNumber: s.admissionNumber,
       name:            s.name,
-      attendance: Array.from({ length: N }, (_, i) =>
-        presenceSet.has(`${s.studentId}_${i}`),
-      ),
+      records: Object.fromEntries(
+        sessionObjects.map((sess) => [
+          sess.sessionId,
+          presenceSet.has(`${s.studentId}_${sess.sessionId}`),
+        ])
+      ) as Record<string, boolean>,
     }));
 
     return NextResponse.json(
