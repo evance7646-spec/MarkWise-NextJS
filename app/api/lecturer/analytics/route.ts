@@ -89,12 +89,17 @@ export async function GET(req: NextRequest) {
     // normalizeCode strips all non-alphanumeric chars so "SCH 2170" → "SCH2170"
     // regardless of how the unit code was stored in each table.
     const normCodes = units.map((u) => normalizeCode(u.code));
+    // OnlineAttendanceSession.unitCode is stored via normalizeUnitCode() at creation
+    // ("SCH 2170" format — letters + space + digits). Using raw unit.code here would
+    // miss any session where the Unit table stores the code without a space.
+    const normalisedUnitCodes = units.map((u) => normalizeUnitCode(u.code));
 
     const [onlineSessions, offlineSessions, delegationSessions] =
       await Promise.all([
-        // Online sessions (ended only)
+        // Online sessions (ended only) — query by normalisedUnitCodes to match
+        // the "SCH 2170" format stored by the POST /api/attendance/sessions route.
         prisma.onlineAttendanceSession.findMany({
-          where: { lecturerId, unitCode: { in: unitCodes }, endedAt: { not: null } },
+          where: { lecturerId, unitCode: { in: normalisedUnitCodes }, endedAt: { not: null } },
           select: { unitCode: true, _count: { select: { records: true } } },
         }),
 
