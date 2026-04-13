@@ -29,7 +29,7 @@ export async function POST(
   // Find an active, non-expired session
   const session = await prisma.onlineAttendanceSession.findFirst({
     where: { id, status: "active", expiresAt: { gt: new Date() } },
-    select: { id: true },
+    select: { id: true, unitCode: true },
   });
 
   if (!session) {
@@ -59,6 +59,7 @@ export async function POST(
         sessionId: session.id,
         studentId: student.id,
         admissionNumber: admissionNumber.toUpperCase(),
+        unitCode: session.unitCode,
       },
     });
   } catch (err: unknown) {

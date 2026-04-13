@@ -57,10 +57,12 @@ export async function GET(req: NextRequest) {
 
       UNION
 
-      SELECT DISTINCT REPLACE(UPPER("unitCode"), ' ', '')
-      FROM   "OnlineAttendanceRecord"
-      WHERE  "studentId" = ${studentId}
-        AND  "unitCode"  != ''
+      -- Online attended units: join through session because OnlineAttendanceRecord.unitCode
+      -- is "" for records created via the /mark (no-auth) route.
+      SELECT DISTINCT REPLACE(UPPER(s."unitCode"), ' ', '')
+      FROM   "OnlineAttendanceRecord" r
+      JOIN   "OnlineAttendanceSession" s ON s.id = r."sessionId"
+      WHERE  r."studentId" = ${studentId}
 
       UNION
 
@@ -84,23 +86,29 @@ export async function GET(req: NextRequest) {
       GROUP  BY REPLACE(UPPER("unitCode"), ' ', '')
     ),
     online_attended AS (
-      SELECT REPLACE(UPPER("unitCode"), ' ', '') AS unit_code,
-             COUNT(DISTINCT "sessionId") AS cnt
-      FROM   "OnlineAttendanceRecord"
-      WHERE  "studentId" = ${studentId}
-        AND  "unitCode"  != ''
-      GROUP  BY REPLACE(UPPER("unitCode"), ' ', '')
+      -- Join through OnlineAttendanceSession to get the canonical unit code.
+      -- OnlineAttendanceRecord.unitCode is "" for records created via the /mark route.
+      SELECT REPLACE(UPPER(s."unitCode"), ' ', '') AS unit_code,
+             COUNT(DISTINCT r."sessionId") AS cnt
+      FROM   "OnlineAttendanceRecord" r
+      JOIN   "OnlineAttendanceSession" s ON s.id = r."sessionId"
+      WHERE  r."studentId" = ${studentId}
+      GROUP  BY REPLACE(UPPER(s."unitCode"), ' ', '')
     ),
     offline_conducted AS (
+      -- Exclude lectureRoom = 'ONLINE': those rows are registered by the frontend's
+      -- sync-on-create for online sessions and are already counted in online_conducted.
       SELECT REPLACE(UPPER("unitCode"), ' ', '') AS unit_code,
              COUNT(DISTINCT "sessionStart") AS cnt
       FROM   "ConductedSession"
+      WHERE  "lectureRoom" != 'ONLINE'
       GROUP  BY REPLACE(UPPER("unitCode"), ' ', '')
     ),
     online_conducted AS (
       SELECT REPLACE(UPPER("unitCode"), ' ', '') AS unit_code,
              COUNT(DISTINCT id) AS cnt
       FROM   "OnlineAttendanceSession"
+      WHERE  "endedAt" IS NOT NULL
       GROUP  BY REPLACE(UPPER("unitCode"), ' ', '')
     )
     SELECT
