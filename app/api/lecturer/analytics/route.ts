@@ -117,7 +117,7 @@ export async function GET(req: NextRequest) {
 
     // Offline attendance records — normalization-tolerant JOIN on ConductedSession
     // scoped to this lecturer so marks from other lecturers sharing the unit are excluded.
-    // Also JOINs ConductedSession so that the session must exist before marks count.
+    // No method filter — count ALL attendance methods (qr, qr_scan, ble, manual_lecturer, etc.)
     const offlineRecords = await prisma.$queryRaw<
       { normCode: string; sessionStart: Date }[]
     >(Prisma.sql`
@@ -129,7 +129,6 @@ export async function GET(req: NextRequest) {
         AND cs."sessionStart" = oar."sessionStart"
         AND cs."lecturerId"   = ${lecturerId}
       WHERE  UPPER(REPLACE(oar."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
-        AND  oar."method" IN (${Prisma.join(PRESENT_METHODS)})
     `);
 
     // ── 5. Aggregate per normCode ──────────────────────────────────────────────

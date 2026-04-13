@@ -288,7 +288,6 @@ export async function GET(
               AND cs."sessionStart" = oar."sessionStart"
               AND cs."lecturerId"   = ${lecturerId}
             WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) = ${unitCode}
-              AND oar."method" IN (${Prisma.join(PRESENT_METHODS)})
           `)
         : Promise.resolve([] as { studentId: string; lectureRoom: string; sessionStart: Date }[]),
 
@@ -300,12 +299,10 @@ export async function GET(
         : Promise.resolve([] as { studentId: string; sessionId: string }[]),
 
       // Delegation attendance: OfflineAttendanceRecord rows linked via delegationId
+      // No method filter — count ALL attendance methods.
       delegationIds.length > 0
         ? prisma.offlineAttendanceRecord.findMany({
-            where: {
-              delegationId: { in: delegationIds },
-              method: { in: PRESENT_METHODS },
-            },
+            where: { delegationId: { in: delegationIds } },
             select: { studentId: true, delegationId: true },
           })
         : Promise.resolve([] as { studentId: string; delegationId: string | null }[]),

@@ -31,7 +31,6 @@ import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 
 export const runtime = "nodejs";
 
-const PRESENT_METHODS = ["qr", "ble", "manual", "manual_lecturer", "proxy_leader", "GD"];
 const FIVE_MIN_MS = 5 * 60 * 1000;
 
 /** Strip all non-alphanumeric chars, uppercase — used to match across DB representations */
@@ -162,16 +161,21 @@ export async function POST(req: NextRequest) {
           })
         : Promise.resolve([] as { unitCode: string; validFrom: Date | bigint }[]),
 
-      // Offline attendance records (unitCode stored normalised)
+      // Offline attendance records — ALL methods, INNER JOINed to this lecturer's
+      // ConductedSession rows so marks from other lecturers are excluded.
       normCodes.length > 0
-        ? prisma.offlineAttendanceRecord.findMany({
-            where: {
-              unitCode: { in: normCodes },
-              method: { in: PRESENT_METHODS },
-            },
-            select: { unitCode: true, sessionStart: true },
-          })
-        : Promise.resolve([] as { unitCode: string; sessionStart: Date }[]),
+        ? prisma.$queryRaw<{ unitCode: string }[]>(
+            Prisma.sql`
+              SELECT UPPER(REPLACE(oar."unitCode", ' ', '')) AS "unitCode"
+              FROM   "OfflineAttendanceRecord" oar
+              INNER JOIN "ConductedSession" cs
+                ON  UPPER(REPLACE(cs."unitCode", ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
+                AND cs."sessionStart" = oar."sessionStart"
+                AND cs."lecturerId"   = ${lecturerId}
+              WHERE  UPPER(REPLACE(oar."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+            `,
+          )
+        : Promise.resolve([] as { unitCode: string }[]),
 
       // Assignment counts per unitId
       unitIds.length > 0
@@ -197,16 +201,14 @@ export async function POST(req: NextRequest) {
     const assignMap = new Map(assignmentCounts.map((a) => [a.unitId, a._count.id]));
     const matMap = new Map(materialCounts.map((m) => [m.unitId, m._count.id]));
 
-    // Build offline session-time map + valid keys (for attendance scoping)
+    // Build offline session-time map (for delegation dedup)
     const offlineTimeMap = new Map<string, number[]>();
-    const validOfflineKeys = new Set<string>();
     for (const s of offlineSessions) {
       const key = norm(s.unitCode);
       const ms = s.sessionStart.getTime();
       const times = offlineTimeMap.get(key) ?? [];
       times.push(ms);
       offlineTimeMap.set(key, times);
-      validOfflineKeys.add(`${key}_${ms}`);
     }
 
     // ── 4. Accumulate per-unit stats ───────────────────────────────────────
@@ -236,13 +238,11 @@ export async function POST(req: NextRequest) {
         stat(normCode).conductedSessions += 1;
       }
     }
-    // Offline marks scoped to this lecturer's sessions
+    // Offline marks — no longer need validOfflineKeys since the INNER JOIN already
+    // scopes records to this lecturer's sessions
     for (const r of offlineRecords) {
       const normCode = norm(r.unitCode);
-      const key = `${normCode}_${r.sessionStart.getTime()}`;
-      if (validOfflineKeys.has(key)) {
-        stat(normCode).totalPresent += 1;
-      }
+      stat(normCode).totalPresent += 1;
     }
 
     // ── 5. Build response ──────────────────────────────────────────────────
@@ -269,10 +269,12 @@ export async function POST(req: NextRequest) {
       const materials = unit ? (matMap.get(unit.id) ?? 0) : 0;
 
       response[requestKey] = {
+        students: enrolledStudents,
         enrolledStudents,
         conductedSessions,
         totalPresent,
         avgAttended,
+        attendanceRate: attendancePercent,
         attendancePercent,
         assignments,
         materials,

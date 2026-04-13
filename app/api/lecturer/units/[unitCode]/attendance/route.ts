@@ -159,6 +159,7 @@ export async function GET(
       // Offline present marks grouped by student — scoped to THIS lecturer's
       // conducted sessions (inner join on lectureRoom + sessionStart) so marks
       // from sessions run by other lecturers sharing the unit code are excluded.
+      // No method filter — count ALL attendance methods.
       prisma.$queryRaw<{ studentId: string; cnt: bigint }[]>`
         SELECT oar."studentId", COUNT(*) AS cnt
         FROM "OfflineAttendanceRecord" oar
@@ -167,7 +168,6 @@ export async function GET(
           AND cs."sessionStart" = oar."sessionStart"
           AND cs."lecturerId"   = ${lecturerId}
         WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) = ${unitCode}
-          AND oar."method" IN ('qr', 'ble', 'manual', 'manual_lecturer', 'proxy_leader', 'GD')
         GROUP BY oar."studentId"
       `,
 
@@ -226,11 +226,12 @@ export async function GET(
       attendedMap.set(row.studentId, (attendedMap.get(row.studentId) ?? 0) + row._count.id);
     }
 
-    // ── Build response — sorted by percentage descending ─────────────────────
-    const result = enrolledStudents
+    // ── Build response — wrapped in envelope with top-level conductedSessions ─
+    // The client reads data.conductedSessions from the envelope before falling
+    // back to per-student fields. Students also carry their own attended count.
+    const students = enrolledStudents
       .map((s) => {
         const attended = attendedMap.get(s.studentId) ?? 0;
-        // Round to 1 decimal place: ROUND(attended/conducted*100, 1)
         const percentage =
           conducted > 0 ? Math.round((attended / conducted) * 1000) / 10 : 0;
         return {
@@ -245,7 +246,10 @@ export async function GET(
       })
       .sort((a, b) => b.percentage - a.percentage);
 
-    return NextResponse.json(result, { status: 200, headers: corsHeaders });
+    return NextResponse.json(
+      { conductedSessions: conducted, students },
+      { status: 200, headers: corsHeaders },
+    );
   } catch (err: unknown) {
     console.error("[lecturer/units/attendance] error:", err);
     return NextResponse.json(
