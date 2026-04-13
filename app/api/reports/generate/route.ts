@@ -338,6 +338,7 @@ interface PerformanceUnitData {
   completionRate:    number; // 0-100
   onlineSessions:    number;
   offlineSessions:   number;
+  delegationSessions: number;
   avgAttendance:     number; // 0-100
   studentsEnrolled:  number;
   lessonBreakdown:   LessonTypeBreakdown[];
@@ -406,7 +407,25 @@ async function gatherPerformanceData(
     }),
   ]);
 
-  const sessionsConducted = offlineSessions.length + onlineSessionsInRange.length;
+  // ── Standalone delegation sessions in range (±5 min dedup) ──────────────────
+  const rawUnitCodeForDel = unit?.code ?? norm;
+  const delegationsAll = await prisma.delegation.findMany({
+    where: { createdBy: lecturerId, unitCode: rawUnitCodeForDel, used: true },
+    select: { validFrom: true },
+  });
+  const FIVE_MIN_MS_PERF = 5 * 60 * 1000;
+  const offlineTimesForDel = offlineSessions.map((s) => s.sessionStart.getTime());
+  const standaloneDelegations = delegationsAll.filter((d) => {
+    const delegMs = Number(d.validFrom);
+    return (
+      delegMs >= start.getTime() &&
+      delegMs <= end.getTime() &&
+      !offlineTimesForDel.some((t) => Math.abs(t - delegMs) <= FIVE_MIN_MS_PERF)
+    );
+  });
+  const delegationCount = standaloneDelegations.length;
+
+  const sessionsConducted = offlineSessions.length + onlineSessionsInRange.length + delegationCount;
   const onlineSessions    = offlineSessions.filter((s) => s.lectureRoom.toUpperCase() === "ONLINE").length
     + onlineSessionsInRange.length;
   const offlineSessionsCount = offlineSessions.filter((s) => s.lectureRoom.toUpperCase() !== "ONLINE").length;
@@ -436,6 +455,9 @@ async function gatherPerformanceData(
   }
   if (onlineSessionsInRange.length > 0) {
     lessonTypeCounts["ONLINE"] = (lessonTypeCounts["ONLINE"] ?? 0) + onlineSessionsInRange.length;
+  }
+  if (delegationCount > 0) {
+    lessonTypeCounts["GD"] = (lessonTypeCounts["GD"] ?? 0) + delegationCount;
   }
   const totalForBreakdown = sessionsConducted || 1;
   const lessonBreakdown: LessonTypeBreakdown[] = Object.entries(lessonTypeCounts)
@@ -483,6 +505,7 @@ async function gatherPerformanceData(
     completionRate,
     onlineSessions,
     offlineSessions: offlineSessionsCount,
+    delegationSessions: delegationCount,
     avgAttendance,
     studentsEnrolled,
     lessonBreakdown,
@@ -579,9 +602,10 @@ async function buildPerformancePdf(
         ["Sessions Conducted",  String(u.sessionsConducted)],
         ["Sessions Planned",    u.sessionsPlanned > 0 ? String(u.sessionsPlanned) : "N/A"],
         ["Completion Rate",     u.sessionsPlanned > 0 ? `${u.completionRate}%` : "N/A"],
-        ["Online Sessions",     String(u.onlineSessions)],
-        ["Offline Sessions",    String(u.offlineSessions)],
-        ["Average Attendance",  `${u.avgAttendance}%`],
+        ["Online Sessions",             String(u.onlineSessions)],
+        ["Offline Sessions",            String(u.offlineSessions)],
+        ["Group Delegation Sessions",   String(u.delegationSessions)],
+        ["Average Attendance",          `${u.avgAttendance}%`],
         ["Students Enrolled",   String(u.studentsEnrolled)],
       ];
       let altRow = false;
@@ -672,9 +696,10 @@ function buildPerformanceCsv(
     row("Sessions Conducted", u.sessionsConducted);
     row("Sessions Planned",   u.sessionsPlanned > 0 ? u.sessionsPlanned : "N/A");
     row("Completion Rate",    u.sessionsPlanned > 0 ? `${u.completionRate}%` : "N/A");
-    row("Online Sessions",    u.onlineSessions);
-    row("Offline Sessions",   u.offlineSessions);
-    row("Average Attendance", `${u.avgAttendance}%`);
+    row("Online Sessions",            u.onlineSessions);
+    row("Offline Sessions",           u.offlineSessions);
+    row("Group Delegation Sessions",  u.delegationSessions);
+    row("Average Attendance",         `${u.avgAttendance}%`);
     row("Students Enrolled",  u.studentsEnrolled);
     lines.push("");
 
@@ -720,9 +745,10 @@ function buildPerformanceExcel(
     data.push(["Sessions Conducted", u.sessionsConducted]);
     data.push(["Sessions Planned",   u.sessionsPlanned > 0 ? u.sessionsPlanned : "N/A"]);
     data.push(["Completion Rate",    u.sessionsPlanned > 0 ? `${u.completionRate}%` : "N/A"]);
-    data.push(["Online Sessions",    u.onlineSessions]);
-    data.push(["Offline Sessions",   u.offlineSessions]);
-    data.push(["Average Attendance", `${u.avgAttendance}%`]);
+    data.push(["Online Sessions",           u.onlineSessions]);
+    data.push(["Offline Sessions",          u.offlineSessions]);
+    data.push(["Group Delegation Sessions", u.delegationSessions]);
+    data.push(["Average Attendance",        `${u.avgAttendance}%`]);
     data.push(["Students Enrolled",  u.studentsEnrolled]);
     data.push([]);
 
@@ -1221,10 +1247,16 @@ export async function POST(req: NextRequest) {
     // ── Dispatch by report type ───────────────────────────────
     const reportType = validTypes[0] as ReportType;
 
-    if (reportType !== "attendance" && reportType !== "performance") {
+    const NOT_IMPLEMENTED_MESSAGES: Partial<Record<ReportType, string>> = {
+      assignments:   "Assignment Summary reports are coming soon.",
+      students:      "Student Progress reports are coming soon.",
+      sessions:      "Session Log reports are coming soon.",
+      comprehensive: "Comprehensive reports are coming soon.",
+    };
+    if (NOT_IMPLEMENTED_MESSAGES[reportType]) {
       return NextResponse.json(
-        { fileUrl: null, message: "Report type not yet supported" },
-        { status: 200, headers: corsHeaders },
+        { message: NOT_IMPLEMENTED_MESSAGES[reportType] },
+        { status: 501, headers: corsHeaders },
       );
     }
 

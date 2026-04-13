@@ -152,8 +152,8 @@ export async function GET(
       // Offline conducted sessions — normalization-tolerant $queryRaw so that
       // manual-mark sessions (stored with spaces) and BLE sessions (stored without)
       // are both found. sessionStart returned for the response payload.
-      prisma.$queryRaw<{ id: string; sessionStart: Date; lectureRoom: string }[]>(Prisma.sql`
-        SELECT id, "sessionStart", "lectureRoom"
+      prisma.$queryRaw<{ id: string; sessionStart: Date; lectureRoom: string; lessonType: string | null }[]>(Prisma.sql`
+        SELECT id, "sessionStart", "lectureRoom", "lessonType"
         FROM   "ConductedSession"
         WHERE  "lecturerId" = ${lecturerId}
           AND  UPPER(REPLACE("unitCode", ' ', '')) = ${unitCode}
@@ -176,7 +176,7 @@ export async function GET(
     ]);
 
     // ── Merge and sort all sessions by time, dedup delegation ±5 min ─────────
-    type OfflineSession  = { type: "offline";    id: string; time: Date; lectureRoom: string; sessionStart: Date };
+    type OfflineSession  = { type: "offline";    id: string; time: Date; lectureRoom: string; sessionStart: Date; lessonType: string | null };
     type OnlineSession   = { type: "online";     id: string; time: Date };
     type DelegSession    = { type: "delegation"; id: string; time: Date };
     type AnySession = OfflineSession | OnlineSession | DelegSession;
@@ -185,11 +185,13 @@ export async function GET(
     // sessionId is the source-table primary key; session_date is ISO YYYY-MM-DD;
     // sessionStart (Unix ms) kept for offline manual-mark matching.
     interface SessionOut {
-      sessionId: string;   // canonical identifier used as key in student records
+      sessionId: string;    // canonical identifier used as key in student records
       sessionStart: number; // Unix ms
       session_date: string; // "YYYY-MM-DD"
       lectureRoom: string;
       label: string;
+      lessonType: string;   // e.g. "LEC", "TUT", "LAB", "PRE", "Online", "Group"
+      type: string;         // "inperson" | "online" | "delegation"
     }
 
     const FIVE_MIN_MS = 5 * 60 * 1000;
@@ -218,6 +220,7 @@ export async function GET(
         time: s.sessionStart,
         lectureRoom: s.lectureRoom,
         sessionStart: s.sessionStart,
+        lessonType: s.lessonType,
       })),
       ...onlineSessions.map((s): OnlineSession => ({
         type: "online",
@@ -263,8 +266,10 @@ export async function GET(
           sessionId:    s.id,
           sessionStart: s.time.getTime(),
           session_date: isoDate,
-          lectureRoom:  "",
+          lectureRoom:  "ONLINE",
           label:        `ONL ${onlCount}`,
+          lessonType:   "Online",
+          type:         "online",
         };
       } else if (s.type === "offline") {
         lecCount++;
@@ -274,6 +279,8 @@ export async function GET(
           session_date: isoDate,
           lectureRoom:  s.lectureRoom,
           label:        `LEC ${lecCount}`,
+          lessonType:   s.lessonType ?? "LEC",
+          type:         "inperson",
         };
       } else {
         lecCount++;
@@ -281,8 +288,10 @@ export async function GET(
           sessionId:    s.id,
           sessionStart: s.time.getTime(),
           session_date: isoDate,
-          lectureRoom:  "",
+          lectureRoom:  "GD",
           label:        `LEC ${lecCount}`,
+          lessonType:   "Group",
+          type:         "delegation",
         };
       }
       sessionObjects.push(out);
