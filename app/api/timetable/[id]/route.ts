@@ -182,7 +182,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       lessonType?: string;
     };
 
-    const VALID_LESSON_TYPES = ["LEC","GD","RAT","CAT","LAB","SEM","WRK","TUT"];
+    const VALID_LESSON_TYPES = ["LEC","GD","RAT","CAT","LAB","SEM","WRK","TUT","PRE"];
     if (bodyLessonType != null && !VALID_LESSON_TYPES.includes(bodyLessonType)) {
       return NextResponse.json({ message: "Invalid lessonType value." }, { status: 422, headers: corsHeaders });
     }

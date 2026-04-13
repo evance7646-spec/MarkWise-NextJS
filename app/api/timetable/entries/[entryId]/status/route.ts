@@ -74,7 +74,7 @@ export async function PATCH(
 
   const { status, reason, pendingReason, rescheduledTo, reschedulePermanent, clearVenue, lessonType } = body;
 
-  const VALID_LESSON_TYPES = ["LEC","GD","RAT","CAT","LAB","SEM","WRK","TUT"];
+  const VALID_LESSON_TYPES = ["LEC","GD","RAT","CAT","LAB","SEM","WRK","TUT","PRE"];
   if (lessonType != null && !VALID_LESSON_TYPES.includes(lessonType)) {
     return NextResponse.json(
       { error: `lessonType must be one of: ${VALID_LESSON_TYPES.join(", ")}` },

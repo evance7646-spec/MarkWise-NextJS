@@ -319,6 +319,432 @@ async function gatherUnitReportData(
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Performance report — data types
+// ─────────────────────────────────────────────────────────────────
+interface LessonTypeBreakdown {
+  lessonType: string;
+  count: number;
+  pct: number;
+}
+
+interface PerformanceUnitData {
+  unitCode:          string;
+  unitName:          string;
+  department:        string;
+  lecturerName:      string;
+  institutionName:   string;
+  sessionsConducted: number;
+  sessionsPlanned:   number;
+  completionRate:    number; // 0-100
+  onlineSessions:    number;
+  offlineSessions:   number;
+  avgAttendance:     number; // 0-100
+  studentsEnrolled:  number;
+  lessonBreakdown:   LessonTypeBreakdown[];
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Performance report — gather data
+// ─────────────────────────────────────────────────────────────────
+
+/** Count occurrences of each day-of-week string within [start, end] (inclusive). */
+function countDayOccurrences(dayName: string, start: Date, end: Date): number {
+  const DAY_INDEX: Record<string, number> = {
+    sunday: 0, monday: 1, tuesday: 2, wednesday: 3,
+    thursday: 4, friday: 5, saturday: 6,
+  };
+  const idx = DAY_INDEX[dayName.toLowerCase()];
+  if (idx === undefined) return 0;
+  // Walk from start to end counting matching days
+  let count = 0;
+  const d = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()));
+  const endMs = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+  while (d.getTime() <= endMs) {
+    if (d.getUTCDay() === idx) count++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return count;
+}
+
+async function gatherPerformanceData(
+  unitCode: string,
+  lecturerId: string,
+  lecturerName: string,
+  institutionName: string,
+  departmentLabel: string,
+  start: Date,
+  end: Date,
+): Promise<PerformanceUnitData> {
+  const norm = normalizeUnitCode(unitCode);
+
+  // ── Unit info ──────────────────────────────────────────────────
+  const unit = await prisma.unit.findFirst({
+    where: { code: { equals: norm, mode: "insensitive" } },
+    select: { id: true, title: true, code: true, department: { select: { name: true } } },
+  });
+  const unitName   = unit?.title              ?? unitCode;
+  const department = departmentLabel || (unit?.department?.name ?? "");
+
+  // ── Sessions conducted in range (offline + online) ─────────────
+  const [offlineSessions, onlineSessionsInRange] = await Promise.all([
+    prisma.conductedSession.findMany({
+      where: {
+        lecturerId,
+        unitCode: { equals: norm, mode: "insensitive" },
+        createdAt: { gte: start, lte: end },
+      },
+      select: { id: true, lectureRoom: true, lessonType: true, sessionStart: true },
+    }),
+    prisma.onlineAttendanceSession.findMany({
+      where: {
+        lecturerId,
+        unitCode: { equals: norm, mode: "insensitive" },
+        endedAt: { not: null },
+        createdAt: { gte: start, lte: end },
+      },
+      select: { id: true, createdAt: true },
+    }),
+  ]);
+
+  const sessionsConducted = offlineSessions.length + onlineSessionsInRange.length;
+  const onlineSessions    = offlineSessions.filter((s) => s.lectureRoom.toUpperCase() === "ONLINE").length
+    + onlineSessionsInRange.length;
+  const offlineSessionsCount = offlineSessions.filter((s) => s.lectureRoom.toUpperCase() !== "ONLINE").length;
+
+  // ── Planned sessions from timetable ───────────────────────────
+  const timetableEntries = await prisma.timetable.findMany({
+    where: {
+      lecturerId,
+      unitId:  unit?.id ?? "__none__",
+      status:  { not: "cancelled" },
+    },
+    select: { day: true },
+  });
+  const sessionsPlanned = timetableEntries.reduce(
+    (sum, e) => sum + countDayOccurrences(e.day, start, end),
+    0,
+  );
+  const completionRate = sessionsPlanned > 0
+    ? Math.min(Math.round((sessionsConducted / sessionsPlanned) * 100), 100)
+    : 100;
+
+  // ── Lesson type breakdown ──────────────────────────────────────
+  const lessonTypeCounts: Record<string, number> = {};
+  for (const s of offlineSessions) {
+    const lt = (s.lessonType ?? "LEC").toUpperCase();
+    lessonTypeCounts[lt] = (lessonTypeCounts[lt] ?? 0) + 1;
+  }
+  if (onlineSessionsInRange.length > 0) {
+    lessonTypeCounts["ONLINE"] = (lessonTypeCounts["ONLINE"] ?? 0) + onlineSessionsInRange.length;
+  }
+  const totalForBreakdown = sessionsConducted || 1;
+  const lessonBreakdown: LessonTypeBreakdown[] = Object.entries(lessonTypeCounts)
+    .map(([lessonType, count]) => ({
+      lessonType,
+      count,
+      pct: Math.round((count / totalForBreakdown) * 100),
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  // ── Students enrolled ──────────────────────────────────────────
+  const studentsEnrolled = unit
+    ? await prisma.enrollment.count({ where: { unitId: unit.id } })
+    : 0;
+
+  // ── Average attendance per session ────────────────────────────
+  let avgAttendance = 0;
+  if (sessionsConducted > 0 && studentsEnrolled > 0) {
+    const [offlineRecordCount, onlineRecordCount] = await Promise.all([
+      prisma.offlineAttendanceRecord.count({
+        where: {
+          unitCode:     { equals: norm, mode: "insensitive" },
+          sessionStart: { gte: start, lte: end },
+        },
+      }),
+      onlineSessionsInRange.length > 0
+        ? prisma.onlineAttendanceRecord.count({
+            where: { sessionId: { in: onlineSessionsInRange.map((s) => s.id) } },
+          })
+        : Promise.resolve(0),
+    ]);
+    const totalMarks = offlineRecordCount + onlineRecordCount;
+    avgAttendance = Math.round((totalMarks / (sessionsConducted * studentsEnrolled)) * 100);
+    avgAttendance = Math.min(avgAttendance, 100);
+  }
+
+  return {
+    unitCode: norm,
+    unitName,
+    department,
+    lecturerName,
+    institutionName,
+    sessionsConducted,
+    sessionsPlanned,
+    completionRate,
+    onlineSessions,
+    offlineSessions: offlineSessionsCount,
+    avgAttendance,
+    studentsEnrolled,
+    lessonBreakdown,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Performance report — PDF builder
+// ─────────────────────────────────────────────────────────────────
+const PERF_HEADER_COLOR  = "#4F46E5";
+const PERF_H1_COLOR      = "#312e81";
+const PERF_BORDER_COLOR  = "#4F46E5";
+
+async function buildPerformancePdf(
+  units: PerformanceUnitData[],
+  period: Period,
+  startDate: Date,
+  endDate: Date,
+): Promise<Buffer> {
+  const PDFDocument = (await import("pdfkit")).default;
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const doc = new PDFDocument({ margin: 50, size: "A4", autoFirstPage: false });
+    doc.on("data",  (c: Buffer) => chunks.push(c));
+    doc.on("end",   () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    const W         = 595 - 100; // usable width
+    const FONT_BOLD = "Helvetica-Bold";
+    const FONT      = "Helvetica";
+
+    // ── Simple table row helper ────────────────────────────────
+    function tableRow(
+      cols: string[],
+      colWidths: number[],
+      x: number,
+      y: number,
+      bgColor?: string,
+      bold?: boolean,
+    ): number {
+      const rowH = 18;
+      if (bgColor) {
+        doc.save().rect(x, y, colWidths.reduce((a, b) => a + b, 0), rowH).fill(bgColor).restore();
+      }
+      doc.fontSize(8).font(bold ? FONT_BOLD : FONT).fillColor("#000000");
+      let cx = x;
+      for (let i = 0; i < cols.length; i++) {
+        doc.text(cols[i], cx + 3, y + 5, { width: colWidths[i] - 6, lineBreak: false, ellipsis: true });
+        cx += colWidths[i];
+      }
+      return rowH;
+    }
+
+    // ── Render each unit ───────────────────────────────────────
+    for (let ui = 0; ui < units.length; ui++) {
+      const u = units[ui];
+      doc.addPage();
+      let y = 50;
+
+      // ── Header ──────────────────────────────────────────────
+      doc.fontSize(14).font(FONT_BOLD).fillColor(PERF_H1_COLOR)
+        .text("MarkWise — Unit Performance Report", 50, y, { width: W });
+      y += 22;
+      doc.fontSize(11).font(FONT_BOLD).fillColor(PERF_H1_COLOR)
+        .text(u.department, 50, y, { width: W });
+      y += 20;
+
+      // Meta table
+      doc.fontSize(9).font(FONT).fillColor("#000000");
+      const labelW = 80;
+      const metaRows = [
+        ["Unit:",       `${u.unitCode}  —  ${u.unitName}`],
+        ["Lecturer:",   u.lecturerName],
+        ["Period:",     `${period.charAt(0).toUpperCase() + period.slice(1)}   ${fmtDate(startDate)} – ${fmtDate(endDate)}`],
+        ["Generated:",  fmtDateTime(new Date())],
+      ];
+      for (const [lbl, val] of metaRows) {
+        doc.font(FONT_BOLD).text(lbl, 50, y, { width: labelW, continued: false });
+        doc.font(FONT).text(val, 50 + labelW, y, { width: W - labelW });
+        y += 14;
+      }
+      y += 8;
+
+      // ── Section 1: Session Completion ───────────────────────
+      doc.save().rect(50, y, W, 16).fill(PERF_HEADER_COLOR).restore();
+      doc.fontSize(9).font(FONT_BOLD).fillColor("#ffffff")
+        .text("SESSION COMPLETION", 54, y + 4, { width: W - 8, lineBreak: false });
+      doc.fillColor("#000000");
+      y += 18;
+
+      const s1ColW = [180, W - 180];
+      const completionRows: [string, string][] = [
+        ["Sessions Conducted",  String(u.sessionsConducted)],
+        ["Sessions Planned",    u.sessionsPlanned > 0 ? String(u.sessionsPlanned) : "N/A"],
+        ["Completion Rate",     u.sessionsPlanned > 0 ? `${u.completionRate}%` : "N/A"],
+        ["Online Sessions",     String(u.onlineSessions)],
+        ["Offline Sessions",    String(u.offlineSessions)],
+        ["Average Attendance",  `${u.avgAttendance}%`],
+        ["Students Enrolled",   String(u.studentsEnrolled)],
+      ];
+      let altRow = false;
+      for (const [field, value] of completionRows) {
+        const bg = altRow ? "#F5F3FF" : "#ffffff";
+        tableRow([field, value], s1ColW, 50, y, bg);
+        y += 18;
+        altRow = !altRow;
+      }
+      y += 10;
+
+      // ── Section 2: Lesson Type Breakdown ────────────────────
+      doc.save().rect(50, y, W, 16).fill(PERF_HEADER_COLOR).restore();
+      doc.fontSize(9).font(FONT_BOLD).fillColor("#ffffff")
+        .text("LESSON TYPE BREAKDOWN", 54, y + 4, { width: W - 8, lineBreak: false });
+      doc.fillColor("#000000");
+      y += 18;
+
+      const s2ColW = [180, 100, 80, W - 360];
+      // Header row
+      doc.save().rect(50, y, W, 18).fill("#E0E7FF").restore();
+      doc.fontSize(8).font(FONT_BOLD).fillColor("#000000");
+      let hx = 50;
+      for (const [col, cw] of [["Lesson Type", s2ColW[0]], ["Sessions", s2ColW[1]], ["% of Total", s2ColW[2]]] as [string, number][]) {
+        doc.text(col, hx + 3, y + 5, { width: cw - 6, lineBreak: false });
+        hx += cw;
+      }
+      y += 18;
+
+      if (u.lessonBreakdown.length === 0) {
+        doc.fontSize(8).font(FONT).fillColor("#374151")
+          .text("No sessions recorded in this period.", 53, y + 4);
+        y += 18;
+      } else {
+        altRow = false;
+        for (const lt of u.lessonBreakdown) {
+          const bg = altRow ? "#F5F3FF" : "#ffffff";
+          tableRow(
+            [lt.lessonType, String(lt.count), `${lt.pct}%`],
+            [s2ColW[0], s2ColW[1], s2ColW[2]],
+            50, y, bg,
+          );
+          y += 18;
+          altRow = !altRow;
+        }
+      }
+
+      // Bottom border
+      doc.moveTo(50, y).lineTo(545, y).stroke(PERF_BORDER_COLOR);
+
+      // Page number
+      doc.fontSize(7).font(FONT).fillColor("#666666")
+        .text(`Page ${ui + 1}`, 0, 780, { align: "center", width: 595 });
+      doc.fillColor("#000000");
+    }
+
+    doc.end();
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Performance report — CSV builder
+// ─────────────────────────────────────────────────────────────────
+function buildPerformanceCsv(
+  units: PerformanceUnitData[],
+  period: Period,
+  startDate: Date,
+  endDate: Date,
+): string {
+  const lines: string[] = [];
+  const esc = (v: string | number | null | undefined) =>
+    `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const row = (...cells: (string | number | null | undefined)[]) =>
+    lines.push(cells.map(esc).join(","));
+
+  for (const u of units) {
+    row("MarkWise Unit Performance Report");
+    row("Department",  u.department);
+    row("Unit Code",   u.unitCode);
+    row("Unit Name",   u.unitName);
+    row("Lecturer",    u.lecturerName);
+    row("Period",      `${period.charAt(0).toUpperCase() + period.slice(1)}  ${fmtDate(startDate)} – ${fmtDate(endDate)}`);
+    row("Generated",   fmtDateTime(new Date()));
+    lines.push("");
+
+    row("SESSION COMPLETION");
+    row("Field",            "Value");
+    row("Sessions Conducted", u.sessionsConducted);
+    row("Sessions Planned",   u.sessionsPlanned > 0 ? u.sessionsPlanned : "N/A");
+    row("Completion Rate",    u.sessionsPlanned > 0 ? `${u.completionRate}%` : "N/A");
+    row("Online Sessions",    u.onlineSessions);
+    row("Offline Sessions",   u.offlineSessions);
+    row("Average Attendance", `${u.avgAttendance}%`);
+    row("Students Enrolled",  u.studentsEnrolled);
+    lines.push("");
+
+    row("LESSON TYPE BREAKDOWN");
+    row("Lesson Type", "Sessions", "% of Total");
+    for (const lt of u.lessonBreakdown) {
+      row(lt.lessonType, lt.count, `${lt.pct}%`);
+    }
+    lines.push("", "");
+  }
+
+  return lines.join("\n");
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Performance report — Excel builder
+// ─────────────────────────────────────────────────────────────────
+function buildPerformanceExcel(
+  units: PerformanceUnitData[],
+  period: Period,
+  startDate: Date,
+  endDate: Date,
+): Buffer {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const XLSX = require("xlsx");
+  const wb   = XLSX.utils.book_new();
+
+  for (const u of units) {
+    const sheetName = u.unitCode.slice(0, 31);
+    const data: (string | number)[][] = [];
+
+    data.push(["MarkWise Unit Performance Report"]);
+    data.push(["Department",  u.department]);
+    data.push(["Unit Code",   u.unitCode]);
+    data.push(["Unit Name",   u.unitName]);
+    data.push(["Lecturer",    u.lecturerName]);
+    data.push(["Period",      `${period.charAt(0).toUpperCase() + period.slice(1)}  ${fmtDate(startDate)} – ${fmtDate(endDate)}`]);
+    data.push(["Generated",   fmtDateTime(new Date())]);
+    data.push([]);
+
+    data.push(["SESSION COMPLETION"]);
+    data.push(["Field",             "Value"]);
+    data.push(["Sessions Conducted", u.sessionsConducted]);
+    data.push(["Sessions Planned",   u.sessionsPlanned > 0 ? u.sessionsPlanned : "N/A"]);
+    data.push(["Completion Rate",    u.sessionsPlanned > 0 ? `${u.completionRate}%` : "N/A"]);
+    data.push(["Online Sessions",    u.onlineSessions]);
+    data.push(["Offline Sessions",   u.offlineSessions]);
+    data.push(["Average Attendance", `${u.avgAttendance}%`]);
+    data.push(["Students Enrolled",  u.studentsEnrolled]);
+    data.push([]);
+
+    data.push(["LESSON TYPE BREAKDOWN"]);
+    data.push(["Lesson Type", "Sessions", "% of Total"]);
+    for (const lt of u.lessonBreakdown) {
+      data.push([lt.lessonType, lt.count, `${lt.pct}%`]);
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    // Bold first 7 rows (report meta)
+    for (let r = 0; r < 7; r++) {
+      const cell = ws[XLSX.utils.encode_cell({ r, c: 0 })];
+      if (cell) cell.s = { font: { bold: true } };
+    }
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  }
+
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // PDF builder  (pdfkit — already a dependency)
 // ─────────────────────────────────────────────────────────────────
 async function buildPdf(units: UnitReportData[], period: Period, startDate: Date, endDate: Date): Promise<Buffer> {
@@ -792,6 +1218,91 @@ export async function POST(req: NextRequest) {
     const lecturerName    = lecturer?.fullName  ?? lecturerId;
     const institutionName = lecturer?.institution?.name ?? "MarkWise";
 
+    // ── Dispatch by report type ───────────────────────────────
+    const reportType = validTypes[0] as ReportType;
+
+    if (reportType !== "attendance" && reportType !== "performance") {
+      return NextResponse.json(
+        { fileUrl: null, message: "Report type not yet supported" },
+        { status: 200, headers: corsHeaders },
+      );
+    }
+
+    // ── Performance report path ───────────────────────────────
+    if (reportType === "performance") {
+      const perfDataList = await Promise.all(
+        normalizedCodes.map((uc) =>
+          gatherPerformanceData(uc, lecturerId, lecturerName, institutionName, departmentLabel, parsedStart, parsedEnd),
+        ),
+      );
+
+      const ext      = validFormat === "pdf" ? "pdf" : validFormat === "csv" ? "csv" : "xlsx";
+      const filename = `MarkWise_Performance_${validPeriod}_${Date.now()}.${ext}`;
+      let fileBuffer: Buffer;
+
+      try {
+        if (validFormat === "pdf") {
+          fileBuffer = await buildPerformancePdf(perfDataList, validPeriod, parsedStart, parsedEnd);
+        } else if (validFormat === "csv") {
+          fileBuffer = Buffer.from(buildPerformanceCsv(perfDataList, validPeriod, parsedStart, parsedEnd), "utf-8");
+        } else {
+          fileBuffer = buildPerformanceExcel(perfDataList, validPeriod, parsedStart, parsedEnd);
+        }
+      } catch (buildErr) {
+        console.error("[reports/generate] performance build error:", buildErr);
+        return apiErr(`Report generation failed: ${buildErr instanceof Error ? buildErr.message : String(buildErr)}`, 500);
+      }
+
+      if (validFormat === "pdf") {
+        await prisma.lecturerReport.create({
+          data: {
+            lecturerId,
+            period:        validPeriod,
+            types:         validTypes,
+            format:        validFormat,
+            unitCodes:     normalizedCodes,
+            startDate:     parsedStart,
+            endDate:       parsedEnd,
+            fileUrl:       "",
+            fileSizeBytes: fileBuffer.length,
+          },
+        }).catch(() => {});
+
+        return NextResponse.json(
+          { fileUrl: null, base64: fileBuffer.toString("base64"), mimeType: MIME_MAP.pdf, filename },
+          { status: 200, headers: corsHeaders },
+        );
+      }
+
+      const blobName = `reports/${lecturerId.slice(0, 8)}_${Date.now()}.${ext}`;
+      let fileUrl: string;
+      try {
+        const blob = await put(blobName, fileBuffer, { access: "public", contentType: MIME_MAP[validFormat] });
+        fileUrl = blob.url;
+      } catch {
+        return NextResponse.json(
+          { fileUrl: null, base64: fileBuffer.toString("base64"), mimeType: MIME_MAP[validFormat], filename },
+          { status: 200, headers: corsHeaders },
+        );
+      }
+
+      const report = await prisma.lecturerReport.create({
+        data: {
+          lecturerId,
+          period:        validPeriod,
+          types:         validTypes,
+          format:        validFormat,
+          unitCodes:     normalizedCodes,
+          startDate:     parsedStart,
+          endDate:       parsedEnd,
+          fileUrl,
+          fileSizeBytes: fileBuffer.length,
+        },
+      });
+      return NextResponse.json({ fileUrl: report.fileUrl }, { status: 200, headers: corsHeaders });
+    }
+
+    // ── Attendance report path (default) ──────────────────────
     // ── Gather per-unit data ──────────────────────────────────
     const unitDataList = await Promise.all(
       normalizedCodes.map((uc) =>

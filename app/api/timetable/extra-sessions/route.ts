@@ -23,7 +23,7 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
-const VALID_LESSON_TYPES = ["LEC", "TUT", "LAB", "SEM", "WRK", "CAT", "RAT"] as const;
+const VALID_LESSON_TYPES = ["LEC", "TUT", "LAB", "SEM", "WRK", "CAT", "RAT", "PRE"] as const;
 
 function extractLecturerId(req: NextRequest): string {
   const auth = req.headers.get("authorization") ?? "";
