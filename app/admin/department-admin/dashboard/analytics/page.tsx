@@ -5,8 +5,10 @@ import {
   Users, GraduationCap, BarChart3, Activity, AlertTriangle,
   CheckCircle2, AlertCircle, RefreshCw, TrendingDown,
   Shield, UserX, BookOpen, TrendingUp, Calendar, X,
-  ChevronRight, User, Search, Loader2,
+  ChevronRight, User, Search, Loader2, ChevronDown,
+  FileText, ClipboardList, Layers, FlaskConical,
 } from "lucide-react";
+import { Fragment } from "react";
 import { useDepartmentAdmin } from "../../context";
 
 // ── Types ─────────────────────────────────────────────────────────────────
@@ -17,10 +19,21 @@ interface Overview {
   criticalCount: number; criticalPct: number;
   lookbackDays: number;
 }
+interface LecturerUnitStat {
+  unitCode: string; unitTitle: string;
+  totalSessions: number; lecSessions: number;
+  catSessions: number; ratSessions: number;
+  labSessions: number; gdSessions: number;
+  semSessions: number; assignmentsPosted: number;
+  avgClassAttendance: number;
+}
 interface LecturerStat {
   lecturerId: string; lecturerName: string; department: string; departmentId: string;
   totalSessions: number; hoursPerWeek: number; unitCount: number;
   avgClassAttendance: number;
+  catSessions: number; ratSessions: number; labSessions: number;
+  assignmentsPosted: number;
+  units?: LecturerUnitStat[];
 }
 interface YearBreakdown {
   year: number; totalStudents: number; avgAttendance: number;
@@ -346,6 +359,7 @@ export default function DeptAttendanceAnalyticsPage() {
   const [days, setDays]       = useState(30);
   const [selectedStudent, setSelectedStudent] = useState<AtRiskStudent | null>(null);
   const [searchDrawerStudent, setSearchDrawerStudent] = useState<AtRiskStudent | null>(null);
+  const [expandedLecturer, setExpandedLecturer] = useState<string | null>(null);
   const activeDrawerStudent = searchDrawerStudent ?? selectedStudent;
 
   const fetchData = useCallback(async () => {
@@ -550,8 +564,8 @@ export default function DeptAttendanceAnalyticsPage() {
             const eligible = [...(data?.units ?? [])].filter(u => !u.lowActivity && u.enrolled >= 3 && u.sessionsHeld >= 2);
             if (eligible.length === 0) return null;
             // API returns ascending — worst first, slice best from end
-            const worst = eligible.slice(0, Math.min(3, eligible.length));
-            const best  = [...eligible].reverse().slice(0, Math.min(3, eligible.length));
+            const worst = eligible.slice(0, Math.min(5, eligible.length));
+            const best  = [...eligible].reverse().slice(0, Math.min(5, eligible.length));
             const UnitPill = ({ u, variant }: { u: typeof eligible[0]; variant: "worst" | "best" }) => (
               <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
                 variant === "worst"
@@ -672,19 +686,107 @@ export default function DeptAttendanceAnalyticsPage() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {(data?.lecturers ?? []).map(lec => (
-                      <tr key={lec.lecturerId} className="hover:bg-gray-50/50 transition-colors">
-                        <td className="px-6 py-3 font-medium text-gray-800 max-w-[160px] truncate">
-                          {lec.lecturerName}
+                      <Fragment key={lec.lecturerId}>
+                      <tr
+                        className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                        onClick={() => setExpandedLecturer(expandedLecturer === lec.lecturerId ? null : lec.lecturerId)}
+                      >
+                        <td className="px-6 py-3">
+                          <p className="font-medium text-gray-800">{lec.lecturerName}</p>
+                          <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                            {lec.catSessions > 0 && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                                <ClipboardList className="h-2.5 w-2.5" />{lec.catSessions} CAT
+                              </span>
+                            )}
+                            {lec.ratSessions > 0 && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700">
+                                <Layers className="h-2.5 w-2.5" />{lec.ratSessions} RAT
+                              </span>
+                            )}
+                            {lec.labSessions > 0 && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">
+                                <FlaskConical className="h-2.5 w-2.5" />{lec.labSessions} LAB
+                              </span>
+                            )}
+                            {lec.assignmentsPosted > 0 && (
+                              <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                <FileText className="h-2.5 w-2.5" />{lec.assignmentsPosted} Assign.
+                              </span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-right text-gray-700">{lec.totalSessions}</td>
                         <td className="px-4 py-3 text-right text-gray-500">{lec.unitCount}</td>
                         <td className="px-4 py-3 text-right text-gray-700">{lec.hoursPerWeek}h</td>
                         <td className="px-4 py-3 text-right">
-                          <span className={`font-semibold ${pctColor(lec.avgClassAttendance)}`}>
-                            {lec.avgClassAttendance > 0 ? `${lec.avgClassAttendance} avg` : "—"}
-                          </span>
+                          <div className="flex items-center justify-end gap-2">
+                            <span className={`font-semibold ${pctColor(lec.avgClassAttendance)}`}>
+                              {lec.avgClassAttendance > 0 ? `${lec.avgClassAttendance}%` : "—"}
+                            </span>
+                            <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform shrink-0 ${expandedLecturer === lec.lecturerId ? "rotate-180" : ""}`} />
+                          </div>
                         </td>
                       </tr>
+                      {expandedLecturer === lec.lecturerId && lec.units && lec.units.length > 0 && (
+                        <tr className="bg-gray-50/80">
+                          <td colSpan={5} className="px-6 py-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Per-Unit Breakdown</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                              {lec.units.map(u => (
+                                <div key={u.unitCode} className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-mono font-bold text-gray-800">{u.unitCode}</p>
+                                      <p className="text-xs text-gray-400 truncate">{u.unitTitle}</p>
+                                    </div>
+                                    <span className={`shrink-0 text-sm font-bold tabular-nums ${pctColor(u.avgClassAttendance)}`}>{u.avgClassAttendance}%</span>
+                                  </div>
+                                  <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                                    <div className={`h-full rounded-full ${barColor(u.avgClassAttendance)}`} style={{ width: `${u.avgClassAttendance}%` }} />
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {u.lecSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-50 border border-sky-200 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                                        <Calendar className="h-2.5 w-2.5" />{u.lecSessions} LEC
+                                      </span>
+                                    )}
+                                    {u.catSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-50 border border-violet-200 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                                        <ClipboardList className="h-2.5 w-2.5" />{u.catSessions} CAT
+                                      </span>
+                                    )}
+                                    {u.ratSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700">
+                                        <Layers className="h-2.5 w-2.5" />{u.ratSessions} RAT
+                                      </span>
+                                    )}
+                                    {u.labSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-teal-50 border border-teal-200 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">
+                                        <FlaskConical className="h-2.5 w-2.5" />{u.labSessions} LAB
+                                      </span>
+                                    )}
+                                    {u.gdSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                                        <Users className="h-2.5 w-2.5" />{u.gdSessions} GD
+                                      </span>
+                                    )}
+                                    {u.assignmentsPosted > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                        <FileText className="h-2.5 w-2.5" />{u.assignmentsPosted} Assign.
+                                      </span>
+                                    )}
+                                    {u.lecSessions === 0 && u.catSessions === 0 && u.ratSessions === 0 && u.labSessions === 0 && u.gdSessions === 0 && u.assignmentsPosted === 0 && (
+                                      <span className="text-[10px] text-gray-400">{u.totalSessions} session{u.totalSessions !== 1 ? "s" : ""}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
