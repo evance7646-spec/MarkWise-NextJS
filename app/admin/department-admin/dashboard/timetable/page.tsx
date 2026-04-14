@@ -403,8 +403,6 @@ export default function DeptTimetablePage() {
       (e.courseName ?? "").toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-  const todayName = DAYS[new Date().getDay() - 1] ?? "Monday";
-
   const daySummary = useMemo(() =>
     DAYS.map(d => ({ day: d, count: entries.filter(e => e.day === d).length })),
     [entries]);
