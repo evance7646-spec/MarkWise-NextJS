@@ -75,6 +75,7 @@ interface AnalyticsData {
     byYear: YearBreakdown[];
     atRisk: StudentAtRisk[];
     critical: StudentAtRisk[];
+    all?: StudentAtRisk[];
   };
 }
 
@@ -161,6 +162,7 @@ export default function DeptAttendancePage() {
   const [sortLec, setSortLec] = useState<keyof LecturerStat>("totalSessions");
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+  const [studentView, setStudentView] = useState<"at-risk" | "all">("at-risk");
 
   const load = useCallback(async () => {
     if (!admin?.institutionId) return;
@@ -204,6 +206,13 @@ export default function DeptAttendancePage() {
     );
   }, [data?.students.atRisk, search]);
 
+  const filteredAll = useMemo(() => {
+    const q = search.toLowerCase();
+    return (data?.students.all ?? []).filter(s =>
+      !q || s.studentName.toLowerCase().includes(q) || s.admissionNumber.toLowerCase().includes(q)
+    );
+  }, [data?.students.all, search]);
+
   const filteredUnits = useMemo(() => {
     const q = search.toLowerCase();
     return units.filter(u =>
@@ -211,9 +220,10 @@ export default function DeptAttendancePage() {
     ).sort((a, b) => a.rate - b.rate);
   }, [units, search]);
 
-  const overview      = data?.overview;
-  const yearBreakdown = data?.students.byYear ?? [];
-  const atRisk        = filteredAtRisk;
+  const overview         = data?.overview;
+  const yearBreakdown    = data?.students.byYear ?? [];
+  const atRisk           = filteredAtRisk;
+  const displayedStudents = studentView === "all" ? filteredAll : atRisk;
 
   function toggleSort(col: keyof LecturerStat) {
     if (sortLec === col) setSortAsc(v => !v);
@@ -574,7 +584,30 @@ export default function DeptAttendancePage() {
               </div>
             )}
 
-            {!loading && yearBreakdown.length > 0 && !search && (
+            {/* ── Student view toggle ────────────────────────────────── */}
+            <div className="flex gap-1 rounded-xl bg-gray-100 p-1 w-fit">
+              {([
+                { key: "at-risk" as const, label: "At Risk",      count: data?.overview.atRiskCount },
+                { key: "all"     as const, label: "All Students", count: data?.overview.activeStudents },
+              ]).map(v => (
+                <button
+                  key={v.key}
+                  onClick={() => { setStudentView(v.key); setExpandedStudent(null); }}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-all ${
+                    studentView === v.key ? "bg-white text-gray-900 shadow-sm" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  {v.label}
+                  {!loading && v.count !== undefined && (
+                    <span className={`rounded-full px-1.5 py-0.5 text-xs font-semibold tabular-nums ${
+                      studentView === v.key ? "bg-indigo-100 text-indigo-700" : "bg-gray-200 text-gray-500"
+                    }`}>{v.count}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {!loading && yearBreakdown.length > 0 && !search && studentView === "at-risk" && (
               <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
                 <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
                   <BarChart2 className="h-4 w-4 text-indigo-500" />
@@ -612,15 +645,25 @@ export default function DeptAttendancePage() {
             <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  {studentView === "all"
+                    ? <Users className="h-4 w-4 text-indigo-500" />
+                    : <AlertTriangle className="h-4 w-4 text-amber-500" />}
                   <h2 className="text-sm font-semibold text-gray-900">
-                    {search ? "Student Search Results" : "At-Risk Students"}
+                    {search ? "Search Results" : studentView === "all" ? "All Students" : "At-Risk Students"}
                   </h2>
                   {!loading && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{atRisk.length}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                      studentView === "all" ? "bg-indigo-100 text-indigo-700" : "bg-amber-100 text-amber-700"
+                    }`}>{displayedStudents.length}</span>
                   )}
                 </div>
-                {!search && <p className="text-xs text-gray-400">Below 75% attendance · click a row to expand</p>}
+                {!search && (
+                  <p className="text-xs text-gray-400">
+                    {studentView === "all"
+                      ? "All enrolled students · click a row to expand"
+                      : "Below 75% attendance · click a row to expand"}
+                  </p>
+                )}
               </div>
               <div className="divide-y divide-gray-100 max-h-[500px] overflow-y-auto">
                 {loading ? (
@@ -631,11 +674,11 @@ export default function DeptAttendancePage() {
                       <Skeleton className="h-6 w-16" />
                     </div>
                   ))
-                ) : atRisk.length === 0 ? (
+                ) : displayedStudents.length === 0 ? (
                   <div className="py-14">
-                    <EmptyState icon={CheckCircle2} text={search ? "No students match your search" : "All students are on track — excellent!"} />
+                    <EmptyState icon={CheckCircle2} text={search ? "No students match your search" : studentView === "all" ? "No enrolled students found" : "All students are on track — excellent!"} />
                   </div>
-                ) : atRisk.slice(0, 100).map((s, i) => (
+                ) : displayedStudents.slice(0, 300).map((s, i) => (
                   <motion.div key={s.studentId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.01 }}
                     className="cursor-pointer"
                     onClick={() => setExpandedStudent(expandedStudent === s.studentId ? null : s.studentId)}

@@ -491,6 +491,10 @@ export async function GET(req: NextRequest) {
       byYear:         yearBreakdown,
       atRisk:         atRisk.slice(0, 100).map(s => ({ ...s, perCourseAttendance: s.perCourseAttendance })),
       critical:       critical.slice(0, 50).map(s => ({ ...s, perCourseAttendance: s.perCourseAttendance })),
+      all:            activeStudents
+        .sort((a, b) => a.overallAttendance - b.overallAttendance)
+        .slice(0, 300)
+        .map(s => ({ ...s, perCourseAttendance: s.perCourseAttendance })),
     },
     methods,
     methodByDept,
