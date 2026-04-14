@@ -545,6 +545,72 @@ export default function DeptAttendanceAnalyticsPage() {
             )}
           </div>
 
+          {/* Best & Worst Units */}
+          {!loading && (() => {
+            const eligible = [...(data?.units ?? [])].filter(u => !u.lowActivity && u.enrolled >= 3 && u.sessionsHeld >= 2);
+            if (eligible.length === 0) return null;
+            // API returns ascending — worst first, slice best from end
+            const worst = eligible.slice(0, Math.min(3, eligible.length));
+            const best  = [...eligible].reverse().slice(0, Math.min(3, eligible.length));
+            const UnitPill = ({ u, variant }: { u: typeof eligible[0]; variant: "worst" | "best" }) => (
+              <div className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                variant === "worst"
+                  ? "border-rose-100 bg-white"
+                  : "border-emerald-100 bg-white"
+              }`}>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-mono font-bold text-gray-800">{u.unitCode}</span>
+                    {u.atRiskPct > 40 && variant === "worst" && (
+                      <span className="text-[10px] rounded-full bg-rose-100 text-rose-600 px-1.5 py-0.5 font-medium">
+                        {u.atRiskCount} at-risk
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 truncate">{u.unitTitle}</p>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${variant === "worst"
+                          ? u.avgAttendance >= 40 ? "bg-amber-400" : "bg-rose-500"
+                          : "bg-emerald-500"}`}
+                        style={{ width: `${u.avgAttendance}%` }}
+                      />
+                    </div>
+                    <span className={`text-xs font-bold shrink-0 tabular-nums ${pctColor(u.avgAttendance)}`}>
+                      {u.avgAttendance}%
+                    </span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-0.5">{u.enrolled} enrolled · {u.sessionsHeld} sessions</p>
+                </div>
+              </div>
+            );
+            return (
+              <div className="md:col-span-2 grid sm:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/60 p-5">
+                  <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <TrendingDown className="h-4 w-4 text-rose-500" />
+                    Worst Performing Units
+                    <span className="ml-auto text-[10px] text-gray-400 font-normal">by avg student attendance</span>
+                  </h2>
+                  <div className="space-y-2">
+                    {worst.map(u => <UnitPill key={u.unitId} u={u} variant="worst" />)}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
+                  <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-emerald-500" />
+                    Best Performing Units
+                    <span className="ml-auto text-[10px] text-gray-400 font-normal">by avg student attendance</span>
+                  </h2>
+                  <div className="space-y-2">
+                    {best.map(u => <UnitPill key={u.unitId} u={u} variant="best" />)}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Risk alert banner */}
           {!loading && (ov?.atRiskCount ?? 0) > 0 && (
             <div className="md:col-span-2 bg-amber-50 border border-amber-200 rounded-2xl p-5">
