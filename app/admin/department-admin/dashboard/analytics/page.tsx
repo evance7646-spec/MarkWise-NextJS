@@ -6,7 +6,8 @@ import {
   CheckCircle2, AlertCircle, RefreshCw, TrendingDown,
   Shield, UserX, BookOpen, TrendingUp, Calendar, X,
   ChevronRight, User, Search, Loader2, ChevronDown,
-  FileText, ClipboardList, Layers, FlaskConical,
+  FileText, ClipboardList, Layers, FlaskConical, Cpu,
+  ArrowUpRight, ArrowDownRight, Minus,
 } from "lucide-react";
 import { Fragment } from "react";
 import { useDepartmentAdmin } from "../../context";
@@ -53,12 +54,31 @@ interface UnitStat {
 interface DistBucket { range: string; count: number; }
 interface WeeklyPoint { week: string; sessions: number; avgPresent: number; }
 interface DowPoint    { day: string; sessions: number; avgAttendancePct: number | null; }
+
+interface CourseYearBreakdown {
+  year: number; totalStudents: number; avgAttendance: number;
+  atRiskCount: number; atRiskPct: number;
+}
+interface CourseTopAtRisk {
+  studentId: string; studentName: string; admissionNumber: string;
+  year: number; overallAttendance: number; riskLevel: string;
+}
+interface CourseStat {
+  courseId: string; courseCode: string; courseName: string;
+  totalStudents: number; activeStudents: number; avgAttendance: number;
+  atRiskCount: number; criticalCount: number; atRiskPct: number;
+  velocityDelta: number;
+  yearBreakdown: CourseYearBreakdown[];
+  topAtRisk: CourseTopAtRisk[];
+}
+
 interface AnalyticsData {
   overview: Overview;
   lecturers: LecturerStat[];
   students: {
     byDepartment: { departmentId: string; name: string; totalStudents: number; activeStudents: number; avgAttendance: number; atRiskCount: number; atRiskPct: number; }[];
     byYear: YearBreakdown[];
+    byCourse?: CourseStat[];
     atRisk: AtRiskStudent[];
     critical: AtRiskStudent[];
   };
@@ -136,7 +156,7 @@ function KpiCard({
   );
 }
 
-type Tab = "overview" | "lecturers" | "students" | "units" | "trends";
+type Tab = "overview" | "lecturers" | "students" | "units" | "courses" | "trends";
 
 interface SearchResult { id: string; name: string; admissionNumber: string; year: number; }
 
@@ -360,6 +380,7 @@ export default function DeptAttendanceAnalyticsPage() {
   const [selectedStudent, setSelectedStudent] = useState<AtRiskStudent | null>(null);
   const [searchDrawerStudent, setSearchDrawerStudent] = useState<AtRiskStudent | null>(null);
   const [expandedLecturer, setExpandedLecturer] = useState<string | null>(null);
+  const [expandedCourse, setExpandedCourse] = useState<string | null>(null);
   const activeDrawerStudent = searchDrawerStudent ?? selectedStudent;
 
   const fetchData = useCallback(async () => {
@@ -462,7 +483,7 @@ export default function DeptAttendanceAnalyticsPage() {
 
       {/* ── Tabs ───────────────────────────────────────────────────────── */}
       <div className="flex flex-wrap gap-1 bg-gray-100 rounded-xl p-1 w-fit">
-        {(["overview", "lecturers", "students", "units", "trends"] as Tab[]).map(t => (
+        {(["overview", "lecturers", "students", "units", "courses", "trends"] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -1057,6 +1078,231 @@ export default function DeptAttendanceAnalyticsPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════
+          Tab: Courses
+      ══════════════════════════════════════════════════════════════════ */}
+      {tab === "courses" && (
+        <div className="space-y-6">
+
+          {/* Course KPI strip */}
+          {!loading && data && (() => {
+            const courses = data.students.byCourse ?? [];
+            const totalCourses  = courses.length;
+            const avgAtt        = courses.length > 0
+              ? Math.round(courses.reduce((s, c) => s + c.avgAttendance, 0) / courses.length)
+              : 0;
+            const atRiskCourses = courses.filter(c => c.avgAttendance < 60).length;
+            const totalStudents = courses.reduce((s, c) => s + c.activeStudents, 0);
+            return (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {[
+                  { label: "Courses",          value: totalCourses,  icon: BookOpen,      color: "bg-indigo-100 text-indigo-600" },
+                  { label: "Students (active)", value: totalStudents,  icon: Users,         color: "bg-sky-100 text-sky-600" },
+                  { label: "Dept Avg Att.",     value: `${avgAtt}%`,  icon: Activity,      color: "bg-emerald-100 text-emerald-600" },
+                  { label: "Courses at-risk",   value: atRiskCourses, icon: AlertTriangle, color: "bg-amber-100 text-amber-600" },
+                ].map(c => (
+                  <div key={c.label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex items-center gap-3">
+                    <div className={`h-10 w-10 rounded-xl flex items-center justify-center shrink-0 ${c.color}`}>
+                      <c.icon className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">{c.label}</p>
+                      <p className="text-2xl font-bold text-gray-800 leading-tight mt-0.5">{c.value}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+
+          {loading && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[...Array(4)].map((_, i) => (
+                <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-2">
+                  <div className="h-5 w-24 rounded bg-gray-100 animate-pulse" />
+                  <div className="h-8 w-16 rounded bg-gray-100 animate-pulse" />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Course comparison bar chart */}
+          {!loading && (data?.students.byCourse ?? []).length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-sm font-semibold text-gray-700 mb-5 flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-indigo-400" />
+                Course Attendance Comparison
+              </h2>
+              <div className="space-y-3">
+                {[...(data?.students.byCourse ?? [])]
+                  .sort((a, b) => b.avgAttendance - a.avgAttendance)
+                  .map(c => (
+                    <div key={c.courseId} className="flex items-center gap-3">
+                      <div className="w-36 shrink-0 text-right">
+                        <p className="text-xs font-semibold text-gray-700 truncate">{c.courseCode}</p>
+                        <p className="text-[10px] text-gray-400 truncate">{c.activeStudents} students</p>
+                      </div>
+                      <Bar pct={c.avgAttendance} color={barColor(c.avgAttendance)} />
+                      <div className="w-12 shrink-0 text-right">
+                        <span className={`text-sm font-bold ${pctColor(c.avgAttendance)}`}>{c.avgAttendance}%</span>
+                      </div>
+                      {c.atRiskCount > 0 && (
+                        <span className="shrink-0 text-xs text-rose-600 font-medium">{c.atRiskCount} at-risk</span>
+                      )}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Per-course expandable cards */}
+          {loading ? (
+            <div className="space-y-3">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-24 rounded-2xl bg-gray-100 animate-pulse" />
+              ))}
+            </div>
+          ) : (data?.students.byCourse ?? []).length === 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 text-center">
+              <BookOpen className="h-8 w-8 text-gray-200 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">No course data available for this period.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(data?.students.byCourse ?? []).map(course => (
+                <div key={course.courseId} className={`bg-white rounded-2xl border shadow-sm overflow-hidden ${
+                  course.avgAttendance < 40 ? "border-rose-200" :
+                  course.avgAttendance < 60 ? "border-amber-200" :
+                  course.avgAttendance < 75 ? "border-yellow-200" :
+                  "border-gray-100"
+                }`}>
+                  {/* Course header row */}
+                  <button
+                    className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-50/50 transition-colors text-left"
+                    onClick={() => setExpandedCourse(expandedCourse === course.courseId ? null : course.courseId)}
+                  >
+                    {/* Course identity */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-gray-800">{course.courseCode}</span>
+                        <span className="text-sm text-gray-500">—</span>
+                        <span className="text-sm text-gray-700 truncate">{course.courseName}</span>
+                      </div>
+                      <div className="flex items-center gap-3 mt-1 flex-wrap">
+                        <span className="text-xs text-gray-400">{course.activeStudents} active · {course.totalStudents} total</span>
+                        {course.atRiskCount > 0 && (
+                          <span className="text-xs text-amber-600 font-medium">{course.atRiskCount} at-risk</span>
+                        )}
+                        {course.criticalCount > 0 && (
+                          <span className="text-xs text-rose-600 font-medium">{course.criticalCount} critical</span>
+                        )}
+                        {course.velocityDelta !== 0 && (
+                          <span className={`inline-flex items-center gap-0.5 text-xs font-medium ${course.velocityDelta > 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                            {course.velocityDelta > 0
+                              ? <ArrowUpRight className="h-3 w-3" />
+                              : <ArrowDownRight className="h-3 w-3" />}
+                            {Math.abs(course.velocityDelta)}pp trend
+                          </span>
+                        )}
+                        {course.velocityDelta === 0 && (
+                          <span className="inline-flex items-center gap-0.5 text-xs text-gray-400">
+                            <Minus className="h-3 w-3" /> stable
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Attendance bar */}
+                    <div className="hidden sm:flex items-center gap-2 w-40 shrink-0">
+                      <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                        <div className={`h-full rounded-full ${barColor(course.avgAttendance)}`} style={{ width: `${course.avgAttendance}%` }} />
+                      </div>
+                      <span className={`text-sm font-bold tabular-nums shrink-0 ${pctColor(course.avgAttendance)}`}>{course.avgAttendance}%</span>
+                    </div>
+
+                    <ChevronDown className={`h-4 w-4 text-gray-400 shrink-0 transition-transform ${expandedCourse === course.courseId ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {/* Expanded details */}
+                  {expandedCourse === course.courseId && (
+                    <div className="border-t border-gray-100 px-6 py-5 space-y-5 bg-gray-50/60">
+
+                      {/* Mobile attendance bar */}
+                      <div className="sm:hidden flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-gray-100 overflow-hidden">
+                          <div className={`h-full rounded-full ${barColor(course.avgAttendance)}`} style={{ width: `${course.avgAttendance}%` }} />
+                        </div>
+                        <span className={`text-sm font-bold tabular-nums shrink-0 ${pctColor(course.avgAttendance)}`}>{course.avgAttendance}%</span>
+                      </div>
+
+                      {/* Risk cohort pills */}
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { label: "Active Students",  value: course.activeStudents,  color: "bg-indigo-100 text-indigo-700" },
+                          { label: "At-Risk (<60%)",   value: course.atRiskCount,     color: "bg-amber-100 text-amber-700"   },
+                          { label: "Critical (<40%)",  value: course.criticalCount,   color: "bg-rose-100 text-rose-700"     },
+                          { label: "At-Risk %",        value: `${course.atRiskPct}%`, color: course.atRiskPct > 20 ? "bg-rose-50 text-rose-600" : "bg-gray-100 text-gray-600" },
+                        ].map(p => (
+                          <div key={p.label} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${p.color}`}>
+                            <span className="font-bold">{p.value}</span>
+                            <span className="opacity-70">{p.label}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Year breakdown within course */}
+                      {course.yearBreakdown.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Attendance by Year</p>
+                          <div className="space-y-2">
+                            {course.yearBreakdown.map(yr => (
+                              <div key={yr.year} className="flex items-center gap-3">
+                                <div className="w-16 text-xs text-gray-500 font-medium shrink-0">Year {yr.year}</div>
+                                <Bar pct={yr.avgAttendance} color={barColor(yr.avgAttendance)} />
+                                <div className="w-28 text-xs text-right shrink-0">
+                                  <span className={`font-semibold ${pctColor(yr.avgAttendance)}`}>{yr.avgAttendance}%</span>
+                                  <span className="text-gray-400 ml-1">({yr.totalStudents} students)</span>
+                                </div>
+                                {yr.atRiskCount > 0 && (
+                                  <span className="text-xs text-rose-500 shrink-0">{yr.atRiskCount} at-risk</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Top at-risk students in this course */}
+                      {course.topAtRisk.length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                            Top At-Risk Students
+                          </p>
+                          <div className="grid sm:grid-cols-2 gap-2">
+                            {course.topAtRisk.map(s => (
+                              <div key={s.studentId} className="flex items-center gap-3 rounded-xl border border-rose-100 bg-white px-3 py-2">
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium text-gray-800 truncate">{s.studentName}</p>
+                                  <p className="text-xs text-gray-400">{s.admissionNumber} · Year {s.year}</p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <span className={`text-sm font-bold tabular-nums ${pctColor(s.overallAttendance)}`}>{s.overallAttendance}%</span>
+                                  <p className={`text-[10px] font-medium mt-0.5 ${riskBadge(s.riskLevel)}`}>{s.riskLevel.toUpperCase()}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

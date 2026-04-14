@@ -395,6 +395,110 @@ export async function GET(req: NextRequest) {
     }))
     .sort((a, b) => a.year - b.year);
 
+  // ── By Course ──────────────────────────────────────────────────────────
+  // Map courseId → course metadata from raw students list
+  const courseMetaById = new Map<string, { id: string; code: string; name: string }>();
+  for (const s of students) {
+    if (s.courseId && s.course && !courseMetaById.has(s.courseId)) {
+      courseMetaById.set(s.courseId, { id: s.courseId, code: s.course.code, name: s.course.name });
+    }
+  }
+
+  // Map studentId → courseId
+  const courseIdByStudent = new Map<string, string>(
+    students.filter(s => s.courseId).map(s => [s.id, s.courseId])
+  );
+
+  const studentsByCourse = new Map<string, typeof studentStats>();
+  for (const s of studentStats) {
+    const courseId = courseIdByStudent.get(s.studentId) ?? "unknown";
+    const list = studentsByCourse.get(courseId) ?? [];
+    list.push(s);
+    studentsByCourse.set(courseId, list);
+  }
+
+  const courseBreakdown = Array.from(studentsByCourse.entries()).map(([courseId, courseStudents]) => {
+    const meta   = courseMetaById.get(courseId);
+    const active = courseStudents.filter(s => s.enrolledUnitCount > 0);
+
+    const totalStudents   = courseStudents.length;
+    const activeStudents  = active.length;
+    const avgAttendance   = active.length > 0
+      ? Math.round(active.reduce((s, d) => s + d.overallAttendance, 0) / active.length)
+      : 0;
+    const atRiskCount     = active.filter(s => s.overallAttendance < 60).length;
+    const criticalCount   = active.filter(s => s.overallAttendance < 40).length;
+    const atRiskPct       = active.length > 0 ? Math.round((atRiskCount / active.length) * 100) : 0;
+
+    // Year breakdown within this course
+    const byYearCourse: Record<number, { total: number; sumPct: number; atRisk: number }> = {};
+    for (const s of active) {
+      byYearCourse[s.year] = byYearCourse[s.year] ?? { total: 0, sumPct: 0, atRisk: 0 };
+      byYearCourse[s.year].total++;
+      byYearCourse[s.year].sumPct += s.overallAttendance;
+      if (s.overallAttendance < 60) byYearCourse[s.year].atRisk++;
+    }
+    const yearBreakdownCourse = Object.entries(byYearCourse)
+      .map(([year, v]) => ({
+        year: Number(year),
+        totalStudents: v.total,
+        avgAttendance: Math.round(v.sumPct / v.total),
+        atRiskCount: v.atRisk,
+        atRiskPct: Math.round((v.atRisk / v.total) * 100),
+      }))
+      .sort((a, b) => a.year - b.year);
+
+    // Top at-risk students in this course (worst first)
+    const topAtRisk = active
+      .filter(s => s.overallAttendance < 60)
+      .sort((a, b) => a.overallAttendance - b.overallAttendance)
+      .slice(0, 10)
+      .map(s => ({
+        studentId:        s.studentId,
+        studentName:      s.studentName,
+        admissionNumber:  s.admissionNumber,
+        year:             s.year,
+        overallAttendance: s.overallAttendance,
+        riskLevel:        s.riskLevel,
+      }));
+
+    // Attendance velocity: compare first-half vs second-half of lookback per course student
+    let firstHalfSum = 0; let firstHalfCount = 0;
+    let secondHalfSum = 0; let secondHalfCount = 0;
+    for (const s of active) {
+      const firstHalfSess = conductedSessionsReal.filter(cs =>
+        (snapshotByStudent.get(s.studentId) ?? []).includes(normalizeUnitCode(cs.unitCode)) &&
+        new Date(cs.sessionStart).getTime() < since.getTime() + (days / 2) * 86400000
+      ).length;
+      const secondHalfSess = conductedSessionsReal.filter(cs =>
+        (snapshotByStudent.get(s.studentId) ?? []).includes(normalizeUnitCode(cs.unitCode)) &&
+        new Date(cs.sessionStart).getTime() >= since.getTime() + (days / 2) * 86400000
+      ).length;
+      const fhRate = firstHalfSess > 0 ? s.totalAttended / (s.totalSessions || 1) : null;
+      if (fhRate !== null) { firstHalfSum += fhRate * 100; firstHalfCount++; }
+      const shRate = secondHalfSess > 0 ? s.totalAttended / (s.totalSessions || 1) : null;
+      if (shRate !== null) { secondHalfSum += shRate * 100; secondHalfCount++; }
+    }
+    const courseTrend = firstHalfCount > 0 && secondHalfCount > 0
+      ? Math.round(secondHalfSum / secondHalfCount - firstHalfSum / firstHalfCount)
+      : 0;
+
+    return {
+      courseId:       courseId,
+      courseCode:     meta?.code ?? courseId,
+      courseName:     meta?.name ?? "Unknown Course",
+      totalStudents,
+      activeStudents,
+      avgAttendance,
+      atRiskCount,
+      criticalCount,
+      atRiskPct,
+      velocityDelta:  courseTrend,
+      yearBreakdown:  yearBreakdownCourse,
+      topAtRisk,
+    };
+  }).sort((a, b) => b.activeStudents - a.activeStudents);
+
   // ─────────────────────────────────────────────────────────────────────────
   // C. METHOD BREAKDOWN
   // ─────────────────────────────────────────────────────────────────────────
@@ -831,6 +935,7 @@ export async function GET(req: NextRequest) {
     students: {
       byDepartment:   deptBreakdown,
       byYear:         yearBreakdown,
+      byCourse:       courseBreakdown,
       atRisk:         atRisk.slice(0, 100).map(s => ({ ...s, perCourseAttendance: s.perCourseAttendance })),
       critical:       critical.slice(0, 50).map(s => ({ ...s, perCourseAttendance: s.perCourseAttendance })),
       all:            activeStudents
