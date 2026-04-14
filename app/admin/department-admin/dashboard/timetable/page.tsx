@@ -832,18 +832,23 @@ export default function DeptTimetablePage() {
       {/* ── New Entry Modal ─────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showModal && (
-          <motion.div
-            key="modal-backdrop"
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
-          >
+          <>
+            {/* Backdrop — fades independently so its opacity doesn't compound with the card */}
+            <motion.div
+              key="modal-backdrop"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+              onClick={() => setShowModal(false)}
+            />
+            {/* Card — centred using a non-animated wrapper; only scale/translate animate */}
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
             <motion.div
               key="modal"
               initial={{ opacity: 0, scale: 0.95, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 8 }}
               transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white shadow-2xl"
+              className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white text-gray-900 shadow-2xl pointer-events-auto"
             >
               {/* Modal header */}
               <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
@@ -1054,7 +1059,8 @@ export default function DeptTimetablePage() {
                 )}
               </div>
             </motion.div>
-          </motion.div>
+            </div>
+          </>
         )}
       </AnimatePresence>
 

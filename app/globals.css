@@ -78,13 +78,17 @@ video {
 }
 
 /* ==================== BUTTON STYLES (FIXED) ==================== */
-/* Reset button styles - THIS SHOULD BE FIRST */
-button {
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  background: none;
-  font-family: inherit;
+/* Reset button styles inside @layer base so Tailwind utility classes (bg-*, border-*, etc.)
+   still take precedence. In Tailwind v4, unlayered CSS beats all utilities — wrapping
+   this in @layer base keeps the reset behaviour while letting utilities override it. */
+@layer base {
+  button {
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    background: none;
+    font-family: inherit;
+  }
 }
 
 /* Primary button class - use this instead of styling button directly */
