@@ -109,10 +109,15 @@ export default function DeptLecturersPage() {
 
       <AnimatePresence>
         {showAdd && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+          <>
+            <motion.div key="lecturer-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+              onClick={() => setShowAdd(false)}
+            />
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+            <motion.div key="lecturer-card" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              className="w-full max-w-md rounded-2xl border border-gray-200 bg-white text-gray-900 p-6 shadow-2xl pointer-events-auto">
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-base font-bold text-gray-800">Add Lecturer</h2>
                 <button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-700"><X className="h-5 w-5" /></button>
@@ -132,7 +137,8 @@ export default function DeptLecturersPage() {
                 </button>
               </div>
             </motion.div>
-          </motion.div>
+            </div>
+          </>
         )}
       </AnimatePresence>
     </div>

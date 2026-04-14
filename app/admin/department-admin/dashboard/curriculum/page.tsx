@@ -266,8 +266,8 @@ export default function DeptCurriculumPage() {
       {typeof window !== "undefined" && modal && createPortal(
         <>
           {modal.type === "add-program" && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4">
-              <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm rounded-2xl bg-white text-gray-900 p-6 shadow-2xl">
                 <h3 className="text-base font-bold text-gray-800 mb-4">Add Program</h3>
                 <div className="space-y-3">
                   <input value={programName} onChange={e => setProgramName(e.target.value)} placeholder="Program name" className={inp} />
@@ -284,8 +284,8 @@ export default function DeptCurriculumPage() {
           )}
 
           {modal.type === "add-unit" && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4">
-              <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm rounded-2xl bg-white text-gray-900 p-6 shadow-2xl">
                 <h3 className="text-base font-bold text-gray-800 mb-4">Add Unit</h3>
                 <div className="space-y-3">
                   <input value={unitCode} onChange={e => setUnitCode(e.target.value)} placeholder="Unit code (e.g. CS401)" className={inp} />
@@ -301,8 +301,8 @@ export default function DeptCurriculumPage() {
           )}
 
           {modal.type === "bulk-units" && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4">
-              <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-lg rounded-2xl bg-white text-gray-900 p-6 shadow-2xl">
                 <h3 className="text-base font-bold text-gray-800 mb-1">Bulk Import Units</h3>
                 <p className="text-xs text-gray-400 mb-3">
                   One unit per line: <span className="font-mono text-gray-500">UnitCode, Unit Title</span>
@@ -331,8 +331,8 @@ export default function DeptCurriculumPage() {
           )}
 
           {modal.type === "delete-program" && (
-            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4">
-              <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="w-full max-w-sm rounded-2xl bg-white text-gray-900 p-6 shadow-2xl">
                 <h3 className="text-base font-bold text-gray-800 mb-2">Delete Program?</h3>
                 <p className="text-sm text-gray-500 mb-4">This will remove the program and all its units from the curriculum.</p>
                 <div className="flex gap-2">
