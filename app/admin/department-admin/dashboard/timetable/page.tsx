@@ -615,7 +615,7 @@ export default function DeptTimetablePage() {
                         required
                         value={form.courseId}
                         onChange={e => handleChange("courseId", e.target.value)}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
                       >
                         <option value="">Select course…</option>
                         {courses.map(c => (
@@ -634,7 +634,7 @@ export default function DeptTimetablePage() {
                         value={form.yearId}
                         onChange={e => handleChange("yearId", e.target.value)}
                         disabled={!form.courseId || yearsForCourse.length === 0}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <option value="">
                           {!form.courseId
@@ -659,7 +659,7 @@ export default function DeptTimetablePage() {
                         value={form.semesterId}
                         onChange={e => handleChange("semesterId", e.target.value)}
                         disabled={!form.yearId || semestersForYear.length === 0}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <option value="">
                           {!form.yearId
@@ -686,7 +686,7 @@ export default function DeptTimetablePage() {
                     value={form.unitId}
                     onChange={e => handleChange("unitId", e.target.value)}
                     disabled={!form.semesterId || filteredUnits.length === 0}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <option value="">
                       {!form.semesterId
@@ -711,7 +711,7 @@ export default function DeptTimetablePage() {
                     value={form.lecturerId}
                     onChange={e => handleChange("lecturerId", e.target.value)}
                     disabled={!form.unitId}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <option value="">
                       {!form.unitId ? "Select unit first" : "Select lecturer…"}
@@ -739,7 +739,7 @@ export default function DeptTimetablePage() {
                         value={form.day}
                         onChange={e => handleChange("day", e.target.value)}
                         disabled={!form.lecturerId}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         {DAYS.map(d => (
                           <option key={d} value={d}>{d}</option>
@@ -758,7 +758,7 @@ export default function DeptTimetablePage() {
                         value={form.startTime}
                         onChange={e => handleChange("startTime", e.target.value)}
                         disabled={!form.lecturerId}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
                       />
                     </div>
 
@@ -773,7 +773,7 @@ export default function DeptTimetablePage() {
                         value={form.endTime}
                         onChange={e => handleChange("endTime", e.target.value)}
                         disabled={!form.lecturerId}
-                        className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
                       />
                     </div>
                   </div>
@@ -806,7 +806,7 @@ export default function DeptTimetablePage() {
                     value={form.roomId}
                     onChange={e => handleChange("roomId", e.target.value)}
                     disabled={!timeSlotReady || roomsLoading || availableRooms.length === 0}
-                    className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <option value="">
                       {!timeSlotReady
