@@ -10,7 +10,6 @@
  */
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { emitToRoom } from "@/lib/emitSignal";
 
 export const runtime = "nodejs";
 
@@ -62,21 +61,7 @@ export async function GET(req: NextRequest) {
         },
       });
 
-      const unitCode = t.unit?.code ?? "";
-      if (unitCode) {
-        emitToRoom(`unit:${unitCode.trim().toUpperCase()}`, "timetable:status-changed", {
-          entryId: t.id,
-          unitCode,
-          day: t.originalDay!,
-          startTime: t.originalStartTime!,
-          endTime: t.originalEndTime!,
-          status: "Pending",
-          reason: null,
-          rescheduledTo: null,
-          reschedulePermanent: null,
-          updatedAt: new Date().toISOString(),
-        });
-      }
+
     }
 
     console.log(`[cron/revert-timetable] Reverted ${targets.length} temporary reschedule(s).`);

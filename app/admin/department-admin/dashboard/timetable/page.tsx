@@ -414,6 +414,8 @@ export default function DeptTimetablePage() {
     uniqueUnits: new Set(entries.map(e => e.unitCode)).size,
   }), [entries]);
 
+  const timeSlotReady = form.day && form.startTime && form.endTime && form.startTime < form.endTime;
+
   return (
     <div className="space-y-6">
 

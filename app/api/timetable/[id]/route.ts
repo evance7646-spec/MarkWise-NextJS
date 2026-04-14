@@ -55,7 +55,6 @@ export async function PATCH(
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAdminOrLecturerScope } from "@/lib/adminLecturerAuth";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
-import { emitToRoom } from "@/lib/emitSignal";
 import { cancelTimetableBookings, createTimetableBookings, createNextOccurrenceBooking } from "@/lib/timetableBookingSync";
 import { publishTimetableUpdatedEvent } from "@/lib/timetableEvents";
 import { normalizeUnitCode } from "@/lib/unitCode";
@@ -371,22 +370,7 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       console.error("[timetable/PUT] version bump failed:", err)
     );
 
-    // Emit real-time socket event (fire-and-forget)
     const unitCode = normalizeUnitCode(updated.unit?.code ?? "");
-    if (unitCode) {
-      emitToRoom(`unit:${unitCode}`, "timetable:status-changed", {
-        entryId: updated.id,
-        unitCode,
-        day: updated.day,
-        startTime: updated.startTime,
-        endTime: updated.endTime,
-        status: updated.status,
-        reason: updated.reason ?? null,
-        rescheduledTo: updated.rescheduledTo ?? null,
-        reschedulePermanent: updated.reschedulePermanent ?? null,
-        updatedAt: updated.updatedAt.toISOString(),
-      });
-    }
 
     // Fan-out notifications to enrolled students (fire-and-forget)
     let notifTitle = "";
