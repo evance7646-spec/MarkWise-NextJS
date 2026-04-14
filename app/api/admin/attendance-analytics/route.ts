@@ -101,12 +101,47 @@ export async function GET(req: NextRequest) {
   const unitById   = new Map(units.map(u => [u.id, u]));
   const deptById   = new Map(departments.map(d => [d.id, d]));
 
+  // ── Assignment counts per lecturer per unit ───────────────────────────────
+  // Scoped to department units so counts are department-relevant
+  const assignments = await prisma.assignment.findMany({
+    where: {
+      lecturerId: { in: lecturers.map(l => l.id) },
+      unitId:     { in: units.map(u => u.id) },
+    },
+    select: { lecturerId: true, unitId: true },
+  });
+  // key: "lecturerId::normalizedUnitCode"
+  const assignmentsByLecUnit = new Map<string, number>();
+  for (const a of assignments) {
+    const unit = unitById.get(a.unitId);
+    if (!unit) continue;
+    const key = `${a.lecturerId}::${normalizeUnitCode(unit.code)}`;
+    assignmentsByLecUnit.set(key, (assignmentsByLecUnit.get(key) ?? 0) + 1);
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // A. LECTURER ANALYSIS
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Build enrollment counts per unit code (from StudentEnrollmentSnapshot as proxy)
-  // For attendance rate: (records for that lecturer's sessions) / (sessions × avg enrolled)
+  // Fetch enrollment snapshots here (needed for enrolled-per-unit denominator
+  // used in avgClassAttendance, and reused in section B).
+  const snapshots = await prisma.studentEnrollmentSnapshot.findMany({
+    where: { studentId: { in: students.map(s => s.id) } },
+    select: { studentId: true, unitCodes: true },
+  });
+  const snapshotByStudent = new Map(snapshots.map(s => [s.studentId, s.unitCodes.map(c => normalizeUnitCode(c))]));
+
+  // enrolled student count per normalised unit code
+  const enrolledPerCode = new Map<string, number>();
+  for (const snap of snapshots) {
+    for (const raw of snap.unitCodes) {
+      const code = normalizeUnitCode(raw);
+      if (unitByCode.has(code)) {
+        enrolledPerCode.set(code, (enrolledPerCode.get(code) ?? 0) + 1);
+      }
+    }
+  }
+
   // We group conductedSessions by lecturerId
   const sessionsByLecturer = new Map<string, typeof conductedSessionsReal>();
   for (const s of conductedSessionsReal) {
@@ -165,16 +200,67 @@ export async function GET(req: NextRequest) {
     const qrAdoptionRate   = totalRecords > 0 ? Math.round((qrCount   / totalRecords) * 100) : 0;
     const pinAdoptionRate  = totalRecords > 0 ? Math.round((pinCount  / totalRecords) * 100) : 0;
 
-    // Average class attendance rate across conducted sessions
-    let totalPresent = 0;
-    let sessionsWithData = 0;
+    // Average class attendance rate across conducted sessions:
+    // For each session compute (studentsPresent / studentsEnrolledInUnit) * 100,
+    // then average those percentages. This gives a true attendance rate, not a raw count.
+    let sumSessionPct = 0;
+    let sessionsCounted = 0;
     for (const cs of sessions) {
-      const present = attendancePerConductedSession.get(cs.id) ?? 0;
-      if (present > 0) { totalPresent += present; sessionsWithData++; }
+      const present  = attendancePerConductedSession.get(cs.id) ?? 0;
+      const code     = normalizeUnitCode(cs.unitCode);
+      const enrolled = enrolledPerCode.get(code) ?? 0;
+      if (enrolled > 0) {
+        sumSessionPct += Math.min(100, Math.round((present / enrolled) * 100));
+        sessionsCounted++;
+      }
     }
-    const avgClassAttendance = sessionsWithData > 0
-      ? Math.round(totalPresent / sessionsWithData)
+    const avgClassAttendance = sessionsCounted > 0
+      ? Math.round(sumSessionPct / sessionsCounted)
       : 0;
+
+    // Per-unit breakdown — session counts by lessonType + assignments posted
+    const sessionsByUnit = new Map<string, typeof sessions>();
+    for (const cs of sessions) {
+      const code = normalizeUnitCode(cs.unitCode);
+      const list = sessionsByUnit.get(code) ?? [];
+      list.push(cs);
+      sessionsByUnit.set(code, list);
+    }
+    const unitBreakdown = Array.from(sessionsByUnit.entries()).map(([code, unitSessions]) => {
+      const unit = unitByCode.get(code);
+      const counts: Record<string, number> = {};
+      for (const cs of unitSessions) {
+        const lt = (cs.lessonType ?? "LEC").toUpperCase();
+        counts[lt] = (counts[lt] ?? 0) + 1;
+      }
+      let sumUnitPct = 0; let unitCnt = 0;
+      for (const cs of unitSessions) {
+        const present  = attendancePerConductedSession.get(cs.id) ?? 0;
+        const enrolled = enrolledPerCode.get(code) ?? 0;
+        if (enrolled > 0) {
+          sumUnitPct += Math.min(100, Math.round((present / enrolled) * 100));
+          unitCnt++;
+        }
+      }
+      return {
+        unitCode:          unit?.code ?? code,
+        unitTitle:         unit?.title ?? code,
+        totalSessions:     unitSessions.length,
+        lecSessions:       counts["LEC"] ?? 0,
+        catSessions:       counts["CAT"] ?? 0,
+        ratSessions:       counts["RAT"] ?? 0,
+        labSessions:       counts["LAB"] ?? 0,
+        gdSessions:        counts["GD"]  ?? 0,
+        semSessions:       counts["SEM"] ?? 0,
+        assignmentsPosted: assignmentsByLecUnit.get(`${lec.id}::${code}`) ?? 0,
+        avgClassAttendance: unitCnt > 0 ? Math.round(sumUnitPct / unitCnt) : 0,
+      };
+    }).sort((a, b) => a.unitCode.localeCompare(b.unitCode));
+
+    const catSessions       = unitBreakdown.reduce((s, u) => s + u.catSessions, 0);
+    const ratSessions       = unitBreakdown.reduce((s, u) => s + u.ratSessions, 0);
+    const labSessions       = unitBreakdown.reduce((s, u) => s + u.labSessions, 0);
+    const assignmentsPosted = unitBreakdown.reduce((s, u) => s + u.assignmentsPosted, 0);
 
     // Dept
     const deptId = lec.timetables[0]?.departmentId ?? "";
@@ -193,6 +279,11 @@ export async function GET(req: NextRequest) {
       pinAdoptionRate,
       avgClassAttendance,
       totalRecordsCreated: totalRecords,
+      catSessions,
+      ratSessions,
+      labSessions,
+      assignmentsPosted,
+      units: unitBreakdown,
     };
   }).filter(l => l.totalSessions > 0 || l.totalRecordsCreated > 0)
     .sort((a, b) => b.totalSessions - a.totalSessions);
@@ -215,13 +306,8 @@ export async function GET(req: NextRequest) {
     recordsByStudentUnit.set(key, (recordsByStudentUnit.get(key) ?? 0) + 1);
   }
 
-  // Enrollment snapshot lookup
-  const snapshots = await prisma.studentEnrollmentSnapshot.findMany({
-    where: { studentId: { in: students.map(s => s.id) } },
-    select: { studentId: true, unitCodes: true },
-  });
-  const snapshotByStudent = new Map(snapshots.map(s => [s.studentId, s.unitCodes.map(c => normalizeUnitCode(c))]));
-
+  // Enrollment snapshot lookup — already fetched above in section A
+  // snapshotByStudent and snapshots are available
   const studentStats = students.map(student => {
     const enrolledCodes = snapshotByStudent.get(student.id) ?? [];
     // Only codes that belong to this scope's units

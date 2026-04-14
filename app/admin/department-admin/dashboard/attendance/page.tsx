@@ -1,11 +1,12 @@
 "use client";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, Fragment } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, GraduationCap, BookOpen, TrendingUp,
   AlertTriangle, CheckCircle2, Search, ChevronDown,
   BarChart2, Calendar, Clock,
   Activity, ShieldAlert, Target, Eye, RefreshCw,
+  FileText, ClipboardList, FlaskConical, Layers,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
@@ -25,6 +26,20 @@ interface Overview {
   lookbackDays: number;
 }
 
+interface LecturerUnitStat {
+  unitCode: string;
+  unitTitle: string;
+  totalSessions: number;
+  lecSessions: number;
+  catSessions: number;
+  ratSessions: number;
+  labSessions: number;
+  gdSessions: number;
+  semSessions: number;
+  assignmentsPosted: number;
+  avgClassAttendance: number;
+}
+
 interface LecturerStat {
   lecturerId: string;
   lecturerName: string;
@@ -34,6 +49,11 @@ interface LecturerStat {
   unitCount: number;
   avgClassAttendance: number;
   totalRecordsCreated: number;
+  catSessions: number;
+  ratSessions: number;
+  labSessions: number;
+  assignmentsPosted: number;
+  units?: LecturerUnitStat[];
 }
 
 interface StudentAtRisk {
@@ -162,6 +182,7 @@ export default function DeptAttendancePage() {
   const [sortLec, setSortLec] = useState<keyof LecturerStat>("totalSessions");
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+  const [expandedLecturer, setExpandedLecturer] = useState<string | null>(null);
   const [studentView, setStudentView] = useState<"at-risk" | "all">("at-risk");
 
   const load = useCallback(async () => {
@@ -528,17 +549,45 @@ export default function DeptAttendancePage() {
                     ) : filteredLecturers.length === 0 ? (
                       <tr><td colSpan={5} className="py-14"><EmptyState icon={GraduationCap} text="No lecturers match your search" /></td></tr>
                     ) : filteredLecturers.map((l, i) => (
-                      <motion.tr key={l.lecturerId} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
+                      <Fragment key={l.lecturerId}>
+                      <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: i * 0.02 }}
                         className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                       >
                         <td className="px-5 py-3.5">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold">
+                            <button
+                              onClick={() => setExpandedLecturer(expandedLecturer === l.lecturerId ? null : l.lecturerId)}
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-700 text-xs font-bold hover:bg-indigo-200 transition-colors"
+                            >
                               {l.lecturerName.charAt(0).toUpperCase()}
-                            </div>
+                            </button>
                             <div>
                               <p className="font-medium text-gray-900">{l.lecturerName}</p>
-                              <p className="text-xs text-gray-400">{l.totalRecordsCreated} records created</p>
+                              <div className="flex flex-wrap items-center gap-1 mt-0.5">
+                                {l.catSessions > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-100 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                                    <ClipboardList className="h-2.5 w-2.5" />{l.catSessions} CAT
+                                  </span>
+                                )}
+                                {l.ratSessions > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700">
+                                    <Layers className="h-2.5 w-2.5" />{l.ratSessions} RAT
+                                  </span>
+                                )}
+                                {l.labSessions > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">
+                                    <FlaskConical className="h-2.5 w-2.5" />{l.labSessions} LAB
+                                  </span>
+                                )}
+                                {l.assignmentsPosted > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                    <FileText className="h-2.5 w-2.5" />{l.assignmentsPosted} Assign.
+                                  </span>
+                                )}
+                                {l.catSessions === 0 && l.ratSessions === 0 && l.assignmentsPosted === 0 && (
+                                  <span className="text-[10px] text-gray-400">{l.totalRecordsCreated} records</span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </td>
@@ -553,8 +602,74 @@ export default function DeptAttendancePage() {
                             <Clock className="h-3 w-3 text-gray-400" />{l.hoursPerWeek}h
                           </div>
                         </td>
-                        <td className="px-5 py-3.5"><AttendanceBar rate={l.avgClassAttendance} /></td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1"><AttendanceBar rate={l.avgClassAttendance} /></div>
+                            <ChevronDown
+                              onClick={() => setExpandedLecturer(expandedLecturer === l.lecturerId ? null : l.lecturerId)}
+                              className={`h-4 w-4 text-gray-400 cursor-pointer shrink-0 transition-transform ${expandedLecturer === l.lecturerId ? "rotate-180" : ""}`}
+                            />
+                          </div>
+                        </td>
                       </motion.tr>
+                      {/* Per-unit breakdown row */}
+                      {expandedLecturer === l.lecturerId && l.units && l.units.length > 0 && (
+                        <tr key={`${l.lecturerId}-expand`} className="bg-gray-50/70">
+                          <td colSpan={5} className="px-5 py-4">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Per-Unit Breakdown</p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
+                              {l.units.map(u => (
+                                <div key={u.unitCode} className="rounded-xl border border-gray-200 bg-white p-3 space-y-2">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-mono font-bold text-gray-800 truncate">{u.unitCode}</p>
+                                      <p className="text-xs text-gray-500 truncate">{u.unitTitle}</p>
+                                    </div>
+                                    <span className={`shrink-0 text-sm font-bold tabular-nums ${attendanceText(u.avgClassAttendance)}`}>{u.avgClassAttendance}%</span>
+                                  </div>
+                                  <AttendanceBar rate={u.avgClassAttendance} />
+                                  <div className="flex flex-wrap gap-1 pt-1">
+                                    {u.lecSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-sky-50 border border-sky-200 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                                        <Calendar className="h-2.5 w-2.5" />{u.lecSessions} LEC
+                                      </span>
+                                    )}
+                                    {u.catSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-violet-50 border border-violet-200 px-1.5 py-0.5 text-[10px] font-semibold text-violet-700">
+                                        <ClipboardList className="h-2.5 w-2.5" />{u.catSessions} CAT
+                                      </span>
+                                    )}
+                                    {u.ratSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-cyan-50 border border-cyan-200 px-1.5 py-0.5 text-[10px] font-semibold text-cyan-700">
+                                        <Layers className="h-2.5 w-2.5" />{u.ratSessions} RAT
+                                      </span>
+                                    )}
+                                    {u.labSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-teal-50 border border-teal-200 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">
+                                        <FlaskConical className="h-2.5 w-2.5" />{u.labSessions} LAB
+                                      </span>
+                                    )}
+                                    {u.gdSessions > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                                        <Users className="h-2.5 w-2.5" />{u.gdSessions} GD
+                                      </span>
+                                    )}
+                                    {u.assignmentsPosted > 0 && (
+                                      <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 border border-amber-200 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
+                                        <FileText className="h-2.5 w-2.5" />{u.assignmentsPosted} Assign.
+                                      </span>
+                                    )}
+                                    {u.lecSessions === 0 && u.catSessions === 0 && u.ratSessions === 0 && u.labSessions === 0 && u.gdSessions === 0 && u.assignmentsPosted === 0 && (
+                                      <span className="text-[10px] text-gray-400">{u.totalSessions} session{u.totalSessions !== 1 ? "s" : ""}</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     ))}
                   </tbody>
                 </table>
