@@ -151,12 +151,14 @@ export async function GET(
 
       // Offline conducted sessions — normalization-tolerant $queryRaw so that
       // manual-mark sessions (stored with spaces) and BLE sessions (stored without)
-      // are both found. sessionStart returned for the response payload.
+      // are both found. Exclude lectureRoom = 'ONLINE': those sessions appear in
+      // onlineSessions (OnlineAttendanceSession) and are handled separately below.
       prisma.$queryRaw<{ id: string; sessionStart: Date; lectureRoom: string; lessonType: string | null }[]>(Prisma.sql`
         SELECT id, "sessionStart", "lectureRoom", "lessonType"
         FROM   "ConductedSession"
         WHERE  "lecturerId" = ${lecturerId}
           AND  UPPER(REPLACE("unitCode", ' ', '')) = ${unitCode}
+          AND  UPPER("lectureRoom") != 'ONLINE'
         ORDER BY "sessionStart" ASC
       `),
 
@@ -305,6 +307,7 @@ export async function GET(
       // Select DISTINCT (studentId, sessionId) — one row per student per session
       // regardless of how many attendance methods were used.
       // Uses cs.id as the canonical sessionId so it aligns with sessionObjects.
+      // Exclude lectureRoom = 'ONLINE' sessions — those are handled via onlineRecords.
       offlineSessions.length > 0
         ? prisma.$queryRaw<{ studentId: string; sessionId: string }[]>(Prisma.sql`
             SELECT DISTINCT oar."studentId", cs."id" AS "sessionId"
@@ -313,6 +316,7 @@ export async function GET(
               ON  UPPER(REPLACE(cs."unitCode", ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
               AND cs."sessionStart" = oar."sessionStart"
               AND cs."lecturerId"   = ${lecturerId}
+              AND UPPER(cs."lectureRoom") != 'ONLINE'
             WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) = ${unitCode}
           `)
         : Promise.resolve([] as { studentId: string; sessionId: string }[]),

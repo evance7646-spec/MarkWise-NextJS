@@ -161,6 +161,7 @@ export async function GET(
       // Offline sessions attended per student — COUNT(DISTINCT cs.id) to prevent JOIN
       // inflation when one OfflineAttendanceRecord matches multiple ConductedSession rows
       // (same sessionStart, different lectureRoom for the same unit).
+      // Exclude lectureRoom = 'ONLINE': those students are counted via onlineAttendanceRecord.
       prisma.$queryRaw<{ studentId: string; cnt: bigint }[]>`
         SELECT oar."studentId", COUNT(DISTINCT cs."id") AS cnt
         FROM "OfflineAttendanceRecord" oar
@@ -168,6 +169,7 @@ export async function GET(
           ON  UPPER(REPLACE(cs."unitCode",    ' ', '')) = UPPER(REPLACE(oar."unitCode",    ' ', ''))
           AND cs."sessionStart" = oar."sessionStart"
           AND cs."lecturerId"   = ${lecturerId}
+          AND UPPER(cs."lectureRoom") != 'ONLINE'
         WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) = ${unitCode}
         GROUP BY oar."studentId"
       `,
@@ -179,12 +181,13 @@ export async function GET(
 
       // Conducted offline sessions — normalization-tolerant $queryRaw so that
       // manual-mark sessions (stored with spaces) and BLE sessions (stored without)
-      // are both found. Used for delegation dedup + conducted count.
+      // are both found. Exclude lectureRoom = 'ONLINE' rows already counted above.
       prisma.$queryRaw<{ sessionStart: Date }[]>(Prisma.sql`
         SELECT "sessionStart"
         FROM   "ConductedSession"
         WHERE  "lecturerId" = ${lecturerId}
           AND  UPPER(REPLACE("unitCode", ' ', '')) = ${unitCode}
+          AND  UPPER("lectureRoom") != 'ONLINE'
       `),
 
       // Delegation sessions (used, created by this lecturer, raw unitCode)

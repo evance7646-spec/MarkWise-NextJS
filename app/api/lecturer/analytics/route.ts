@@ -105,12 +105,16 @@ export async function GET(req: NextRequest) {
 
         // Offline sessions — normalization-tolerant $queryRaw so that manual-mark
         // sessions (stored with spaces) and BLE sessions (stored without) are both found.
+        // Exclude lectureRoom = 'ONLINE' rows: those are registered by the app's
+        // sync-on-create for online sessions and are already counted via onlineSessions
+        // (OnlineAttendanceSession). Counting them here would double-count the session.
         prisma.$queryRaw<{ normCode: string; sessionStart: Date }[]>(Prisma.sql`
           SELECT UPPER(REPLACE("unitCode", ' ', '')) AS "normCode",
                  "sessionStart"
           FROM   "ConductedSession"
           WHERE  "lecturerId" = ${lecturerId}
             AND  UPPER(REPLACE("unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+            AND  UPPER("lectureRoom") != 'ONLINE'
         `),
 
         // Delegation sessions (used, created by this lecturer)
@@ -136,6 +140,7 @@ export async function GET(req: NextRequest) {
         ON  UPPER(REPLACE(cs."unitCode",  ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
         AND cs."sessionStart" = oar."sessionStart"
         AND cs."lecturerId"   = ${lecturerId}
+        AND UPPER(cs."lectureRoom") != 'ONLINE'
       WHERE  UPPER(REPLACE(oar."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
     `);
 

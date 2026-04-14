@@ -86,7 +86,10 @@ export async function GET(req: NextRequest) {
   const FIVE_MIN_MS = 5 * 60 * 1000;
 
   const [offlineRows, onlineRows, delegationRows] = await Promise.all([
-    // Source 1: offline — fetch with sessionStart for dedup + count
+    // Source 1: offline — fetch with sessionStart for dedup + count.
+    // Exclude lectureRoom = 'ONLINE': those rows are registered by the app's
+    // sync-on-create for online sessions and are already counted via Source 2
+    // (OnlineAttendanceSession). Including them here would double-count.
     prisma.$queryRaw<{ normCode: string; sessionStartMs: string }[]>(
       Prisma.sql`
         SELECT
@@ -94,6 +97,7 @@ export async function GET(req: NextRequest) {
           (EXTRACT(EPOCH FROM "sessionStart") * 1000)::text AS "sessionStartMs"
         FROM "ConductedSession"
         WHERE UPPER(REPLACE("unitCode", ' ', '')) IN (${Prisma.join(codes)})
+          AND UPPER("lectureRoom") != 'ONLINE'
       `,
     ),
 

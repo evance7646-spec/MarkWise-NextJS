@@ -183,10 +183,12 @@ export async function POST(req: NextRequest) {
           })
         : Promise.resolve([] as { unitCode: string; _count: { records: number } }[]),
 
-      // Offline sessions (unitCode stored normalised — no spaces, uppercase)
+      // Offline sessions (unitCode stored normalised — no spaces, uppercase).
+      // Exclude lectureRoom = 'ONLINE': those rows are registered by the app's
+      // sync-on-create for online sessions and are already counted via onlineSessions.
       normCodes.length > 0
         ? prisma.conductedSession.findMany({
-            where: { lecturerId, unitCode: { in: normCodes } },
+            where: { lecturerId, unitCode: { in: normCodes }, NOT: { lectureRoom: "ONLINE" } },
             select: { unitCode: true, sessionStart: true },
           })
         : Promise.resolve([] as { unitCode: string; sessionStart: Date }[]),
@@ -201,6 +203,8 @@ export async function POST(req: NextRequest) {
 
       // Offline attendance records — ALL methods, INNER JOINed to this lecturer's
       // ConductedSession rows so marks from other lecturers are excluded.
+      // Exclude lectureRoom = 'ONLINE' sessions: those students are counted via
+      // onlineSessions._count.records (OnlineAttendanceRecord), not here.
       normCodes.length > 0
         ? prisma.$queryRaw<{ unitCode: string }[]>(
             Prisma.sql`
@@ -210,6 +214,7 @@ export async function POST(req: NextRequest) {
                 ON  UPPER(REPLACE(cs."unitCode", ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
                 AND cs."sessionStart" = oar."sessionStart"
                 AND cs."lecturerId"   = ${lecturerId}
+                AND UPPER(cs."lectureRoom") != 'ONLINE'
               WHERE  UPPER(REPLACE(oar."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
             `,
           )

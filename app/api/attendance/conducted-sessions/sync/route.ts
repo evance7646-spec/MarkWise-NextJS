@@ -18,6 +18,7 @@ type SessionPayload = {
   unitCode: string;
   lectureRoom: string;
   lessonType?: string | null;
+  lesson_type?: string | null;  // snake_case alias sent by some app versions
   sessionStart: number;
   createdAt?: number;
 };
@@ -76,15 +77,13 @@ export async function POST(req: NextRequest) {
     const rawMs = s.sessionStart ? Math.floor(Number(s.sessionStart) / 1000) * 1000 : null;
     const sessionStart = rawMs ? new Date(rawMs) : null;
 
-    // Normalise and validate lessonType
-    const rawLessonType = s.lessonType ? String(s.lessonType).trim().toUpperCase() : null;
-    if (rawLessonType !== null && !VALID_LESSON_TYPES.has(rawLessonType)) {
-      return NextResponse.json(
-        { message: `Invalid lessonType "${rawLessonType}". Valid values: ${[...VALID_LESSON_TYPES].join(", ")}` },
-        { status: 400, headers: corsHeaders }
-      );
-    }
-    const lessonType = rawLessonType;
+    // Normalise lessonType — accept both camelCase and snake_case from clients.
+    // Unknown values are silently treated as null rather than rejecting the whole batch.
+    const rawLessonTypeInput = s.lessonType ?? s.lesson_type ?? null;
+    const rawLessonType = rawLessonTypeInput ? String(rawLessonTypeInput).trim().toUpperCase() : null;
+    const lessonType = rawLessonType !== null && VALID_LESSON_TYPES.has(rawLessonType)
+      ? rawLessonType
+      : null;
 
     if (!unitCode || !lectureRoom || !sessionStart || isNaN(sessionStart.getTime())) {
       skipped++;
