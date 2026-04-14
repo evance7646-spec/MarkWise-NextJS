@@ -63,7 +63,7 @@ function Dialog({ open, onClose, children, maxWidth = "max-w-lg" }: DialogProps)
               "-translate-x-1/2 -translate-y-1/2",
               "w-full",
               maxWidth,
-              "rounded-2xl border border-slate-700 bg-slate-800 p-6 shadow-2xl shadow-black/50",
+              "rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl shadow-black/20",
             ].join(" ")}
           >
             {children}
@@ -93,7 +93,7 @@ function DialogTitle({ className = "", children, ...props }: HTMLAttributes<HTML
   return (
     <h2
       className={[
-        "text-lg font-bold text-white tracking-tight",
+        "text-lg font-bold text-gray-900 tracking-tight",
         className,
       ]
         .filter(Boolean)
@@ -111,7 +111,7 @@ function DialogDescription({ className = "", children, ...props }: HTMLAttribute
   return (
     <p
       className={[
-        "text-sm text-slate-400 leading-relaxed",
+        "text-sm text-gray-500 leading-relaxed",
         className,
       ]
         .filter(Boolean)
@@ -129,7 +129,7 @@ function DialogFooter({ className = "", children, ...props }: HTMLAttributes<HTM
   return (
     <div
       className={[
-        "flex items-center justify-end gap-3 pt-5 mt-5 border-t border-slate-700",
+        "flex items-center justify-end gap-3 pt-5 mt-5 border-t border-gray-200",
         className,
       ]
         .filter(Boolean)
@@ -155,7 +155,7 @@ function DialogClose({ onClose, className = "" }: DialogCloseProps) {
       aria-label="Close dialog"
       className={[
         "absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg",
-        "text-slate-400 hover:text-white hover:bg-slate-700 transition-colors duration-150",
+        "text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors duration-150",
         className,
       ]
         .filter(Boolean)
