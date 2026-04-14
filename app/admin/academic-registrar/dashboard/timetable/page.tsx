@@ -210,7 +210,7 @@ export default function FacultyTimetablePage() {
           onClick={openModal}
           className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
         >
-          <Plus className="h-4 w-4" /> New Entry
+          <Plus className="h-4 w-4" bg-indigo-500 round-lg text-black /> New Entry
         </button>
       </div>
 

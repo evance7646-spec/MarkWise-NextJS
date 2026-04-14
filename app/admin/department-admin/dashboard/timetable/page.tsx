@@ -1,7 +1,12 @@
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, Search, Plus, X, Loader2, Users, ChevronRight } from "lucide-react";
+import {
+  Calendar, Search, Plus, X, Loader2, Users,
+  Clock, BookOpen, MapPin, GraduationCap,
+  LayoutGrid, List, CheckCircle2, RefreshCw,
+  Filter, ChevronDown, Zap, Building2, AlertCircle,
+} from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
 interface Entry {
@@ -54,17 +59,36 @@ interface MergeEntry {
 }
 
 const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-const STATUS_STYLES: Record<string, string> = {
-  Confirmed: "bg-emerald-500/15 text-emerald-600",
-  Pending:   "bg-amber-500/15 text-amber-600",
-  Cancelled: "bg-red-500/15 text-red-600",
+
+const DAY_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
+  Monday:    { bg: "bg-indigo-500",  text: "text-indigo-600",  dot: "bg-indigo-500"  },
+  Tuesday:   { bg: "bg-violet-500",  text: "text-violet-600",  dot: "bg-violet-500"  },
+  Wednesday: { bg: "bg-cyan-500",    text: "text-cyan-600",    dot: "bg-cyan-500"    },
+  Thursday:  { bg: "bg-teal-500",    text: "text-teal-600",    dot: "bg-teal-500"    },
+  Friday:    { bg: "bg-orange-500",  text: "text-orange-600",  dot: "bg-orange-500"  },
+  Saturday:  { bg: "bg-pink-500",    text: "text-pink-600",    dot: "bg-pink-500"    },
 };
+
+const STATUS_META: Record<string, { pill: string; dot: string }> = {
+  Confirmed: { pill: "bg-emerald-50 text-emerald-700 border border-emerald-200", dot: "bg-emerald-500" },
+  Pending:   { pill: "bg-amber-50   text-amber-700   border border-amber-200",   dot: "bg-amber-500"   },
+  Cancelled: { pill: "bg-red-50     text-red-700     border border-red-200",     dot: "bg-red-400"     },
+};
+
+// Time slots 07:00 – 20:00 for grid view
+const TIME_SLOTS = Array.from({ length: 14 }, (_, i) => `${String(i + 7).padStart(2, "0")}:00`);
+
+// "HH:MM" → minutes from midnight
+function timeToMins(t: string) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
 
 const EMPTY_FORM = {
   courseId: "", yearId: "", semesterId: "", unitId: "",
   lecturerId: "", roomId: "", venueName: "",
   day: "Monday", startTime: "08:00", endTime: "10:00",
 };
+
+const inp = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition disabled:opacity-40 disabled:cursor-not-allowed";
+const lbl = "block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide";
 
 // ── Build startAt / endAt ISO timestamps for a day-name + HH:mm window ────
 // The rooms API derives day-of-week and time from UTC values, so we construct
@@ -95,6 +119,8 @@ export default function DeptTimetablePage() {
   const [loading, setLoading] = useState(true);
   const [activeDay, setActiveDay] = useState("Monday");
   const [search, setSearch] = useState("");
+  const [activeTab, setActiveTab] = useState<"list" | "grid">("list");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   // Modal state
   const [showModal, setShowModal]           = useState(false);
@@ -369,197 +395,433 @@ export default function DeptTimetablePage() {
 
   const shown = entries
     .filter(e => e.day === activeDay)
+    .filter(e => statusFilter === "all" || e.status === statusFilter)
     .filter(e => !search ||
       (e.unitCode  ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (e.lecturerName ?? "").toLowerCase().includes(search.toLowerCase()))
+      (e.unitTitle ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (e.lecturerName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (e.courseName ?? "").toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-  const timeSlotReady = form.day && form.startTime && form.endTime && form.startTime < form.endTime;
+  const todayName = DAYS[new Date().getDay() - 1] ?? "Monday";
+
+  const daySummary = useMemo(() =>
+    DAYS.map(d => ({ day: d, count: entries.filter(e => e.day === d).length })),
+    [entries]);
+
+  const stats = useMemo(() => ({
+    total:      entries.length,
+    confirmed:  entries.filter(e => e.status === "Confirmed").length,
+    jointCount: new Set(entries.filter(e => e.mergeGroupId).map(e => e.mergeGroupId)).size,
+    uniqueUnits: new Set(entries.map(e => e.unitCode)).size,
+  }), [entries]);
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between">
+    <div className="space-y-6">
+
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-gray-800">Timetable</h1>
-          <p className="text-sm text-gray-400 mt-0.5">{admin?.departmentName}</p>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Timetable</h1>
+          <p className="text-sm text-gray-400 mt-0.5 flex items-center gap-1.5">
+            <Building2 className="h-3.5 w-3.5" />
+            {admin?.departmentName ?? "—"}
+          </p>
         </div>
-        <button
-          onClick={openModal}
-          className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 transition-colors"
-        >
-          <Plus className="h-4 w-4" /> New Entry
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={fetchEntries}
+            className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 transition"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </button>
+          <button
+            onClick={openModal}
+            className="flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 shadow-sm shadow-indigo-200 transition"
+          >
+            <Plus className="h-4 w-4" /> New Entry
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 items-center">
-        <div className="relative flex-1 min-w-48">
+      {/* ── Stats row ───────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Total Sessions",  value: stats.total,       icon: Calendar,     color: "text-indigo-600",  bg: "bg-indigo-50"  },
+          { label: "Confirmed",       value: stats.confirmed,   icon: CheckCircle2, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Joint Classes",   value: stats.jointCount,  icon: Users,        color: "text-violet-600",  bg: "bg-violet-50"  },
+          { label: "Unique Units",    value: stats.uniqueUnits, icon: BookOpen,     color: "text-cyan-600",    bg: "bg-cyan-50"    },
+        ].map(({ label, value, icon: Icon, color, bg }) => (
+          <div key={label} className="rounded-2xl border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">{label}</span>
+              <span className={`rounded-lg ${bg} p-1.5`}><Icon className={`h-3.5 w-3.5 ${color}`} /></span>
+            </div>
+            <p className="text-2xl font-bold text-gray-900">{loading ? "—" : value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Week bar (day selector) ──────────────────────────────────────────── */}
+      <div className="rounded-2xl border border-gray-100 bg-white p-3 shadow-sm">
+        <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+          {daySummary.map(({ day, count }) => {
+            const isActive = activeDay === day;
+            const isToday  = day === todayName;
+            const col = DAY_COLORS[day] ?? DAY_COLORS.Monday;
+            return (
+              <button
+                key={day}
+                onClick={() => setActiveDay(day)}
+                className={`flex flex-col items-center gap-1 rounded-xl px-4 py-2.5 transition-all min-w-[68px] flex-1 ${
+                  isActive ? `${col.bg} text-white shadow-md` : "hover:bg-gray-50 text-gray-500"
+                }`}
+              >
+                <span className={`text-[10px] font-bold uppercase tracking-widest ${isActive ? "text-white/80" : isToday ? col.text : "text-gray-400"}`}>
+                  {day.slice(0, 3)}
+                </span>
+                <span className={`text-lg font-bold leading-none ${isActive ? "text-white" : "text-gray-800"}`}>{count}</span>
+                {isToday && !isActive && <span className={`h-1 w-1 rounded-full ${col.dot}`} />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        {/* Search */}
+        <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search unit or lecturer…"
-            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pl-9 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
+            placeholder="Search units, lecturers, courses…"
+            className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 pl-9 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-300 transition"
           />
+          {search && (
+            <button onClick={() => setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        {DAYS.map(d => (
-          <button
-            key={d}
-            onClick={() => setActiveDay(d)}
-            className={`rounded-xl px-3.5 py-1.5 text-xs font-medium transition-colors ${
-              activeDay === d
-                ? "bg-indigo-600 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
-          >
-            {d.slice(0, 3)}{" "}
-            <span className="text-[10px] opacity-70 ml-1">
-              {entries.filter(e => e.day === d).length}
-            </span>
-          </button>
-        ))}
-      </div>
-
-      <div className="rounded-2xl border border-gray-200 bg-white overflow-hidden">
-        <div className="hidden sm:grid grid-cols-[auto_1fr_1fr_auto] gap-3 px-4 py-3 border-b border-gray-200 text-xs font-medium text-gray-400 uppercase tracking-wider">
-          <span>Time</span><span>Unit</span><span>Lecturer</span><span>Status</span>
-        </div>
-        {loading ? (
-          <div className="p-4 space-y-3">
-            {[1,2,3].map(i => (
-              <div key={i} className="h-14 rounded-xl bg-gray-100 animate-pulse" />
-            ))}
-          </div>
-        ) : shown.length === 0 ? (
-          <div className="flex flex-col items-center gap-2 py-12">
-            <Calendar className="h-8 w-8 text-slate-400" />
-            <p className="text-sm text-gray-500">No sessions for {activeDay}</p>
-          </div>
-        ) : (
-          shown.map((e, i) => (
-            <motion.div
-              key={e.id}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: i * 0.02 }}
-              className="grid grid-cols-1 sm:grid-cols-[auto_1fr_1fr_auto] gap-2 items-center px-4 py-3.5 border-b border-gray-100 last:border-b-0"
+        {/* View toggle */}
+        <div className="flex rounded-xl border border-gray-200 bg-white p-1 gap-0.5 shrink-0">
+          {(["list","grid"] as const).map(t => (
+            <button
+              key={t} onClick={() => setActiveTab(t)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${activeTab === t ? "bg-indigo-600 text-white shadow-sm" : "text-gray-500 hover:text-gray-700"}`}
             >
-              <div className="text-xs font-mono text-gray-500 whitespace-nowrap">
-                {e.startTime}–{e.endTime}
-              </div>
-              <div>
-                <div className="text-sm font-medium text-gray-900">{e.unitCode ?? "—"}</div>
-                <div className="text-xs text-gray-400">{e.unitTitle ?? e.courseName ?? ""}</div>
-              </div>
-              <div className="text-sm text-gray-500 truncate hidden sm:block">
-                {e.lecturerName ?? "—"}
-              </div>
-              <div className="hidden sm:flex items-center gap-1.5">
-                {e.mergeGroupId && (
-                  <button
-                    onClick={() => openMergeDrawer(e.mergeGroupId!)}
-                    className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium bg-violet-500/15 text-violet-600 hover:bg-violet-500/25 transition-colors"
-                  >
-                    <Users className="h-3 w-3" />
-                    Joint
-                    <ChevronRight className="h-3 w-3 opacity-60" />
-                  </button>
-                )}
-                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[e.status] ?? "bg-slate-100 text-gray-500"}`}>
-                  {e.status}
-                </span>
-              </div>
-            </motion.div>
-          ))
+              {t === "list" ? <List className="h-3.5 w-3.5" /> : <LayoutGrid className="h-3.5 w-3.5" />}
+              {t === "list" ? "List" : "Grid"}
+            </button>
+          ))}
+        </div>
+        {/* Status filter */}
+        <div className="relative shrink-0">
+          <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+          <select
+            value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
+            className="appearance-none rounded-xl border border-gray-200 bg-white pl-8 pr-7 py-2 text-xs font-medium text-gray-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+          >
+            <option value="all">All status</option>
+            <option value="Confirmed">Confirmed</option>
+            <option value="Pending">Pending</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+          <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 pointer-events-none" />
+        </div>
+      </div>
+
+      {/* ── Day heading ─────────────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3">
+        <div className={`h-2.5 w-2.5 rounded-full ${DAY_COLORS[activeDay]?.dot ?? "bg-indigo-500"}`} />
+        <h2 className="text-base font-bold text-gray-800">{activeDay}</h2>
+        <span className="text-sm text-gray-400">{shown.length} session{shown.length !== 1 ? "s" : ""}</span>
+        {activeDay === todayName && (
+          <span className="flex items-center gap-1 rounded-full bg-indigo-50 border border-indigo-200 px-2 py-0.5 text-[10px] font-semibold text-indigo-600 uppercase tracking-wide">
+            <Zap className="h-2.5 w-2.5" /> Today
+          </span>
         )}
       </div>
 
-      {/* ── Joint Class Detail Drawer ────────────────────────────────────── */}
+      {/* ══ LIST VIEW ════════════════════════════════════════════════════════ */}
+      {activeTab === "list" && (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeDay + "list"}
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm"
+          >
+            {loading ? (
+              <div className="p-5 space-y-3">
+                {[1,2,3,4].map(i => (
+                  <div key={i} className="flex gap-3 items-center">
+                    <div className="h-12 w-16 rounded-xl bg-gray-100 animate-pulse shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 bg-gray-100 rounded animate-pulse w-1/3" />
+                      <div className="h-3 bg-gray-100 rounded animate-pulse w-1/2" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : shown.length === 0 ? (
+              <div className="flex flex-col items-center gap-3 py-16">
+                <div className="rounded-2xl bg-gray-50 p-4"><Calendar className="h-8 w-8 text-gray-300" /></div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-gray-700">No sessions scheduled</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {search ? `No results for "${search}"` : `Nothing on ${activeDay} yet`}
+                  </p>
+                </div>
+                {!search && (
+                  <button onClick={openModal} className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:underline mt-1">
+                    <Plus className="h-3.5 w-3.5" /> Add first entry
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div>
+                {/* Column headers */}
+                <div className="hidden sm:grid sm:grid-cols-[80px_1fr_160px_130px_130px] gap-4 px-5 py-2.5 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50/60">
+                  <span>Time</span><span>Unit / Course</span><span>Lecturer</span><span>Room</span><span className="text-right">Status</span>
+                </div>
+                {shown.map((e, i) => {
+                  const col = DAY_COLORS[e.day] ?? DAY_COLORS.Monday;
+                  const st  = STATUS_META[e.status] ?? STATUS_META.Pending;
+                  const durationMins = timeToMins(e.endTime) - timeToMins(e.startTime);
+                  return (
+                    <motion.div
+                      key={e.id}
+                      initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.03, duration: 0.2 }}
+                      className="group grid grid-cols-1 sm:grid-cols-[80px_1fr_160px_130px_130px] gap-2 sm:gap-4 items-center px-5 py-4 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60 transition-colors"
+                    >
+                      {/* Time */}
+                      <div className="flex sm:flex-col gap-2 sm:gap-0.5">
+                        <span className="text-xs font-bold text-gray-800 font-mono">{e.startTime}</span>
+                        <span className="text-[10px] text-gray-400 font-mono hidden sm:block">{e.endTime}</span>
+                        <span className="text-[10px] text-gray-400 sm:hidden">– {e.endTime}</span>
+                        <span className="hidden sm:block text-[10px] font-medium text-indigo-500 bg-indigo-50 rounded-md px-1 py-0.5 w-fit mt-0.5">
+                          {durationMins}min
+                        </span>
+                      </div>
+                      {/* Unit */}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`hidden sm:flex h-9 w-9 shrink-0 rounded-xl ${col.bg} items-center justify-center`}>
+                          <BookOpen className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{e.unitCode ?? "—"}</p>
+                          <p className="text-xs text-gray-400 truncate">{e.unitTitle ?? e.courseName ?? "—"}</p>
+                          {e.yearOfStudy && (
+                            <p className="text-[10px] text-indigo-500 font-medium mt-0.5">{e.yearOfStudy} · {e.semester ?? ""}</p>
+                          )}
+                        </div>
+                      </div>
+                      {/* Lecturer */}
+                      <div className="hidden sm:flex items-center gap-2 min-w-0">
+                        <div className="h-7 w-7 rounded-full bg-gradient-to-br from-slate-200 to-slate-300 flex items-center justify-center shrink-0 text-[10px] font-bold text-slate-600">
+                          {(e.lecturerName ?? "?").charAt(0)}
+                        </div>
+                        <span className="text-xs text-gray-600 truncate">{e.lecturerName ?? "—"}</span>
+                      </div>
+                      {/* Room */}
+                      <div className="hidden sm:flex items-center gap-1.5 min-w-0">
+                        <MapPin className="h-3.5 w-3.5 text-gray-300 shrink-0" />
+                        <span className="text-xs text-gray-500 truncate">{e.venueName ?? e.roomName ?? "—"}</span>
+                      </div>
+                      {/* Status + Joint */}
+                      <div className="hidden sm:flex items-center justify-end gap-1.5 flex-wrap">
+                        {e.mergeGroupId && (
+                          <button
+                            onClick={() => openMergeDrawer(e.mergeGroupId!)}
+                            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold bg-violet-50 text-violet-600 border border-violet-200 hover:bg-violet-100 transition"
+                          >
+                            <Users className="h-2.5 w-2.5" /> Joint
+                          </button>
+                        )}
+                        <span className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${st.pill}`}>
+                          <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
+                          {e.status}
+                        </span>
+                      </div>
+                      {/* Mobile summary */}
+                      <div className="flex sm:hidden items-center justify-between mt-1">
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <GraduationCap className="h-3.5 w-3.5" /><span>{e.lecturerName ?? "—"}</span>
+                          <span className="text-gray-300">·</span>
+                          <MapPin className="h-3.5 w-3.5" /><span>{e.venueName ?? "—"}</span>
+                        </div>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${st.pill}`}>{e.status}</span>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      )}
+
+      {/* ══ GRID VIEW (time-axis) ════════════════════════════════════════════ */}
+      {activeTab === "grid" && (
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeDay + "grid"}
+            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-sm"
+          >
+            {loading ? (
+              <div className="p-5 h-40 flex items-center justify-center">
+                <Loader2 className="h-5 w-5 animate-spin text-gray-300" />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <div className="min-w-[640px]">
+                  {/* Time header */}
+                  <div className="grid border-b border-gray-100 bg-gray-50/70"
+                    style={{ gridTemplateColumns: `64px repeat(${TIME_SLOTS.length}, 1fr)` }}>
+                    <div className="px-2 py-2.5 text-[10px] font-bold text-gray-400 uppercase tracking-wide">Day</div>
+                    {TIME_SLOTS.map(t => (
+                      <div key={t} className="px-1 py-2.5 text-[10px] font-mono font-bold text-gray-400 text-center border-l border-gray-100">{t}</div>
+                    ))}
+                  </div>
+                  {/* Day rows */}
+                  {DAYS.map(day => {
+                    const col = DAY_COLORS[day] ?? DAY_COLORS.Monday;
+                    const dayEntries = entries
+                      .filter(e => e.day === day)
+                      .filter(e => statusFilter === "all" || e.status === statusFilter);
+                    return (
+                      <div key={day}
+                        className={`grid border-b border-gray-100 last:border-b-0 min-h-[56px] ${day === activeDay ? "bg-indigo-50/30" : ""}`}
+                        style={{ gridTemplateColumns: `64px repeat(${TIME_SLOTS.length}, 1fr)` }}>
+                        <div
+                          className={`flex flex-col items-center justify-center px-1 py-2 cursor-pointer transition ${day === activeDay ? "" : "hover:bg-gray-50"}`}
+                          onClick={() => setActiveDay(day)}
+                        >
+                          <span className={`text-[9px] font-bold uppercase tracking-widest ${day === activeDay ? col.text : "text-gray-400"}`}>{day.slice(0, 3)}</span>
+                          <span className={`text-xs font-bold ${day === activeDay ? col.text : "text-gray-500"}`}>{dayEntries.length}</span>
+                          {day === todayName && <span className={`mt-0.5 h-1 w-1 rounded-full ${col.dot}`} />}
+                        </div>
+                        {TIME_SLOTS.map((slot) => {
+                          const slotMins = timeToMins(slot);
+                          const slotEntries = dayEntries.filter(e => {
+                            const s = timeToMins(e.startTime);
+                            return s >= slotMins && s < slotMins + 60;
+                          });
+                          return (
+                            <div key={slot} className="relative border-l border-gray-100 py-1 px-0.5">
+                              {slotEntries.map(e => {
+                                const st = STATUS_META[e.status] ?? STATUS_META.Pending;
+                                return (
+                                  <div key={e.id}
+                                    title={`${e.unitCode} – ${e.lecturerName} (${e.startTime}–${e.endTime})`}
+                                    className={`rounded-md px-1.5 py-1 mb-0.5 cursor-pointer hover:opacity-80 transition border ${st.pill} overflow-hidden`}
+                                  >
+                                    <p className="text-[9px] font-bold truncate leading-tight">{e.unitCode}</p>
+                                    <p className="text-[8px] text-gray-500 truncate leading-tight hidden sm:block">{e.startTime}–{e.endTime}</p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      )}
+
+      {/* ── Joint Class Detail Drawer ──────────────────────────────────────── */}
       <AnimatePresence>
         {drawerGroupId && (
           <>
-            {/* backdrop */}
             <motion.div
               key="drawer-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={closeDrawer}
-              className="fixed inset-0 z-40 bg-black/40"
+              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
             />
-            {/* panel */}
             <motion.div
               key="drawer-panel"
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
+              initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }}
               transition={{ type: "spring", stiffness: 340, damping: 30 }}
               className="fixed right-0 top-0 z-50 h-full w-full max-w-sm bg-white shadow-2xl flex flex-col"
             >
-              {/* header */}
-              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-                <div className="flex items-center gap-2">
-                  <Users className="h-4.5 w-4.5 text-violet-600" />
-                  <span className="font-semibold text-gray-800 text-sm">Joint Class</span>
-                  {!drawerLoading && (
-                    <span className="rounded-full bg-violet-100 text-violet-700 text-xs font-medium px-2 py-0.5">
-                      {drawerEntries.length} dept{drawerEntries.length !== 1 ? "s" : ""}
-                    </span>
-                  )}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-violet-50/60">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100">
+                    <Users className="h-4 w-4 text-violet-600" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">Joint Class</p>
+                    {!drawerLoading && (
+                      <p className="text-[10px] text-violet-500 font-medium">{drawerEntries.length} department{drawerEntries.length !== 1 ? "s" : ""}</p>
+                    )}
+                  </div>
                 </div>
-                <button onClick={closeDrawer} className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+                <button onClick={closeDrawer} className="rounded-xl p-2 text-gray-400 hover:bg-white hover:text-gray-700 transition">
                   <X className="h-4 w-4" />
                 </button>
               </div>
 
               {drawerLoading ? (
                 <div className="flex-1 flex items-center justify-center gap-2 text-sm text-gray-400">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading details…
                 </div>
               ) : (
-                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
-
-                  {/* summary bar */}
-                  <div className="rounded-xl bg-violet-50 border border-violet-100 px-4 py-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-violet-500 font-medium uppercase tracking-wider">Combined students</p>
-                      <p className="text-2xl font-bold text-violet-700 mt-0.5">{drawerTotal}</p>
-                    </div>
+                <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+                  {/* Summary card */}
+                  <div className="rounded-2xl bg-gradient-to-br from-violet-600 to-violet-700 p-4 text-white">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-violet-200 mb-1">Combined Enrollment</p>
+                    <p className="text-3xl font-bold">{drawerTotal}</p>
                     {drawerEntries[0] && (
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500">{drawerEntries[0].unitCode}</p>
-                        <p className="text-xs text-gray-400">{drawerEntries[0].day} {drawerEntries[0].startTime}–{drawerEntries[0].endTime}</p>
-                        <p className="text-xs text-gray-400">{drawerEntries[0].roomName}</p>
+                      <div className="mt-2 pt-2 border-t border-violet-500/40 text-xs text-violet-200 space-y-0.5">
+                        <p className="font-semibold text-white">{drawerEntries[0].unitCode} · {drawerEntries[0].unitTitle}</p>
+                        <p>{drawerEntries[0].day} · {drawerEntries[0].startTime}–{drawerEntries[0].endTime}</p>
+                        <p className="flex items-center gap-1"><MapPin className="h-2.5 w-2.5" />{drawerEntries[0].roomName}</p>
                       </div>
                     )}
                   </div>
-
-                  {/* per-department cards */}
-                  {drawerEntries.map((me, idx) => (
-                    <div key={me.id} className="rounded-xl border border-gray-200 bg-white px-4 py-3 space-y-1.5">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-gray-800">{me.departmentName}</p>
-                          <p className="text-xs text-gray-500">{me.courseName}</p>
+                  {/* Per-dept cards */}
+                  {drawerEntries.map(me => {
+                    const st = STATUS_META[me.status] ?? STATUS_META.Pending;
+                    return (
+                      <div key={me.id} className="rounded-xl border border-gray-200 bg-white p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-bold text-gray-900">{me.departmentName}</p>
+                            <p className="text-xs text-gray-400">{me.courseName}</p>
+                          </div>
+                          <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${st.pill}`}>{me.status}</span>
                         </div>
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                          STATUS_STYLES[me.status] ?? "bg-slate-100 text-gray-500"
-                        }`}>{me.status}</span>
+                        <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
+                          {([
+                            [GraduationCap, "Lecturer", me.lecturerName || "—"],
+                            [MapPin, "Room", me.roomName || "—"],
+                            [Calendar, "Year/Sem", `${me.yearOfStudy ?? "—"} · ${me.semester ?? "—"}`],
+                            [Users, "Students", String(me.studentCount)],
+                          ] as const).map(([Icon, label, val], j) => (
+                            <div key={j} className="contents">
+                              <span className="flex items-center gap-1.5 text-gray-400">
+                                <Icon className="h-3 w-3" />{label}
+                              </span>
+                              <span className={`font-medium ${j === 3 ? "text-violet-700 font-bold" : "text-gray-700"}`}>{val}</span>
+                            </div>
+                          ))}
+                        </div>
                       </div>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500">
-                        <span className="text-gray-400">Lecturer</span>
-                        <span className="font-medium text-gray-700">{me.lecturerName || "—"}</span>
-                        <span className="text-gray-400">Room</span>
-                        <span className="font-medium text-gray-700">{me.roomName || "—"}</span>
-                        <span className="text-gray-400">Year / Sem</span>
-                        <span className="font-medium text-gray-700">{me.yearOfStudy ?? "—"} · {me.semester ?? "—"}</span>
-                        <span className="text-gray-400">Students</span>
-                        <span className="font-semibold text-violet-700">{me.studentCount}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </motion.div>
@@ -567,335 +829,235 @@ export default function DeptTimetablePage() {
         )}
       </AnimatePresence>
 
-      {/* ── New Entry Modal ──────────────────────────────────────────────── */}
-      {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      {/* ── New Entry Modal ─────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showModal && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white text-gray-900 p-6 shadow-xl"
+            key="modal-backdrop"
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
           >
-            <div className="flex items-center justify-between mb-5">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">New Timetable Entry</h2>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Select scope → unit → lecturer → time → available room
-                </p>
+            <motion.div
+              key="modal"
+              initial={{ opacity: 0, scale: 0.95, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 8 }}
+              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white shadow-2xl"
+            >
+              {/* Modal header */}
+              <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100">
+                    <Plus className="h-4 w-4 text-indigo-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-gray-900">New Timetable Entry</h2>
+                    <p className="text-xs text-gray-400">Scope → Unit → Lecturer → Time → Room</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowModal(false)} className="rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition">
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              <button
-                onClick={() => setShowModal(false)}
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
 
-            {modalLoading ? (
-              <div className="space-y-3">
-                {[1,2,3,4].map(i => (
-                  <div key={i} className="h-10 rounded-lg bg-gray-100 animate-pulse" />
-                ))}
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-5">
-
-                {/* ── Step 1: Scope ──────────────────────────────────────── */}
-                <div>
-                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-3">
-                    1 · Scope
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-
-                    {/* Course */}
-                    <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">
-                        Course <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        required
-                        value={form.courseId}
-                        onChange={e => handleChange("courseId", e.target.value)}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50"
-                      >
-                        <option value="">Select course…</option>
-                        {courses.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Year of Study */}
-                    <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">
-                        Year <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        required
-                        value={form.yearId}
-                        onChange={e => handleChange("yearId", e.target.value)}
-                        disabled={!form.courseId || yearsForCourse.length === 0}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <option value="">
-                          {!form.courseId
-                            ? "Select course first"
-                            : yearsForCourse.length === 0
-                              ? "No years found"
-                              : "Select year…"}
-                        </option>
-                        {yearsForCourse.map(y => (
-                          <option key={y.id} value={y.id}>{y.name}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Semester */}
-                    <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">
-                        Semester <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        required
-                        value={form.semesterId}
-                        onChange={e => handleChange("semesterId", e.target.value)}
-                        disabled={!form.yearId || semestersForYear.length === 0}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        <option value="">
-                          {!form.yearId
-                            ? "Select year first"
-                            : semestersForYear.length === 0
-                              ? "No semesters found"
-                              : "Select semester…"}
-                        </option>
-                        {semestersForYear.map(s => (
-                          <option key={s.id} value={s.id}>{s.label}</option>
-                        ))}
-                      </select>
-                    </div>
+              <div className="px-6 py-5">
+                {modalLoading ? (
+                  <div className="space-y-3">
+                    {[1,2,3,4,5].map(i => <div key={i} className="h-11 rounded-xl bg-gray-100 animate-pulse" />)}
                   </div>
-                </div>
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-5">
 
-                {/* ── Step 2: Unit ───────────────────────────────────────── */}
-                <div>
-                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-3">
-                    2 · Unit
-                  </p>
-                  <select
-                    required
-                    value={form.unitId}
-                    onChange={e => handleChange("unitId", e.target.value)}
-                    disabled={!form.semesterId || filteredUnits.length === 0}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <option value="">
-                      {!form.semesterId
-                        ? "Complete scope first"
-                        : filteredUnits.length === 0
-                          ? "No units in this semester"
-                          : "Select unit…"}
-                    </option>
-                    {filteredUnits.map(u => (
-                      <option key={u.id} value={u.id}>{u.code} – {u.title}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* ── Step 3: Lecturer ───────────────────────────────────── */}
-                <div>
-                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-3">
-                    3 · Lecturer
-                  </p>
-                  <select
-                    required
-                    value={form.lecturerId}
-                    onChange={e => handleChange("lecturerId", e.target.value)}
-                    disabled={!form.unitId}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <option value="">
-                      {!form.unitId ? "Select unit first" : "Select lecturer…"}
-                    </option>
-                    {lecturers.map(l => (
-                      <option key={l.id} value={l.id}>{l.fullName}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* ── Step 4: Time Slot ──────────────────────────────────── */}
-                <div>
-                  <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider mb-3">
-                    4 · Time Slot
-                  </p>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-
-                    {/* Day */}
-                    <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">
-                        Day <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        required
-                        value={form.day}
-                        onChange={e => handleChange("day", e.target.value)}
-                        disabled={!form.lecturerId}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        {DAYS.map(d => (
-                          <option key={d} value={d}>{d}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Start Time */}
-                    <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">
-                        Start Time <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        required
-                        type="time"
-                        value={form.startTime}
-                        onChange={e => handleChange("startTime", e.target.value)}
-                        disabled={!form.lecturerId}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      />
-                    </div>
-
-                    {/* End Time */}
-                    <div>
-                      <label className="text-xs font-medium text-gray-600 mb-1 block">
-                        End Time <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        required
-                        type="time"
-                        value={form.endTime}
-                        onChange={e => handleChange("endTime", e.target.value)}
-                        disabled={!form.lecturerId}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                      />
-                    </div>
-                  </div>
-                  {form.startTime && form.endTime && form.startTime >= form.endTime && (
-                    <p className="mt-1.5 text-xs text-red-600">End time must be after start time.</p>
-                  )}
-                </div>
-
-                {/* ── Step 5: Room ───────────────────────────────────────── */}
-                <div>
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-semibold text-teal-700 uppercase tracking-wider">
-                      5 · Venue / Room
-                    </p>
-                    {roomsLoading && (
-                      <span className="flex items-center gap-1.5 text-xs text-teal-600">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        Checking availability…
-                      </span>
-                    )}
-                    {!roomsLoading && timeSlotReady && availableRooms.length > 0 && (
-                      <span className="text-xs text-emerald-600 font-medium">
-                        {availableRooms.length} room{availableRooms.length !== 1 ? "s" : ""} free
-                      </span>
-                    )}
-                  </div>
-
-                  <select
-                    required
-                    value={form.roomId}
-                    onChange={e => handleChange("roomId", e.target.value)}
-                    disabled={!timeSlotReady || roomsLoading || availableRooms.length === 0}
-                    className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500/50 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    <option value="">
-                      {!timeSlotReady
-                        ? "Select day and time first"
-                        : roomsLoading
-                          ? "Checking availability…"
-                          : availableRooms.length === 0
-                            ? "No rooms free for this time slot"
-                            : "Select room…"}
-                    </option>
-                    {availableRooms.map(r => (
-                      <option key={r.id} value={r.id}>
-                        {r.roomCode} – {r.name} (capacity: {r.capacity})
-                      </option>
-                    ))}
-                  </select>
-
-                  {!roomsLoading && timeSlotReady && availableRooms.length === 0 && (
-                    <p className="mt-1.5 text-xs text-amber-600">
-                      All rooms are booked for this time slot. Try a different time or day.
-                    </p>
-                  )}
-                  {form.roomId && !roomsLoading && (
-                    <p className="mt-1.5 text-xs text-gray-400">
-                      Venue: {form.venueName}
-                    </p>
-                  )}
-                </div>
-
-                {mergeConflict && (
-                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-4 space-y-3">
-                    <div className="flex items-start gap-2">
-                      <span className="text-amber-500 text-base leading-none mt-0.5">⚠</span>
-                      <div>
-                        <p className="text-sm font-semibold text-amber-800">Joint Class Opportunity</p>
-                        <p className="text-xs text-amber-700 mt-0.5">{mergeConflict.message}</p>
-                        <p className="text-xs text-gray-500 mt-1">
-                          Your department's students will share this session with the existing group.
-                        </p>
+                    {/* Step 1 — Scope */}
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">1</span>
+                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Scope</p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className={lbl}>Course <span className="text-red-400 normal-case font-normal">*</span></label>
+                          <select required value={form.courseId} onChange={e => handleChange("courseId", e.target.value)} className={inp}>
+                            <option value="">Select course…</option>
+                            {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={lbl}>Year <span className="text-red-400 normal-case font-normal">*</span></label>
+                          <select required value={form.yearId} onChange={e => handleChange("yearId", e.target.value)}
+                            disabled={!form.courseId || yearsForCourse.length === 0} className={inp}>
+                            <option value="">{!form.courseId ? "Select course first" : yearsForCourse.length === 0 ? "No years found" : "Select year…"}</option>
+                            {yearsForCourse.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={lbl}>Semester <span className="text-red-400 normal-case font-normal">*</span></label>
+                          <select required value={form.semesterId} onChange={e => handleChange("semesterId", e.target.value)}
+                            disabled={!form.yearId || semestersForYear.length === 0} className={inp}>
+                            <option value="">{!form.yearId ? "Select year first" : semestersForYear.length === 0 ? "No semesters" : "Select semester…"}</option>
+                            {semestersForYear.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                          </select>
+                        </div>
                       </div>
                     </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setMergeConflict(null)}
-                        className="flex-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-                      >
+
+                    {/* Step 2 — Unit */}
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">2</span>
+                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Unit</p>
+                      </div>
+                      <select required value={form.unitId} onChange={e => handleChange("unitId", e.target.value)}
+                        disabled={!form.semesterId || filteredUnits.length === 0} className={inp}>
+                        <option value="">{!form.semesterId ? "Complete scope first" : filteredUnits.length === 0 ? "No units in this semester" : "Select unit…"}</option>
+                        {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.code} – {u.title}</option>)}
+                      </select>
+                    </div>
+
+                    {/* Step 3 — Lecturer */}
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">3</span>
+                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Lecturer</p>
+                      </div>
+                      <select required value={form.lecturerId} onChange={e => handleChange("lecturerId", e.target.value)}
+                        disabled={!form.unitId} className={inp}>
+                        <option value="">{!form.unitId ? "Select unit first" : "Select lecturer…"}</option>
+                        {lecturers.map(l => <option key={l.id} value={l.id}>{l.fullName}</option>)}
+                      </select>
+                    </div>
+
+                    {/* Step 4 — Time */}
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">4</span>
+                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Time Slot</p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className={lbl}>Day <span className="text-red-400 normal-case font-normal">*</span></label>
+                          <select required value={form.day} onChange={e => handleChange("day", e.target.value)}
+                            disabled={!form.lecturerId} className={inp}>
+                            {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label className={lbl}>Start <span className="text-red-400 normal-case font-normal">*</span></label>
+                          <input required type="time" value={form.startTime} onChange={e => handleChange("startTime", e.target.value)}
+                            disabled={!form.lecturerId} className={inp} />
+                        </div>
+                        <div>
+                          <label className={lbl}>End <span className="text-red-400 normal-case font-normal">*</span></label>
+                          <input required type="time" value={form.endTime} onChange={e => handleChange("endTime", e.target.value)}
+                            disabled={!form.lecturerId} className={inp} />
+                        </div>
+                      </div>
+                      {form.startTime && form.endTime && form.startTime >= form.endTime && (
+                        <p className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
+                          <AlertCircle className="h-3.5 w-3.5" /> End time must be after start time.
+                        </p>
+                      )}
+                      {timeSlotReady && form.startTime < form.endTime && (
+                        <p className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 rounded-lg px-3 py-2">
+                          <Clock className="h-3.5 w-3.5" /> Duration: {timeToMins(form.endTime) - timeToMins(form.startTime)} minutes
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Step 5 — Room */}
+                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">5</span>
+                          <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Venue / Room</p>
+                        </div>
+                        {roomsLoading && (
+                          <span className="flex items-center gap-1.5 text-xs text-indigo-500 font-medium">
+                            <Loader2 className="h-3 w-3 animate-spin" /> Checking…
+                          </span>
+                        )}
+                        {!roomsLoading && timeSlotReady && availableRooms.length > 0 && (
+                          <span className="flex items-center gap-1 text-xs text-emerald-600 font-semibold">
+                            <CheckCircle2 className="h-3 w-3" /> {availableRooms.length} room{availableRooms.length !== 1 ? "s" : ""} free
+                          </span>
+                        )}
+                      </div>
+                      <select required value={form.roomId} onChange={e => handleChange("roomId", e.target.value)}
+                        disabled={!timeSlotReady || roomsLoading || availableRooms.length === 0} className={inp}>
+                        <option value="">
+                          {!timeSlotReady ? "Select day and time first" : roomsLoading ? "Checking availability…" : availableRooms.length === 0 ? "No rooms free for this slot" : "Select room…"}
+                        </option>
+                        {availableRooms.map(r => (
+                          <option key={r.id} value={r.id}>{r.roomCode} – {r.name} (cap: {r.capacity})</option>
+                        ))}
+                      </select>
+                      {!roomsLoading && timeSlotReady && availableRooms.length === 0 && (
+                        <p className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
+                          <AlertCircle className="h-3.5 w-3.5" /> All rooms booked. Try a different time.
+                        </p>
+                      )}
+                      {form.roomId && !roomsLoading && (
+                        <p className="flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-100 rounded-lg px-3 py-2">
+                          <MapPin className="h-3.5 w-3.5 text-indigo-400" /> {form.venueName}
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Joint class merge prompt */}
+                    {mergeConflict && (
+                      <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+                            <Users className="h-4 w-4 text-amber-600" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-amber-800">Joint Class Opportunity</p>
+                            <p className="text-xs text-amber-700 mt-0.5">{mergeConflict.message}</p>
+                            <p className="text-xs text-gray-500 mt-1">Your students will share this session with the existing group.</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => setMergeConflict(null)}
+                            className="flex-1 rounded-xl border border-gray-200 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition">
+                            Cancel
+                          </button>
+                          <button type="button" onClick={handleMerge} disabled={submitting}
+                            className="flex-1 rounded-xl bg-amber-500 py-2 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50 transition">
+                            {submitting ? "Joining…" : "Join as Joint Class"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Error */}
+                    {submitError && (
+                      <div className="flex items-start gap-2.5 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+                        <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                        <p className="text-xs text-red-700">{submitError}</p>
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex gap-3 pt-1">
+                      <button type="button" onClick={() => setShowModal(false)}
+                        className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">
                         Cancel
                       </button>
-                      <button
-                        type="button"
-                        onClick={handleMerge}
-                        disabled={submitting}
-                        className="flex-1 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50"
-                      >
-                        {submitting ? "Joining…" : "Join as Joint Class"}
+                      <button type="submit" disabled={submitting || !form.roomId}
+                        className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40 shadow-sm shadow-indigo-200 transition flex items-center justify-center gap-2">
+                        {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : <><Plus className="h-4 w-4" /> Create Entry</>}
                       </button>
                     </div>
-                  </div>
+
+                  </form>
                 )}
-
-                {submitError && (
-                  <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
-                    {submitError}
-                  </div>
-                )}
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className="flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting || !form.roomId}
-                    className="flex-1 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    {submitting ? "Creating…" : "Create Entry"}
-                  </button>
-                </div>
-
-              </form>
-            )}
+              </div>
+            </motion.div>
           </motion.div>
-        </div>
-      )}
+        )}
+      </AnimatePresence>
+
     </div>
   );
 }
