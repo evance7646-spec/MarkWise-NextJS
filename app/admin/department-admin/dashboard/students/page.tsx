@@ -48,9 +48,19 @@ function AddStudentModal({ courses, departmentId, onClose, onSaved }: {
     setForm(p => ({ ...p, [k]: e.target.value }));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <motion.div initial={{ scale: 0.93, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+    <>
+      <motion.div
+        key="admit-backdrop"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      <motion.div
+        key="admit-card"
+        initial={{ scale: 0.93, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.93, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white text-gray-900 p-6 shadow-2xl pointer-events-auto">
         <div className="flex items-center justify-between mb-5">
           <h2 className="font-semibold text-gray-800 flex items-center gap-2">
             <UserPlus className="h-4 w-4 text-teal-600" /> Admit Student
@@ -77,7 +87,8 @@ function AddStudentModal({ courses, departmentId, onClose, onSaved }: {
           </div>
         </div>
       </motion.div>
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -114,9 +125,19 @@ function BulkImportModal({ institutionId, departmentId, courses, onClose, onSave
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <motion.div initial={{ scale: 0.93, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-        className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+    <>
+      <motion.div
+        key="bulk-backdrop"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      <motion.div
+        key="bulk-card"
+        initial={{ scale: 0.93, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.93, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        className="w-full max-w-lg rounded-2xl border border-gray-200 bg-white text-gray-900 p-6 shadow-2xl pointer-events-auto">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-gray-800 flex items-center gap-2">
             <Upload className="h-4 w-4 text-sky-600" /> Bulk Import Students
@@ -145,7 +166,8 @@ function BulkImportModal({ institutionId, departmentId, courses, onClose, onSave
           </div>
         </div>
       </motion.div>
-    </div>
+      </div>
+    </>
   );
 }
 
