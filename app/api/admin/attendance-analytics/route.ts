@@ -449,6 +449,26 @@ export async function GET(req: NextRequest) {
   // ─────────────────────────────────────────────────────────────────────────
   // E. UNIT-LEVEL BREAKDOWN
   // ─────────────────────────────────────────────────────────────────────────
+
+  // Pre-build assignments-per-unit map (unit code → total across all lecturers)
+  const assignmentsByUnit = new Map<string, number>();
+  for (const a of assignments) {
+    const unit = unitById.get(a.unitId);
+    if (!unit) continue;
+    const code = normalizeUnitCode(unit.code);
+    assignmentsByUnit.set(code, (assignmentsByUnit.get(code) ?? 0) + 1);
+  }
+
+  // Pre-build lesson-type counts per unit code
+  const lessonTypesByUnit = new Map<string, Record<string, number>>();
+  for (const cs of conductedSessionsReal) {
+    const code  = normalizeUnitCode(cs.unitCode);
+    const lt    = (cs.lessonType ?? "LEC").toUpperCase();
+    const entry = lessonTypesByUnit.get(code) ?? {};
+    entry[lt]   = (entry[lt] ?? 0) + 1;
+    lessonTypesByUnit.set(code, entry);
+  }
+
   const unitBreakdown = units.map(unit => {
     const code         = normalizeUnitCode(unit.code);
     const sessCount    = sessionsPerCode.get(code) ?? 0;
@@ -481,18 +501,28 @@ export async function GET(req: NextRequest) {
       .map(l => l.fullName)
       .join(", ") || "—";
 
+    // Lesson type counts
+    const ltCounts = lessonTypesByUnit.get(code) ?? {};
+
     return {
-      unitId:        unit.id,
-      unitCode:      unit.code,
-      unitTitle:     unit.title,
-      department:    dept,
-      sessionsHeld:  sessCount,
+      unitId:           unit.id,
+      unitCode:         unit.code,
+      unitTitle:        unit.title,
+      department:       dept,
+      sessionsHeld:     sessCount,
       enrolled,
       avgAttendance,
       atRiskCount,
-      atRiskPct:     enrolled > 0 ? Math.round((atRiskCount / enrolled) * 100) : 0,
+      atRiskPct:        enrolled > 0 ? Math.round((atRiskCount / enrolled) * 100) : 0,
       lecturerName,
-      lowActivity:   sessCount < 2,
+      lowActivity:      sessCount < 2,
+      lecSessions:      ltCounts["LEC"] ?? 0,
+      catSessions:      ltCounts["CAT"] ?? 0,
+      ratSessions:      ltCounts["RAT"] ?? 0,
+      labSessions:      ltCounts["LAB"] ?? 0,
+      gdSessions:       ltCounts["GD"]  ?? 0,
+      semSessions:      ltCounts["SEM"] ?? 0,
+      assignmentsPosted: assignmentsByUnit.get(code) ?? 0,
     };
   })
     .filter(u => u.enrolled > 0)
@@ -569,6 +599,232 @@ export async function GET(req: NextRequest) {
     return { day: name, sessions: v?.sessions ?? 0, avgAttendancePct: avgPct };
   }).filter(d => d.sessions > 0);
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // I. PREDICTIVE ANALYTICS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const midTime = since.getTime() + (days / 2) * 24 * 60 * 60 * 1000;
+
+  // 1. Threshold proximity — students close to (but not yet below) 75%
+  //    and sessions needed to reach/stay safe at 75%
+  // 2. Attendance velocity — compare 1st half vs 2nd half record counts
+  // 3. Projection to 75% — how many more sessions they need to attend
+  // 4. Consecutive absence streak — max gap without a record per student per unit
+  //    approximated via offlineRecords sorted by scannedAt
+
+  // Build per-student per-unit records with timestamps for streak detection
+  const recordsByStudentUnitDated = new Map<string, Date[]>();
+  for (const r of offlineRecords) {
+    const key  = `${r.studentId}::${normalizeUnitCode(r.unitCode)}`;
+    const list = recordsByStudentUnitDated.get(key) ?? [];
+    list.push(r.scannedAt);
+    recordsByStudentUnitDated.set(key, list);
+  }
+
+  // Build per-unit conducted-session dates (sorted)
+  const sessionDatesByUnit = new Map<string, Date[]>();
+  for (const cs of conductedSessionsReal) {
+    const code = normalizeUnitCode(cs.unitCode);
+    const list = sessionDatesByUnit.get(code) ?? [];
+    list.push(new Date(cs.sessionStart));
+    sessionDatesByUnit.set(code, list);
+  }
+  // Sort each unit's session list
+  for (const [code, dates] of sessionDatesByUnit) {
+    sessionDatesByUnit.set(code, dates.sort((a, b) => a.getTime() - b.getTime()));
+  }
+
+  interface StudentPrediction {
+    studentId:          string;
+    studentName:        string;
+    admissionNumber:    string;
+    year:               number;
+    overallAttendance:  number;
+    riskLevel:          string;
+    // Per-unit predictive fields are aggregated to worst-case at top level
+    sessionsNeededGlobal: number; // to reach 75% overall
+    velocityTrend:      "improving" | "declining" | "stable";
+    velocityDelta:      number;   // pp change between halves
+    maxConsecAbsences:  number;   // max streak across all units
+    worstStreakUnit:    string;   // unit code where streak is worst
+    projectedEndRate:   number;   // projected overall at same velocity
+    unitsAtThreshold:  number;   // units where student is within 2 sessions of dropping below 75%
+  }
+
+  const studentPredictions: StudentPrediction[] = activeStudents.map(student => {
+    const enrolledCodes = snapshotByStudent.get(student.studentId) ?? [];
+    const scopedCodes   = enrolledCodes.filter(c => unitByCode.has(c));
+
+    // Overall projection
+    const totalSess   = student.totalSessions;
+    const totalAtt    = student.totalAttended;
+    // sessions needed at 100% attendance to reach 75% overall
+    const needed = totalSess > 0 && student.overallAttendance < 75
+      ? Math.max(0, Math.ceil((0.75 * totalSess - totalAtt) / 0.25))
+      : 0;
+
+    // Velocity: split offlineRecords into first/second half of lookback window
+    let firstHalfCount  = 0;
+    let secondHalfCount = 0;
+    const firstHalfSess  = conductedSessionsReal.filter(cs =>
+      scopedCodes.includes(normalizeUnitCode(cs.unitCode)) && new Date(cs.sessionStart).getTime() < midTime
+    ).length;
+    const secondHalfSess = conductedSessionsReal.filter(cs =>
+      scopedCodes.includes(normalizeUnitCode(cs.unitCode)) && new Date(cs.sessionStart).getTime() >= midTime
+    ).length;
+
+    for (const r of offlineRecords) {
+      if (r.studentId !== student.studentId) continue;
+      if (!scopedCodes.includes(normalizeUnitCode(r.unitCode))) continue;
+      if (r.scannedAt.getTime() < midTime) firstHalfCount++;
+      else secondHalfCount++;
+    }
+
+    const firstHalfRate  = firstHalfSess  > 0 ? firstHalfCount  / firstHalfSess  : null;
+    const secondHalfRate = secondHalfSess > 0 ? secondHalfCount / secondHalfSess : null;
+
+    let velocityTrend: "improving" | "declining" | "stable" = "stable";
+    let velocityDelta = 0;
+    if (firstHalfRate !== null && secondHalfRate !== null) {
+      velocityDelta = Math.round((secondHalfRate - firstHalfRate) * 100);
+      if      (velocityDelta >= 5)  velocityTrend = "improving";
+      else if (velocityDelta <= -5) velocityTrend = "declining";
+    }
+
+    // Consecutive absence streak (max sessions missed in a row per unit)
+    let maxConsecAbsences = 0;
+    let worstStreakUnit   = "";
+    for (const code of scopedCodes) {
+      const sessionDates = sessionDatesByUnit.get(code) ?? [];
+      if (sessionDates.length < 2) continue;
+      const attendedDates = new Set(
+        (recordsByStudentUnitDated.get(`${student.studentId}::${code}`) ?? [])
+          .map(d => d.toISOString().slice(0, 10))
+      );
+      let streak = 0;
+      let maxStreak = 0;
+      for (const sd of sessionDates) {
+        if (!attendedDates.has(sd.toISOString().slice(0, 10))) {
+          streak++;
+          if (streak > maxStreak) maxStreak = streak;
+        } else {
+          streak = 0;
+        }
+      }
+      if (maxStreak > maxConsecAbsences) {
+        maxConsecAbsences = maxStreak;
+        worstStreakUnit   = unitByCode.get(code)?.code ?? code;
+      }
+    }
+
+    // Units at threshold (within 2 sessions of dropping below 75%)
+    let unitsAtThreshold = 0;
+    for (const code of scopedCodes) {
+      const sess = sessionsPerCode.get(code) ?? 0;
+      const att  = Math.min(recordsByStudentUnit.get(`${student.studentId}::${code}`) ?? 0, sess);
+      const pct  = sess > 0 ? (att / sess) * 100 : 0;
+      if (pct >= 60 && pct < 75) unitsAtThreshold++;
+    }
+
+    // Projected end rate (linear extrapolation — if velocity continues, apply delta to current)
+    const projectedEndRate = Math.min(100, Math.max(0, student.overallAttendance + velocityDelta));
+
+    return {
+      studentId:           student.studentId,
+      studentName:         student.studentName,
+      admissionNumber:     student.admissionNumber,
+      year:                student.year,
+      overallAttendance:   student.overallAttendance,
+      riskLevel:           student.riskLevel,
+      sessionsNeededGlobal: needed,
+      velocityTrend,
+      velocityDelta,
+      maxConsecAbsences,
+      worstStreakUnit,
+      projectedEndRate,
+      unitsAtThreshold,
+    };
+  });
+
+  // 5. Ghost enrollment — units with sessions held but very low coverage
+  const ghostEnrollmentUnits = unitBreakdown
+    .filter(u => u.sessionsHeld >= 3 && u.avgAttendance < 30 && u.enrolled >= 5)
+    .map(u => ({
+      unitCode:       u.unitCode,
+      unitTitle:      u.unitTitle,
+      enrolled:       u.enrolled,
+      sessionsHeld:   u.sessionsHeld,
+      avgAttendance:  u.avgAttendance,
+      lecturerName:   u.lecturerName,
+    }));
+
+  // 6. Lecturer session regularity score
+  //    stddev of weekly session counts; lower = more regular
+  const lecturerRegularity = lecturerStats.map(lec => {
+    const lecSessions = (lecSessions => lecSessions)(
+      conductedSessionsReal.filter(cs => cs.lecturerId === lec.lecturerId)
+    );
+    const weekCounts: Record<string, number> = {};
+    for (const cs of lecSessions) {
+      const d    = new Date(cs.sessionStart);
+      const year = d.getUTCFullYear();
+      const jan4 = new Date(Date.UTC(year, 0, 4));
+      const wn   = Math.ceil(((d.getTime() - jan4.getTime()) / 86400000 + jan4.getUTCDay() + 1) / 7);
+      const key  = `${year}-W${String(wn).padStart(2, "0")}`;
+      weekCounts[key] = (weekCounts[key] ?? 0) + 1;
+    }
+    const counts = Object.values(weekCounts);
+    const mean   = counts.length > 0 ? counts.reduce((a, b) => a + b, 0) / counts.length : 0;
+    const variance = counts.length > 1
+      ? counts.reduce((s, c) => s + (c - mean) ** 2, 0) / counts.length
+      : 0;
+    const stddev = Math.sqrt(variance);
+    // Score 0–100: lower stddev → higher regularity
+    const maxPossibleStddev = 3;
+    const regularityScore = counts.length > 0
+      ? Math.round(Math.max(0, (1 - Math.min(stddev, maxPossibleStddev) / maxPossibleStddev)) * 100)
+      : 0;
+    return {
+      lecturerId:       lec.lecturerId,
+      lecturerName:     lec.lecturerName,
+      weeklySessionAvg: Math.round(mean * 10) / 10,
+      regularityScore,
+      weeksActive:      counts.length,
+    };
+  }).sort((a, b) => b.regularityScore - a.regularityScore);
+
+  // 7. Cohort summary for threshold proximity
+  const thresholdProximity = studentPredictions
+    .filter(s => s.unitsAtThreshold > 0 || (s.overallAttendance >= 60 && s.overallAttendance < 75))
+    .sort((a, b) => a.overallAttendance - b.overallAttendance)
+    .slice(0, 100);
+
+  // 8. Velocity declines
+  const velocityDeclines = studentPredictions
+    .filter(s => s.velocityTrend === "declining")
+    .sort((a, b) => a.velocityDelta - b.velocityDelta)
+    .slice(0, 100);
+
+  // 9. Consecutive absence alerts (≥3 consecutive misses)
+  const consecutiveAlerts = studentPredictions
+    .filter(s => s.maxConsecAbsences >= 3)
+    .sort((a, b) => b.maxConsecAbsences - a.maxConsecAbsences)
+    .slice(0, 100);
+
+  const predictive = {
+    thresholdProximity,
+    velocityDeclines,
+    consecutiveAlerts,
+    ghostEnrollmentUnits,
+    lecturerRegularity,
+    summary: {
+      studentsNearThreshold:    thresholdProximity.length,
+      studentsVelocityDecline:  velocityDeclines.length,
+      studentsConsecAbsent:     consecutiveAlerts.length,
+      ghostEnrollmentUnitCount: ghostEnrollmentUnits.length,
+    },
+  };
+
   return NextResponse.json({
     overview,
     lecturers:  lecturerStats,
@@ -589,5 +845,6 @@ export async function GET(req: NextRequest) {
     distribution,
     weeklyTrend,
     dowAbsenteeism,
+    predictive,
   });
 }
