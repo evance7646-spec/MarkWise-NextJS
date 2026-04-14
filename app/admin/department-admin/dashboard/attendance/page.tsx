@@ -7,7 +7,7 @@ import {
   BarChart2, Calendar, Clock,
   Activity, ShieldAlert, Target, RefreshCw,
   FileText, ClipboardList, FlaskConical, Layers,
-  TrendingDown, Zap, Award, Ghost, Cpu, ArrowUpRight, ArrowDownRight, Minus,
+  TrendingDown, Zap, Ghost, Cpu, ArrowUpRight, ArrowDownRight, Minus,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
@@ -546,57 +546,7 @@ export default function DeptAttendancePage() {
               )}
             </div>
 
-            {/* Best & Worst units */}
-            {!loading && analyticsUnits.length > 0 && (
-              <>
-                <div className="rounded-2xl border border-emerald-200 bg-white p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50">
-                      <Award className="h-4 w-4 text-emerald-600" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-semibold text-gray-900">Top Performing Units</h2>
-                      <p className="text-xs text-gray-400">Highest avg attendance</p>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {[...analyticsUnits].sort((a, b) => b.avgAttendance - a.avgAttendance).slice(0, 5).map((u, i) => (
-                      <div key={u.unitCode} className="flex items-center gap-3">
-                        <span className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">{i + 1}</span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-mono font-semibold text-gray-800 truncate">{u.unitCode}</p>
-                          <p className="text-xs text-gray-400 truncate">{u.lecturerName}</p>
-                        </div>
-                        <span className="shrink-0 text-sm font-bold text-emerald-600 tabular-nums">{pct(u.avgAttendance)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-2xl border border-rose-200 bg-white p-5">
-                  <div className="flex items-center gap-2 mb-3">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50">
-                      <TrendingDown className="h-4 w-4 text-rose-600" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-semibold text-gray-900">Underperforming Units</h2>
-                      <p className="text-xs text-gray-400">Lowest avg attendance</p>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {[...analyticsUnits].sort((a, b) => a.avgAttendance - b.avgAttendance).slice(0, 5).map((u, i) => (
-                      <div key={u.unitCode} className="flex items-center gap-3">
-                        <span className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-rose-100 text-xs font-bold text-rose-700">{i + 1}</span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-mono font-semibold text-gray-800 truncate">{u.unitCode}</p>
-                          <p className="text-xs text-gray-400 truncate">{u.lecturerName}</p>
-                        </div>
-                        <span className="shrink-0 text-sm font-bold text-rose-600 tabular-nums">{pct(u.avgAttendance)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
+
           </motion.div>
         )}
 
