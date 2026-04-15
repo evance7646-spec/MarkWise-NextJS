@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
-  FileText, Search, User, Award, BookOpen, TrendingUp, AlertTriangle,
+  FileText, Search, BookOpen, TrendingUp, AlertTriangle,
 } from "lucide-react";
 import { useAcademicRegistrar } from "../../context";
 
@@ -13,56 +13,38 @@ interface Student {
 
 interface StudentPoints {
   attendancePct: number | null;
-  totalPoints: number | null;
-  statsJson?: string | null;
-  breakdownJson?: string | null;
 }
 
-interface PointsResponse {
-  points: StudentPoints | null;
-  enrolledUnitCodes: string[];
-}
-
-interface UnitBreakdown {
+interface UnitAttendanceRow {
   unitCode: string;
-  unitTitle?: string;
+  unitTitle: string;
   attended: number;
   total: number;
   pct: number;
 }
 
+interface PointsResponse {
+  points: StudentPoints | null;
+  enrolledUnitCodes: string[];
+  unitAttendance: UnitAttendanceRow[];
+}
+
 function TranscriptCard({ student }: { student: Student }) {
   const [points, setPoints] = useState<StudentPoints | null>(null);
-  const [breakdown, setBreakdown] = useState<UnitBreakdown[]>([]);
+  const [breakdown, setBreakdown] = useState<UnitAttendanceRow[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
       const d = await fetch(`/api/students/${student.id}/points`, { credentials: "include" }).then(r => r.ok ? r.json() : {}) as PointsResponse;
-      const pts = d.points ?? null;
-      const enrolledCodes = new Set((d.enrolledUnitCodes ?? []).map((c: string) => c.trim().toUpperCase()));
-      setPoints(pts);
-      if (pts?.breakdownJson) {
-        try {
-          const raw = JSON.parse(pts.breakdownJson);
-          const rows: UnitBreakdown[] = Array.isArray(raw) ? raw : Object.entries(raw).map(([unitCode, v]: [string, any]) => ({
-            unitCode, unitTitle: v.title ?? "", attended: v.attended ?? 0, total: v.total ?? 0,
-            pct: v.total > 0 ? Math.round((v.attended / v.total) * 100) : 0,
-          }));
-          // Only show units the student is currently enrolled in
-          const filtered = enrolledCodes.size > 0
-            ? rows.filter(u => enrolledCodes.has(u.unitCode.trim().toUpperCase()))
-            : rows;
-          setBreakdown(filtered);
-        } catch { /* noop */ }
-      }
+      setPoints(d.points ?? null);
+      setBreakdown(d.unitAttendance ?? []);
       setLoading(false);
     })();
   }, [student.id]);
 
   const pct = points?.attendancePct ?? null;
-  const pts = points?.totalPoints ?? null;
 
   return (
     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -84,9 +66,6 @@ function TranscriptCard({ student }: { student: Student }) {
             {pct !== null ? `${Math.round(pct)}%` : "—"}
           </div>
           <div className="text-xs text-gray-400">Attendance</div>
-          {pts !== null && (
-            <div className="text-sm font-medium text-violet-600 mt-0.5">{pts} pts</div>
-          )}
         </div>
       </div>
 
@@ -103,7 +82,10 @@ function TranscriptCard({ student }: { student: Student }) {
           <div className="space-y-2">
             {breakdown.map(u => (
               <div key={u.unitCode} className="flex items-center gap-3">
-                <span className="w-24 shrink-0 font-mono text-xs text-violet-700">{u.unitCode}</span>
+                <div className="w-28 shrink-0">
+                  <span className="font-mono text-xs text-violet-700 block">{u.unitCode}</span>
+                  {u.unitTitle && <span className="text-xs text-gray-400 truncate block max-w-full">{u.unitTitle}</span>}
+                </div>
                 <div className="flex-1 h-1.5 rounded-full bg-gray-200">
                   <div className="h-full rounded-full transition-all duration-500"
                     style={{ width: `${u.pct}%`, backgroundColor: u.pct >= 75 ? "#34d399" : u.pct >= 50 ? "#f59e0b" : "#f87171" }} />

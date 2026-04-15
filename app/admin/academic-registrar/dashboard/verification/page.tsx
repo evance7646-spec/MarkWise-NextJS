@@ -3,9 +3,17 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ShieldCheck, Search, CheckCircle2, XCircle, UserCircle, BookOpen, Building2,
-  Smartphone, GraduationCap,
+  Smartphone, GraduationCap, TrendingUp,
 } from "lucide-react";
 import { useAcademicRegistrar } from "../../context";
+
+interface EnrolledUnit {
+  unitCode: string;
+  unitTitle: string;
+  attended: number;
+  total: number;
+  pct: number;
+}
 
 interface VerifiedStudent {
   fullName: string; admissionNumber: string; email: string | null;
@@ -13,6 +21,7 @@ interface VerifiedStudent {
   exists: boolean;
   hasAppAccount: boolean;
   enrolledUnitCount: number;
+  enrolledUnits: EnrolledUnit[];
 }
 
 export default function VerificationPage() {
@@ -156,6 +165,33 @@ export default function VerificationPage() {
                 </div>
               </div>
             </div>
+
+            {/* Per-unit attendance breakdown */}
+            {result.enrolledUnits && result.enrolledUnits.length > 0 && (
+              <div className="border-t border-gray-100 px-5 py-4">
+                <h3 className="text-xs font-semibold text-gray-500 mb-3 flex items-center gap-1.5">
+                  <TrendingUp className="h-3.5 w-3.5 text-violet-600" /> Unit Attendance
+                </h3>
+                <div className="space-y-2.5">
+                  {result.enrolledUnits.map(u => (
+                    <div key={u.unitCode} className="flex items-center gap-3">
+                      <div className="w-32 shrink-0">
+                        <span className="font-mono text-xs text-violet-700 block">{u.unitCode}</span>
+                        {u.unitTitle && <span className="text-xs text-gray-400 truncate block">{u.unitTitle}</span>}
+                      </div>
+                      <div className="flex-1 h-1.5 rounded-full bg-gray-200">
+                        <div className="h-full rounded-full transition-all duration-500"
+                          style={{ width: `${u.pct}%`, backgroundColor: u.pct >= 75 ? "#34d399" : u.pct >= 50 ? "#f59e0b" : "#f87171" }} />
+                      </div>
+                      <span className={`text-xs font-medium w-10 text-right shrink-0 ${
+                        u.pct >= 75 ? "text-emerald-600" : u.pct >= 50 ? "text-amber-600" : "text-rose-600"
+                      }`}>{u.total > 0 ? `${u.pct}%` : "—"}</span>
+                      <span className="text-xs text-gray-400 w-12 shrink-0">{u.attended}/{u.total}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

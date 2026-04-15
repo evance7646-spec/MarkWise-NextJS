@@ -16,10 +16,8 @@ const BASE = "/admin/academic-registrar";
 const NAV_ITEMS = [
   { label: "Overview",     href: `${BASE}/dashboard`,               icon: LayoutDashboard, color: "#A855F7", gradient: "from-purple-500/20 to-purple-600/10" },
   { label: "Students",     href: `${BASE}/dashboard/students`,      icon: Users,           color: "#10B981", gradient: "from-emerald-500/20 to-emerald-600/10" },
-  { label: "Lecturers",    href: `${BASE}/dashboard/lecturers`,     icon: GraduationCap,   color: "#F59E0B", gradient: "from-amber-500/20 to-amber-600/10" },
   { label: "Enrollments",  href: `${BASE}/dashboard/enrollments`,   icon: ClipboardList,   color: "#0EA5E9", gradient: "from-sky-500/20 to-sky-600/10" },
   { label: "Programs",     href: `${BASE}/dashboard/programs`,      icon: Layers,          color: "#06B6D4", gradient: "from-cyan-500/20 to-cyan-600/10" },
-  { label: "Curriculum",   href: `${BASE}/dashboard/curriculum`,    icon: ClipboardCheck,  color: "#8B5CF6", gradient: "from-violet-500/20 to-violet-600/10" },
   { label: "Attendance",   href: `${BASE}/dashboard/attendance`,    icon: ClipboardList,   color: "#14B8A6", gradient: "from-teal-500/20 to-teal-600/10" },
   { label: "Transcripts",  href: `${BASE}/dashboard/transcripts`,   icon: FileText,        color: "#8B5CF6", gradient: "from-violet-500/20 to-violet-600/10" },
   { label: "Verification", href: `${BASE}/dashboard/verification`,  icon: ShieldCheck,     color: "#F43F5E", gradient: "from-rose-500/20 to-rose-600/10" },

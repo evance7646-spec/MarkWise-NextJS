@@ -1,6 +1,15 @@
 import { findCourseById, type CourseRecord } from "@/lib/courseStore";
 import { findStudentByAdmissionIndexed, normalizeAdmission } from "@/lib/studentStore.server";
 import { prisma } from "@/lib/prisma";
+import type { GamificationStats } from "@/lib/gamificationEngine";
+
+export type EnrolledUnitAttendance = {
+  unitCode: string;
+  unitTitle: string;
+  attended: number;
+  total: number;
+  pct: number;
+};
 
 type VerificationPayload = {
   exists: boolean;
@@ -13,8 +22,9 @@ type VerificationPayload = {
     name: string;
   } | null;
   department: { name: string } | null;
-  hasAppAccount: boolean;   // true = StudentAuth record exists (student registered on mobile app)
-  enrolledUnitCount: number; // current number of unit enrollments
+  hasAppAccount: boolean;
+  enrolledUnitCount: number;
+  enrolledUnits: EnrolledUnitAttendance[];
 };
 
 type VerificationCacheEntry = {
@@ -78,10 +88,52 @@ export async function verifyStudentByAdmission(admissionNumber: string, institut
     };
   }
 
-  const [course, enrolledUnitCount] = await Promise.all([
+  const studentId = lookup.student.id;
+
+  const [course, enrollments, cachedPoints] = await Promise.all([
     findCourseById(lookup.student.courseId?.trim() ?? ""),
-    prisma.enrollment.count({ where: { studentId: lookup.student.id } }),
+    prisma.enrollment.findMany({
+      where: { studentId },
+      select: { unit: { select: { code: true, title: true } } },
+    }),
+    prisma.studentPoints.findUnique({
+      where: { studentId },
+      select: { statsJson: true },
+    }),
   ]);
+
+  // Build unit title map from enrollments
+  const unitTitleMap = new Map<string, string>();
+  for (const e of enrollments) {
+    unitTitleMap.set(e.unit.code.trim().toUpperCase(), e.unit.title);
+  }
+
+  // Extract per-unit attendance from cached statsJson
+  let enrolledUnits: EnrolledUnitAttendance[] = [];
+  if (cachedPoints?.statsJson) {
+    const stats = cachedPoints.statsJson as unknown as GamificationStats;
+    const unitAttendance = stats.unitAttendance ?? {};
+    const enrolledSet = new Set(unitTitleMap.keys());
+    enrolledUnits = Object.entries(unitAttendance)
+      .filter(([uc]) => enrolledSet.size === 0 || enrolledSet.has(uc.trim().toUpperCase()))
+      .map(([uc, { attended, total }]) => ({
+        unitCode: uc,
+        unitTitle: unitTitleMap.get(uc.trim().toUpperCase()) ?? "",
+        attended,
+        total,
+        pct: total > 0 ? Math.round((attended / total) * 100) : 0,
+      }))
+      .sort((a, b) => a.unitCode.localeCompare(b.unitCode));
+  } else {
+    // No stats yet — list enrolled units with 0 attendance
+    enrolledUnits = Array.from(unitTitleMap.entries()).map(([code, title]) => ({
+      unitCode: code,
+      unitTitle: title,
+      attended: 0,
+      total: 0,
+      pct: 0,
+    }));
+  }
 
   const payload: VerificationPayload = {
     exists: true,
@@ -90,8 +142,9 @@ export async function verifyStudentByAdmission(admissionNumber: string, institut
     email: lookup.student.email ?? null,
     course: asCoursePayload(course),
     department: lookup.student.departmentName ? { name: lookup.student.departmentName } : null,
-    hasAppAccount: !!lookup.student.email, // email is sourced from StudentAuth
-    enrolledUnitCount,
+    hasAppAccount: !!lookup.student.email,
+    enrolledUnitCount: enrollments.length,
+    enrolledUnits,
   };
 
   // Do not cache found-student payloads — activeness data must always be live

@@ -200,7 +200,7 @@ export default function StudentsPage() {
 
   const filtered = students.filter(s => {
     const q = search.toLowerCase();
-    const matchSearch = !q || s.name.toLowerCase().includes(q) || s.admissionNumber.toLowerCase().includes(q) || s.email.toLowerCase().includes(q);
+    const matchSearch = !q || s.name.toLowerCase().includes(q) || s.admissionNumber.toLowerCase().includes(q);
     const matchDept = deptFilter === "all" || s.departmentId === deptFilter;
     return matchSearch && matchDept;
   });
@@ -234,7 +234,7 @@ export default function StudentsPage() {
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Search name, admission no, or email…"
+            placeholder="Search name or admission number…"
             className="w-full rounded-xl border border-gray-200 bg-white pl-9 pr-3 py-2.5 text-sm text-gray-800 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50" />
         </div>
         <div className="flex items-center gap-1.5">
@@ -289,10 +289,7 @@ export default function StudentsPage() {
                       </div>
                       <div>
                         <div className="font-medium text-gray-800 leading-tight">{s.name}</div>
-                        {s.email
-                          ? <div className="text-xs text-gray-400">{s.email}</div>
-                          : <div className="text-xs text-gray-300 italic">No email yet</div>
-                        }
+                        <div className="text-xs text-gray-400">{s.department?.name ?? "—"}</div>
                       </div>
                     </div>
                   </td>

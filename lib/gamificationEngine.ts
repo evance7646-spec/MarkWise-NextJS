@@ -40,6 +40,8 @@ export type GamificationStats = {
   comebacks: number;
   firstSessionDone: boolean;
   unitsAbove90: string[];
+  /** Per-unit attendance counts derived from timetable + attendance records */
+  unitAttendance: Record<string, { attended: number; total: number }>;
 };
 
 export type GamificationResult = {
@@ -381,7 +383,19 @@ export async function computeGamification(studentId: string): Promise<Gamificati
     }
   }
 
-  // 14. Perfect days count (for daily_bonus rule)
+  // 14. Per-unit attendance summary
+  const unitAttendance: Record<string, { attended: number; total: number }> = {};
+  for (const [uc, total] of unitScheduledCount) {
+    unitAttendance[uc] = { total, attended: unitAttendedCount.get(uc) ?? 0 };
+  }
+  // Also include units that have attendance records but no timetable entries
+  for (const [uc, attCount] of unitAttendedCount) {
+    if (!(uc in unitAttendance)) {
+      unitAttendance[uc] = { total: attCount, attended: attCount };
+    }
+  }
+
+  // 15. Perfect days count (for daily_bonus rule)
   const perfectDayCount = perfectDays.length;
 
   // 15. First session done
@@ -455,6 +469,7 @@ export async function computeGamification(studentId: string): Promise<Gamificati
     comebacks,
     firstSessionDone,
     unitsAbove90,
+    unitAttendance,
   };
 
   return {
@@ -522,6 +537,7 @@ function emptyResult(): GamificationResult {
       comebacks: 0,
       firstSessionDone: false,
       unitsAbove90: [],
+      unitAttendance: {},
     },
     points: {
       total: 0,
