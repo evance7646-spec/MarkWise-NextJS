@@ -61,9 +61,7 @@ export async function POST(req: NextRequest) {
   if (!mergedSessionId || typeof mergedSessionId !== "string" || !mergedSessionId.trim()) {
     return NextResponse.json({ error: "mergedSessionId is required." }, { status: 400, headers: corsHeaders });
   }
-  if (!unitCode || typeof unitCode !== "string" || !unitCode.trim()) {
-    return NextResponse.json({ error: "unitCode is required." }, { status: 400, headers: corsHeaders });
-  }
+  // unitCode is optional — kept for response labelling only
 
   const sessionId = mergedSessionId.trim();
 
@@ -104,10 +102,18 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Clear merge fields + delete MergedSession in a transaction ─────────
+    // First, find all timetable entries linked to this session so we can
+    // also clear their mergeGroupId (used by the admin dashboard view).
+    const affectedEntries = await prisma.timetable.findMany({
+      where: { mergedSessionId: sessionId },
+      select: { id: true, mergeGroupId: true },
+    });
+    const affectedIds = affectedEntries.map(e => e.id);
+
     await prisma.$transaction([
       prisma.timetable.updateMany({
-        where: { mergedSessionId: sessionId },
-        data: { isMerged: false, mergedSessionId: null },
+        where: { id: { in: affectedIds } },
+        data: { isMerged: false, mergedSessionId: null, mergeGroupId: null },
       }),
       prisma.mergedSession.deleteMany({
         where: { id: sessionId },
@@ -118,7 +124,7 @@ export async function POST(req: NextRequest) {
       {
         success: true,
         message: "Session unmerged successfully.",
-        unitCode: unitCode.trim().toUpperCase(),
+        unitCode: typeof unitCode === "string" ? unitCode.trim().toUpperCase() : undefined,
       },
       { status: 200, headers: corsHeaders },
     );

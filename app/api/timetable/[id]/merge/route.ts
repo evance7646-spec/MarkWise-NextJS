@@ -80,7 +80,7 @@ export async function POST(
   // ── Fetch the source entry ────────────────────────────────────────────────
   const source = await prisma.timetable.findUnique({
     where: { id: sourceId },
-    include: { unit: true, department: true },
+    include: { unit: true, department: true, room: { select: { roomCode: true, name: true } } },
   });
   if (!source) {
     return NextResponse.json(
@@ -144,8 +144,7 @@ export async function POST(
     });
   }
 
-  // ── Create the new entry for the joining department ───────────────────────
-  type MergedEntry = typeof source & {
+  // ── Create the new entry for the joining department ───────────────────────  type MergedEntry = typeof source & {
     mergeGroupId: string;
     unit: { code?: string; title?: string } | null;
     course: { id: string; name: string } | null;
@@ -174,6 +173,62 @@ export async function POST(
     },
     include: { unit: true, course: true, room: true, department: true, lecturer: true },
   }) as MergedEntry;
+
+  // ── Create/update MergedSession so the mobile app can see this merge ──────
+  // Fetch all entries in this merge group (including source + the one we just created).
+  const allGroupEntries = await prisma.timetable.findMany({
+    where: { mergeGroupId } as any,
+    include: { unit: { select: { code: true } } },
+  });
+
+  const mergedUnitCodes = [
+    ...new Set(
+      allGroupEntries
+        .map(e => (e as any).unit?.code ? normalizeUnitCode((e as any).unit.code) : null)
+        .filter((c): c is string => !!c),
+    ),
+  ];
+
+  const roomCode = (source.room as any)?.roomCode ?? (source.room as any)?.name ?? source.venueName ?? "";
+
+  // Check if any entry in the group already has a MergedSession
+  const existingSessionEntry = allGroupEntries.find((e: any) => !!e.mergedSessionId);
+  let mergedSessionId: string;
+
+  if (existingSessionEntry) {
+    // Reuse and update the existing MergedSession
+    mergedSessionId = (existingSessionEntry as any).mergedSessionId as string;
+    await prisma.mergedSession.update({
+      where: { id: mergedSessionId },
+      data: { mergedUnitCodes },
+    });
+  } else {
+    // Create a new MergedSession for this admin-initiated merge
+    const dept = await prisma.department.findUnique({
+      where: { id: source.departmentId },
+      select: { institutionId: true },
+    });
+    const session = await prisma.mergedSession.create({
+      data: {
+        mergedBy:        "Admin",
+        mergedByUserId:  adminPayload?.id ?? null,
+        unitCode:        mergedUnitCodes[0] ?? null,
+        mergedUnitCodes,
+        mergedRoom:      roomCode,
+        mergedDay:       source.day,
+        mergedStartTime: source.startTime,
+        mergedEndTime:   source.endTime,
+        institutionId:   dept?.institutionId ?? null,
+      },
+    });
+    mergedSessionId = session.id;
+  }
+
+  // Stamp isMerged + mergedSessionId on ALL entries in the group
+  await prisma.timetable.updateMany({
+    where: { mergeGroupId } as any,
+    data: { isMerged: true, mergedSessionId },
+  });
 
   // ── Bump TimetableVersion for the joining dept's course ──────────────────
   const now = new Date();
@@ -205,6 +260,7 @@ export async function POST(
     {
       success: true,
       mergeGroupId,
+      mergedSessionId,
       entry: {
         id: newEntry.id,
         courseId: newEntry.courseId,
@@ -220,6 +276,10 @@ export async function POST(
         departmentName: newEntry.department?.name,
         lecturerName: newEntry.lecturer?.fullName,
         mergeGroupId,
+        mergedSessionId,
+        isMerged: true,
+        mergedBy: "Admin",
+        mergedUnitCodes,
         status: newEntry.status,
       },
     },

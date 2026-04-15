@@ -160,6 +160,15 @@ export async function POST(req: NextRequest) {
   const institutionId = department?.institutionId ?? null;
 
   try {
+    // Collect all unit codes from the entries being merged
+    const mergedUnitCodes = [
+      ...new Set(
+        entries
+          .map(e => e.unit?.code ? normalizeUnitCode(e.unit.code) : null)
+          .filter((c): c is string => !!c),
+      ),
+    ];
+
     // ── Transaction: create MergedSession + mark entries ───────────────────
     const mergedSession = await prisma.$transaction(async (tx) => {
       const session = await tx.mergedSession.create({
@@ -168,6 +177,7 @@ export async function POST(req: NextRequest) {
           mergedByUserId: userId,
           lecturerId:     (role === "lecturer" ? userId : null) as string,
           unitCode:       effectiveUnitCode,
+          mergedUnitCodes,
           mergedRoom:     effectiveRoomCode,
           mergedRoomId:   effectiveRoomId ? String(effectiveRoomId) : null,
           mergedDay:      effectiveDay,

@@ -781,6 +781,8 @@ model MergedSession {
   mergedEndTime   String?
   // Note
   mergedNote      String?
+  // All unit codes that are part of this merged session
+  mergedUnitCodes String[]    @default([])
   // Institution
   institutionId   String?
   // Timestamps

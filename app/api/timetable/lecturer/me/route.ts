@@ -87,6 +87,7 @@ export async function GET(request: Request) {
             mergedEndTime: true,
             mergedNote: true,
             mergedBy: true,
+            mergedUnitCodes: true,
           },
         },
       },
@@ -146,6 +147,7 @@ export async function GET(request: Request) {
           mergedEnd: item.mergedSession?.mergedEndTime ?? null,
           mergedNote: item.mergedSession?.mergedNote ?? null,
           mergedBy: (item.mergedSession?.mergedBy ?? null) as "Lecturer" | "Admin" | null,
+          mergedUnitCodes: item.mergedSession?.mergedUnitCodes ?? [],
         };
       })
       .sort((a, b) => {
