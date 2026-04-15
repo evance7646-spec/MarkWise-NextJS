@@ -144,7 +144,8 @@ export async function POST(
     });
   }
 
-  // ── Create the new entry for the joining department ───────────────────────  type MergedEntry = typeof source & {
+  // ── Create the new entry for the joining department ─────────────────────────
+  type MergedEntry = typeof source & {
     mergeGroupId: string;
     unit: { code?: string; title?: string } | null;
     course: { id: string; name: string } | null;
