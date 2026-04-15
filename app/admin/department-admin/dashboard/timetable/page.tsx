@@ -5,7 +5,7 @@ import {
   Calendar, Search, Plus, X, Loader2, Users,
   Clock, BookOpen, MapPin, GraduationCap,
   LayoutGrid, List, CheckCircle2, RefreshCw,
-  Filter, ChevronDown, Zap, Building2, AlertCircle,
+  Filter, ChevronDown, Zap, Building2, AlertCircle, Trash2,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
@@ -82,6 +82,15 @@ const TIME_SLOTS = Array.from({ length: 14 }, (_, i) => `${String(i + 7).padStar
 // "HH:MM" → minutes from midnight
 function timeToMins(t: string) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
 
+// Format duration in minutes → "2h", "1h 30m", "45m"
+function formatDuration(mins: number) {
+  if (mins <= 0) return "—";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 const EMPTY_FORM = {
   courseId: "", yearId: "", semesterId: "", unitId: "",
   lecturerId: "", roomId: "", venueName: "",
@@ -136,6 +145,10 @@ export default function DeptTimetablePage() {
   const [submitError, setSubmitError]       = useState<string | null>(null);
   const [mergeConflict, setMergeConflict]   = useState<{ conflictId: string; message: string } | null>(null);
 
+  // Delete state
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deleting, setDeleting]               = useState(false);
+
   // Joint-class detail drawer
   const [drawerGroupId, setDrawerGroupId]     = useState<string | null>(null);
   const [drawerEntries, setDrawerEntries]     = useState<MergeEntry[]>([]);
@@ -176,6 +189,27 @@ export default function DeptTimetablePage() {
   const closeDrawer = useCallback(() => {
     setDrawerGroupId(null);
     setDrawerEntries([]);
+  }, []);
+
+  const handleDelete = useCallback(async (id: string) => {
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/timetable/${id}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (res.ok) {
+        setEntries(prev => prev.filter(e => e.id !== id));
+        setDeleteConfirmId(null);
+      } else {
+        const d = await res.json().catch(() => ({}));
+        console.error("[timetable] delete failed:", d.error ?? res.status);
+      }
+    } catch (err) {
+      console.error("[timetable] delete error:", err);
+    } finally {
+      setDeleting(false);
+    }
   }, []);
 
   // ── Open modal ─────────────────────────────────────────────────────
@@ -580,19 +614,20 @@ export default function DeptTimetablePage() {
             ) : (
               <div>
                 {/* Column headers */}
-                <div className="hidden sm:grid sm:grid-cols-[80px_1fr_160px_130px_130px] gap-4 px-5 py-2.5 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50/60">
+                <div className="hidden sm:grid sm:grid-cols-[80px_1fr_160px_130px_150px] gap-4 px-5 py-2.5 border-b border-gray-100 text-[10px] font-bold text-gray-400 uppercase tracking-widest bg-gray-50/60">
                   <span>Time</span><span>Unit / Course</span><span>Lecturer</span><span>Room</span><span className="text-right">Status</span>
                 </div>
                 {shown.map((e, i) => {
                   const col = DAY_COLORS[e.day] ?? DAY_COLORS.Monday;
                   const st  = STATUS_META[e.status] ?? STATUS_META.Pending;
                   const durationMins = timeToMins(e.endTime) - timeToMins(e.startTime);
+                  const isConfirmingDelete = deleteConfirmId === e.id;
                   return (
                     <motion.div
                       key={e.id}
                       initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.03, duration: 0.2 }}
-                      className="group grid grid-cols-1 sm:grid-cols-[80px_1fr_160px_130px_130px] gap-2 sm:gap-4 items-center px-5 py-4 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60 transition-colors"
+                      className="group grid grid-cols-1 sm:grid-cols-[80px_1fr_160px_130px_150px] gap-2 sm:gap-4 items-center px-5 py-4 border-b border-gray-100 last:border-b-0 hover:bg-gray-50/60 transition-colors"
                     >
                       {/* Time */}
                       <div className="flex sm:flex-col gap-2 sm:gap-0.5">
@@ -600,7 +635,7 @@ export default function DeptTimetablePage() {
                         <span className="text-[10px] text-gray-400 font-mono hidden sm:block">{e.endTime}</span>
                         <span className="text-[10px] text-gray-400 sm:hidden">– {e.endTime}</span>
                         <span className="hidden sm:block text-[10px] font-medium text-indigo-500 bg-indigo-50 rounded-md px-1 py-0.5 w-fit mt-0.5">
-                          {durationMins}min
+                          {formatDuration(durationMins)}
                         </span>
                       </div>
                       {/* Unit */}
@@ -628,7 +663,7 @@ export default function DeptTimetablePage() {
                         <MapPin className="h-3.5 w-3.5 text-gray-300 shrink-0" />
                         <span className="text-xs text-gray-500 truncate">{e.venueName ?? e.roomName ?? "—"}</span>
                       </div>
-                      {/* Status + Joint */}
+                      {/* Status + Joint + Delete */}
                       <div className="hidden sm:flex items-center justify-end gap-1.5 flex-wrap">
                         {e.mergeGroupId && (
                           <button
@@ -642,6 +677,32 @@ export default function DeptTimetablePage() {
                           <span className={`h-1.5 w-1.5 rounded-full ${st.dot}`} />
                           {e.status}
                         </span>
+                        {/* Delete */}
+                        {isConfirmingDelete ? (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => handleDelete(e.id)}
+                              disabled={deleting}
+                              className="rounded-lg bg-red-500 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-red-600 disabled:opacity-50 transition"
+                            >
+                              {deleting ? "…" : "Yes"}
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="rounded-lg border border-gray-200 px-2 py-0.5 text-[10px] font-semibold text-gray-500 hover:bg-gray-100 transition"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeleteConfirmId(e.id)}
+                            className="rounded-lg p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition opacity-0 group-hover:opacity-100"
+                            title="Delete entry"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                       {/* Mobile summary */}
                       <div className="flex sm:hidden items-center justify-between mt-1">
@@ -650,8 +711,26 @@ export default function DeptTimetablePage() {
                           <span className="text-gray-300">·</span>
                           <MapPin className="h-3.5 w-3.5" /><span>{e.venueName ?? "—"}</span>
                         </div>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${st.pill}`}>{e.status}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${st.pill}`}>{e.status}</span>
+                          <button
+                            onClick={() => setDeleteConfirmId(isConfirmingDelete ? null : e.id)}
+                            className="rounded-lg p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
                       </div>
+                      {/* Mobile delete confirm row */}
+                      {isConfirmingDelete && (
+                        <div className="sm:hidden col-span-full flex items-center justify-between gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2 mt-1">
+                          <span className="text-xs text-red-700 font-medium">Delete this entry?</span>
+                          <div className="flex gap-1.5">
+                            <button onClick={() => setDeleteConfirmId(null)} className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition">No</button>
+                            <button onClick={() => handleDelete(e.id)} disabled={deleting} className="rounded-lg bg-red-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50 transition">{deleting ? "…" : "Yes, delete"}</button>
+                          </div>
+                        </div>
+                      )}
                     </motion.div>
                   );
                 })}
