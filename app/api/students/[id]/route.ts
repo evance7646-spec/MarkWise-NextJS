@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { normalizeAdmission, readStudents, type StudentRecord, writeStudents } from "@/lib/studentStore.server";
+import { normalizeAdmission } from "@/lib/studentStore.server";
 import { prisma } from "@/lib/prisma";
+import { resolveAdminScope } from "@/lib/adminScope";
 
 export const runtime = "nodejs";
 
@@ -14,13 +15,18 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const scope = await resolveAdminScope(request);
+  if (!scope.ok) {
+    return NextResponse.json({ error: scope.error }, { status: scope.status, headers: corsHeaders });
+  }
+
   try {
     const { id } = await context.params;
-    const body = (await request.json()) as Partial<StudentRecord>;
-    const name = body.name?.trim() ?? "";
-    const admissionNumber = normalizeAdmission(body.admissionNumber ?? "");
-    const courseId = body.courseId?.trim() ?? "";
-    const email = body.email?.trim();
+    const body = await request.json() as Record<string, unknown>;
+    const name = (body.name as string | undefined)?.trim() ?? "";
+    const admissionNumber = normalizeAdmission((body.admissionNumber as string | undefined) ?? "");
+    const courseId = (body.courseId as string | undefined)?.trim() ?? "";
+    const year = typeof body.year === "number" ? body.year : undefined;
 
     if (!name || !admissionNumber || !courseId) {
       return NextResponse.json(
@@ -29,37 +35,36 @@ export async function PUT(
       );
     }
 
-    const students = await readStudents();
-    const targetIndex = students.findIndex((student) => student.id === id);
-
-    if (targetIndex < 0) {
+    // Verify the student belongs to the admin's department / institution
+    const existing = await prisma.student.findUnique({ where: { id }, select: { departmentId: true, institutionId: true } });
+    if (!existing) {
       return NextResponse.json({ error: "Student not found." }, { status: 404, headers: corsHeaders });
     }
 
-    const exists = students.some(
-      (student) => student.id !== id && normalizeAdmission(student.admissionNumber) === admissionNumber,
-    );
+    if (!scope.isInstitutionAdmin && scope.departmentId !== existing.departmentId) {
+      return NextResponse.json({ error: "Access denied." }, { status: 403, headers: corsHeaders });
+    }
+    if (scope.institutionId && scope.institutionId !== existing.institutionId) {
+      return NextResponse.json({ error: "Access denied." }, { status: 403, headers: corsHeaders });
+    }
 
-    if (exists) {
+    // Check admission number uniqueness (excluding this student)
+    const duplicate = await prisma.student.findFirst({
+      where: { admissionNumber, NOT: { id } },
+      select: { id: true },
+    });
+    if (duplicate) {
       return NextResponse.json(
         { error: "Student with this admission number already exists." },
         { status: 409, headers: corsHeaders },
       );
     }
 
-    const updatedStudent: StudentRecord = {
-      ...students[targetIndex],
-      name,
-      admissionNumber,
-      courseId,
-      email,
-    };
+    const data: Record<string, unknown> = { name, admissionNumber, courseId };
+    if (year !== undefined) data.year = year;
 
-    const updatedStudents = [...students];
-    updatedStudents[targetIndex] = updatedStudent;
-    await writeStudents(updatedStudents);
-
-    return NextResponse.json({ student: updatedStudent }, { headers: corsHeaders });
+    const updated = await prisma.student.update({ where: { id }, data });
+    return NextResponse.json({ student: updated }, { headers: corsHeaders });
   } catch {
     return NextResponse.json(
       { error: "Failed to update student." },
@@ -69,12 +74,31 @@ export async function PUT(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> },
 ) {
+  const scope = await resolveAdminScope(request);
+  if (!scope.ok) {
+    return NextResponse.json({ error: scope.error }, { status: scope.status, headers: corsHeaders });
+  }
+
   try {
     const { id } = await context.params;
-    const deleted = await prisma.student.delete({ where: { id } });
+
+    // Verify ownership before deleting
+    const existing = await prisma.student.findUnique({ where: { id }, select: { departmentId: true, institutionId: true } });
+    if (!existing) {
+      return NextResponse.json({ error: "Student not found." }, { status: 404, headers: corsHeaders });
+    }
+
+    if (!scope.isInstitutionAdmin && scope.departmentId !== existing.departmentId) {
+      return NextResponse.json({ error: "Access denied." }, { status: 403, headers: corsHeaders });
+    }
+    if (scope.institutionId && scope.institutionId !== existing.institutionId) {
+      return NextResponse.json({ error: "Access denied." }, { status: 403, headers: corsHeaders });
+    }
+
+    await prisma.student.delete({ where: { id } });
     return NextResponse.json({ success: true }, { headers: corsHeaders });
   } catch (error) {
     return NextResponse.json(

@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Search, Plus, X, UserPlus, ChevronLeft, ChevronRight,
-  Upload, AlertTriangle,
+  Upload, AlertTriangle, Pencil, Trash2,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
 
@@ -85,6 +85,129 @@ function AddStudentModal({ courses, departmentId, onClose, onSaved }: {
               {saving ? "Saving…" : "Admit"}
             </button>
           </div>
+        </div>
+      </motion.div>
+      </div>
+    </>
+  );
+}
+
+function EditStudentModal({ student, courses, onClose, onSaved }: {
+  student: Student; courses: Course[];
+  onClose: () => void; onSaved: () => void;
+}) {
+  const [form, setForm] = useState({ name: student.name, admissionNumber: student.admissionNumber, courseId: student.courseId });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const save = async () => {
+    if (!form.name || !form.admissionNumber || !form.courseId) {
+      setErr("All fields required"); return;
+    }
+    setSaving(true); setErr("");
+    try {
+      const r = await fetch(`/api/students/${student.id}`, {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!r.ok) { const j = await r.json(); setErr(j.error ?? "Failed"); setSaving(false); return; }
+      onSaved();
+    } catch { setErr("Network error"); setSaving(false); }
+  };
+
+  const f = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm(p => ({ ...p, [k]: e.target.value }));
+
+  return (
+    <>
+      <motion.div
+        key="edit-backdrop"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      <motion.div
+        key="edit-card"
+        initial={{ scale: 0.93, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.93, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        className="w-full max-w-md rounded-2xl border border-gray-200 bg-white text-gray-900 p-6 shadow-2xl pointer-events-auto">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+            <Pencil className="h-4 w-4 text-amber-600" /> Edit Student
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="space-y-3">
+          <div><label className={lbl}>Full Name</label><input value={form.name} onChange={f("name")} className={inp} /></div>
+          <div><label className={lbl}>Admission Number</label><input value={form.admissionNumber} onChange={f("admissionNumber")} className={inp} /></div>
+          <div><label className={lbl}>Course / Programme</label>
+            <select value={form.courseId} onChange={f("courseId")} className={inp}>
+              <option value="">Select course</option>
+              {courses.map(c => <option key={c.id} value={c.id}>{c.code} – {c.name}</option>)}
+            </select>
+          </div>
+          {err && <p className="text-xs text-rose-600">{err}</p>}
+          <div className="flex gap-2 pt-1">
+            <button onClick={onClose} className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm text-gray-500 hover:bg-gray-50">Cancel</button>
+            <button onClick={save} disabled={saving}
+              className="flex-1 rounded-xl bg-amber-500 py-2.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-60">
+              {saving ? "Saving…" : "Save Changes"}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+      </div>
+    </>
+  );
+}
+
+function DeleteConfirmModal({ student, onClose, onDeleted }: {
+  student: Student;
+  onClose: () => void; onDeleted: () => void;
+}) {
+  const [deleting, setDeleting] = useState(false);
+  const [err, setErr] = useState("");
+
+  const confirm = async () => {
+    setDeleting(true); setErr("");
+    try {
+      const r = await fetch(`/api/students/${student.id}`, { method: "DELETE", credentials: "include" });
+      if (!r.ok) { const j = await r.json(); setErr(j.error ?? "Failed"); setDeleting(false); return; }
+      onDeleted();
+    } catch { setErr("Network error"); setDeleting(false); }
+  };
+
+  return (
+    <>
+      <motion.div
+        key="del-backdrop"
+        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+        className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
+      <motion.div
+        key="del-card"
+        initial={{ scale: 0.93, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.93, opacity: 0 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        className="w-full max-w-sm rounded-2xl border border-gray-200 bg-white text-gray-900 p-6 shadow-2xl pointer-events-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-semibold text-rose-700 flex items-center gap-2">
+            <Trash2 className="h-4 w-4" /> Remove Student
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700"><X className="h-5 w-5" /></button>
+        </div>
+        <p className="text-sm text-gray-600 mb-1">Are you sure you want to remove <span className="font-semibold text-gray-800">{student.name}</span>?</p>
+        <p className="text-xs text-gray-400 mb-5">This will permanently delete all their data including enrollments and attendance records.</p>
+        {err && <p className="text-xs text-rose-600 mb-3">{err}</p>}
+        <div className="flex gap-2">
+          <button onClick={onClose} className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm text-gray-500 hover:bg-gray-50">Cancel</button>
+          <button onClick={confirm} disabled={deleting}
+            className="flex-1 rounded-xl bg-rose-600 py-2.5 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-60">
+            {deleting ? "Removing…" : "Remove"}
+          </button>
         </div>
       </motion.div>
       </div>
@@ -180,6 +303,8 @@ export default function DeptStudentsPage() {
   const [page, setPage] = useState(1);
   const [showAdd, setShowAdd] = useState(false);
   const [showBulk, setShowBulk] = useState(false);
+  const [editStudent, setEditStudent] = useState<Student | null>(null);
+  const [deleteStudent, setDeleteStudent] = useState<Student | null>(null);
   const debouncedRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -247,6 +372,7 @@ export default function DeptStudentsPage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 hidden lg:table-cell">Course</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400">Account</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-400 hidden sm:table-cell">Units</th>
+                <th className="px-4 py-3" />
               </tr>
             </thead>
             <tbody>
@@ -292,6 +418,22 @@ export default function DeptStudentsPage() {
                     <span className="text-sm font-semibold text-gray-700">{s._count?.enrollments ?? 0}</span>
                     <span className="text-xs text-gray-400 ml-1">unit{(s._count?.enrollments ?? 0) !== 1 ? "s" : ""}</span>
                   </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-1 justify-end">
+                      <button
+                        onClick={() => setEditStudent(s)}
+                        className="rounded-lg p-1.5 text-gray-400 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                        title="Edit student">
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteStudent(s)}
+                        className="rounded-lg p-1.5 text-gray-400 hover:bg-rose-50 hover:text-rose-600 transition-colors"
+                        title="Remove student">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </td>
                 </motion.tr>
               ))}
             </tbody>
@@ -322,6 +464,14 @@ export default function DeptStudentsPage() {
         {showBulk && admin && (
           <BulkImportModal institutionId={admin.institutionId} departmentId={admin.departmentId} courses={courses}
             onClose={() => setShowBulk(false)} onSaved={() => { setShowBulk(false); load(); }} />
+        )}
+        {editStudent && (
+          <EditStudentModal student={editStudent} courses={courses}
+            onClose={() => setEditStudent(null)} onSaved={() => { setEditStudent(null); load(); }} />
+        )}
+        {deleteStudent && (
+          <DeleteConfirmModal student={deleteStudent}
+            onClose={() => setDeleteStudent(null)} onDeleted={() => { setDeleteStudent(null); load(); }} />
         )}
       </AnimatePresence>
     </div>
