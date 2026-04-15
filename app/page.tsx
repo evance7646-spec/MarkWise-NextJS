@@ -20,6 +20,7 @@ import {
   Building2,
   GraduationCap,
   DoorOpen,
+  Bell,
 } from "lucide-react";
 import AppHeader from "@/app/components/app-header";
 import AppFooter from "@/app/components/app-footer";
@@ -91,14 +92,6 @@ function LandingPageContent() {
   ];
 
   const adminRoles = [
-    {
-      icon: <Shield className="h-6 w-6" />,
-      title: "Super Admin",
-      description: "Platform owner with full control over all institutions and system administrators.",
-      href: "/admin/login",
-      color: "from-amber-500 to-yellow-400",
-      badge: "bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-500/30",
-    },
     {
       icon: <Building2 className="h-6 w-6" />,
       title: "System Administrator",
@@ -259,6 +252,13 @@ function LandingPageContent() {
                     <div>
                       <div className="font-bold text-pink-700 dark:text-pink-200">Secure & Inclusive</div>
                       <div className="text-xs text-zinc-600 dark:text-zinc-300">Privacy-first, accessible, and mobile-friendly</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-900/30">
+                    <Bell className="h-6 w-6 text-indigo-600 dark:text-indigo-300" />
+                    <div>
+                      <div className="font-bold text-indigo-700 dark:text-indigo-200">Notifications</div>
+                      <div className="text-xs text-zinc-600 dark:text-zinc-300">Instant alerts for classes, bookings, and updates</div>
                     </div>
                   </div>
                 </div>
@@ -587,7 +587,7 @@ function LandingPageContent() {
                   href={role.href}
                   className="mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:gap-2.5 transition-all"
                 >
-                  {role.href === "/admin/login" && role.title === "Super Admin" ? "Sign In" : "Register"}
+                  Register
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>

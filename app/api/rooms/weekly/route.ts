@@ -20,16 +20,17 @@ export async function GET(request: Request) {
       throw new ApiError(400, "MISSING_PARAM", "institutionId is required.");
     }
 
-    // Calculate Monday–Sunday of the current week
+    // Calculate Monday–Sunday of the current week using UTC so the window
+    // aligns with booking timestamps (which are stored as UTC).
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0=Sun, 1=Mon, ...
-    const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const dayOfWeekUTC = now.getUTCDay(); // 0=Sun, 1=Mon, ...
+    const mondayOffset = dayOfWeekUTC === 0 ? -6 : 1 - dayOfWeekUTC;
     const monday = new Date(now);
-    monday.setHours(0, 0, 0, 0);
-    monday.setDate(now.getDate() + mondayOffset);
+    monday.setUTCHours(0, 0, 0, 0);
+    monday.setUTCDate(now.getUTCDate() + mondayOffset);
 
     const sunday = new Date(monday);
-    sunday.setDate(monday.getDate() + 7); // exclusive end (Mon next week 00:00)
+    sunday.setUTCDate(monday.getUTCDate() + 7); // exclusive end (Mon next week 00:00 UTC)
 
     // Fetch all active rooms for the institution
     const rooms = await prisma.room.findMany({
@@ -58,7 +59,8 @@ export async function GET(request: Request) {
     const bookingsByRoom = new Map<string, Map<number, BookingWithRelations[]>>();
     for (const b of bookings) {
       const start = new Date(b.startAt);
-      const dayIdx = (start.getDay() + 6) % 7; // convert Sun=0 → 6, Mon=1 → 0, etc.
+      // Use UTC day so it matches the UTC-based week window boundaries.
+      const dayIdx = (start.getUTCDay() + 6) % 7; // convert Sun=0 → 6, Mon=1 → 0, etc.
       if (!bookingsByRoom.has(b.roomId)) bookingsByRoom.set(b.roomId, new Map());
       const dayMap = bookingsByRoom.get(b.roomId)!;
       if (!dayMap.has(dayIdx)) dayMap.set(dayIdx, []);
@@ -72,7 +74,7 @@ export async function GET(request: Request) {
       const dayMap = bookingsByRoom.get(room.id);
       const weekSchedule = dayLabels.map((label, idx) => {
         const dayDate = new Date(monday);
-        dayDate.setDate(monday.getDate() + idx);
+        dayDate.setUTCDate(monday.getUTCDate() + idx);
         const dayBookings = dayMap?.get(idx) ?? [];
 
         // Determine day-level status

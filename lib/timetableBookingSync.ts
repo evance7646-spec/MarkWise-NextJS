@@ -33,11 +33,13 @@ const DAY_TO_DOW: Record<string, number> = {
   Saturday: 6,
 };
 
-/** Clone a date and set hours/minutes from an "HH:MM" string. */
+/** Clone a date and set UTC hours/minutes from an "HH:MM" string.
+ * Times in timetable entries are treated as UTC so they match what the
+ * department admin set and display correctly on the facilities-manager pages. */
 function applyTime(base: Date, hhmm: string): Date {
   const [h, m] = hhmm.split(":").map(Number);
   const d = new Date(base);
-  d.setHours(h, m, 0, 0);
+  d.setUTCHours(h, m, 0, 0);
   return d;
 }
 
@@ -51,16 +53,16 @@ function getOccurrences(
   if (dow === undefined) return [];
 
   const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  today.setUTCHours(0, 0, 0, 0);
 
-  const daysUntil = (dow - today.getDay() + 7) % 7;
+  const daysUntil = (dow - today.getUTCDay() + 7) % 7;
   const first = new Date(today);
-  first.setDate(today.getDate() + daysUntil);
+  first.setUTCDate(today.getUTCDate() + daysUntil);
 
   const results: { startAt: Date; endAt: Date; dateKey: string }[] = [];
   for (let w = 0; w < WEEKS_AHEAD; w++) {
     const base = new Date(first);
-    base.setDate(first.getDate() + w * 7);
+    base.setUTCDate(first.getUTCDate() + w * 7);
     results.push({
       startAt: applyTime(base, startTime),
       endAt: applyTime(base, endTime),

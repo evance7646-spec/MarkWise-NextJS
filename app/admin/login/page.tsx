@@ -175,24 +175,7 @@ export default function AdminLoginPage() {
             </p>
           </div>
 
-          <div className="mt-5 pt-4 border-t border-slate-600/70 space-y-3">
-            <p className="text-xs text-slate-500 text-center">
-              Access is role-restricted. You&apos;ll be redirected to your portal after sign-in.
-            </p>
-            <div className="flex flex-wrap justify-center gap-1.5">
-              {[
-                { label: "Super Admin",        color: "text-amber-400  border-amber-500/30  bg-amber-500/10"  },
-                { label: "System Admin",       color: "text-indigo-400 border-indigo-500/30 bg-indigo-500/10" },
-                { label: "Academic Registrar", color: "text-purple-400 border-purple-500/30 bg-purple-500/10" },
-                { label: "Facilities Manager", color: "text-orange-400 border-orange-500/30 bg-orange-500/10" },
-                { label: "Department Admin",   color: "text-teal-400   border-teal-500/30   bg-teal-500/10"  },
-              ].map(r => (
-                <span key={r.label} className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[10px] font-medium ${r.color}`}>
-                  {r.label}
-                </span>
-              ))}
-            </div>
-          </div>
+
         </Card>
 
         <div className="mt-6 text-center">

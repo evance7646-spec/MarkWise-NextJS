@@ -43,16 +43,16 @@ function formatDuration(start: string, end: string): string {
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
-    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+    month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC",
   });
 }
 
 function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 }
 
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  return new Date(iso).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" });
 }
 
 function todayIso(): string {

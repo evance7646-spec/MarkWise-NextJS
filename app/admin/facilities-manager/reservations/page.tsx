@@ -43,7 +43,7 @@ type WeeklyRoom = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 }
 
 const STATUS_COLORS: Record<string, { bg: string; text: string; dot: string; label: string }> = {

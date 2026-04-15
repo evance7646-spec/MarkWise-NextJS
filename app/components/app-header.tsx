@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Sparkles, Menu, X } from "lucide-react";
 
@@ -10,6 +10,20 @@ export default function AppHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Resolve a section anchor: use /#section when not on the home page
+  function sectionHref(anchor: string) {
+    return pathname === "/" ? `#${anchor}` : `/#${anchor}`;
+  }
+
+  const NAV_LINKS = [
+    { label: "Features",         href: sectionHref("features") },
+    { label: "How It Works",     href: sectionHref("how-it-works") },
+    { label: "Testimonials",     href: sectionHref("testimonials") },
+    { label: "Pricing",          href: "/pricing" },
+    { label: "For Institutions", href: sectionHref("for-institutions") },
+  ];
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -46,16 +60,16 @@ export default function AppHeader() {
 
         {/* Desktop Navigation */}
         <nav className="hidden items-center gap-8 md:flex">
-          {["Features", "How It Works", "Testimonials", "Pricing", "For Institutions"].map((item, i) => (
+          {NAV_LINKS.map((item, i) => (
             <motion.a
-              key={item}
+              key={item.label}
               initial={{ opacity: 0, y: -10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: i * 0.1 }}
-              href={item === "Pricing" ? "/pricing" : `#${item.toLowerCase().replace(/\s+/g, "-")}`}
+              href={item.href}
               className="text-sm font-medium text-slate-600 hover:text-indigo-600 dark:text-slate-300 dark:hover:text-indigo-300 transition-colors relative group"
             >
-              {item}
+              {item.label}
               <span className="absolute inset-x-0 -bottom-1 h-0.5 bg-gradient-to-r from-indigo-600 to-cyan-600 transform scale-x-0 group-hover:scale-x-100 transition-transform origin-left" />
             </motion.a>
           ))}
@@ -143,14 +157,14 @@ export default function AppHeader() {
             className="md:hidden bg-white dark:bg-slate-950 border-t dark:border-slate-800"
           >
             <div className="px-4 py-4 space-y-3">
-              {["Features", "How It Works", "Testimonials", "Pricing", "For Institutions"].map((item) => (
+              {NAV_LINKS.map((item) => (
                 <a
-                  key={item}
-                  href={item === "Pricing" ? "/pricing" : `#${item.toLowerCase().replace(/\s+/g, "-")}`}
+                  key={item.label}
+                  href={item.href}
                   className="block py-2 text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors"
                   onClick={() => setMobileMenuOpen(false)}
                 >
-                  {item}
+                  {item.label}
                 </a>
               ))}
               <div className="pt-4 border-t dark:border-slate-800 flex flex-col gap-3">

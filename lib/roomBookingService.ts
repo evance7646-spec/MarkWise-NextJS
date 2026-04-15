@@ -99,9 +99,9 @@ export async function recomputeRoomStatus(tx: TxClient, roomId: string, reason: 
     return setRoomStatus(tx, roomId, RoomStatus.reserved, reason, actorId);
   }
 
-  // Otherwise, check for reserved bookings starting within today
+  // Otherwise, check for reserved bookings starting within today (UTC)
   const endOfDay = new Date(now);
-  endOfDay.setHours(23, 59, 59, 999);
+  endOfDay.setUTCHours(23, 59, 59, 999);
   const reserved = await tx.booking.findFirst({
     where: {
       roomId,
