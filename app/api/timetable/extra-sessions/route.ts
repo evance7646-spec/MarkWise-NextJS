@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
     roomId,
     lessonType = "LEC",
     lecturerId: bodyLecturerId,
+    mergedSessionId,
   } = body as {
     unitCode?: string;
     date?: string;
@@ -69,6 +70,7 @@ export async function POST(req: NextRequest) {
     roomId?: string;
     lessonType?: string;
     lecturerId?: string;
+    mergedSessionId?: string;
   };
 
   // Use JWT identity; optionally body-supplied lecturerId is ignored for auth —
@@ -77,7 +79,8 @@ export async function POST(req: NextRequest) {
   void bodyLecturerId; // accepted in body for mobile client compatibility but not trusted
 
   // ── Validation ─────────────────────────────────────────────────────────────
-  if (!unitCode || typeof unitCode !== "string" || !unitCode.trim()) {
+  // unitCode is required only when not using mergedSessionId
+  if (!mergedSessionId && (!unitCode || typeof unitCode !== "string" || !unitCode.trim())) {
     return NextResponse.json({ error: "unitCode is required" }, { status: 400, headers: corsHeaders });
   }
   if (!dateStr || typeof dateStr !== "string") {
@@ -117,6 +120,98 @@ export async function POST(req: NextRequest) {
       { status: 400, headers: corsHeaders },
     );
   }
+
+  // ── Merged make-up path ───────────────────────────────────────────────────
+  // When mergedSessionId is supplied, create one ExtraSession per merged unit
+  // code and notify all enrolled students in one batch.
+  if (mergedSessionId) {
+    const mergedSess = await prisma.mergedSession.findUnique({
+      where: { id: mergedSessionId },
+      select: { mergedUnitCodes: true, mergedRoom: true },
+    });
+    if (!mergedSess) {
+      return NextResponse.json({ error: "MergedSession not found" }, { status: 404, headers: corsHeaders });
+    }
+
+    // Resolve the list of unit codes — fall back to supplied unitCode if no codes stored
+    const rawCodes = mergedSess.mergedUnitCodes.length > 0
+      ? mergedSess.mergedUnitCodes
+      : (unitCode ? [unitCode] : []);
+    if (rawCodes.length === 0) {
+      return NextResponse.json(
+        { error: "No unit codes found for this merged session" },
+        { status: 400, headers: corsHeaders },
+      );
+    }
+
+    const effectiveRoomCode =
+      (typeof roomCode === "string" && roomCode.trim() ? roomCode.trim() : null) ??
+      mergedSess.mergedRoom ?? null;
+    const effectiveRoomId =
+      typeof roomId === "string" && roomId.trim() ? roomId.trim() : null;
+
+    const created: Record<string, unknown>[] = [];
+    for (const code of rawCodes) {
+      const session = await prisma.extraSession.create({
+        data: {
+          unitCode: normalizeUnitCode(code),
+          lecturerId,
+          date: sessionDate,
+          startTime: startTime!.trim(),
+          endTime: endTime!.trim(),
+          roomCode: effectiveRoomCode,
+          roomId: effectiveRoomId,
+          lessonType,
+        },
+        select: {
+          id: true, unitCode: true, date: true,
+          startTime: true, endTime: true, roomCode: true,
+          lessonType: true, lecturerId: true,
+        },
+      });
+      created.push({ ...session, date: session.date.toISOString().slice(0, 10) });
+    }
+
+    const dateFmt = sessionDate.toISOString().slice(0, 10);
+    const venueDisplay = effectiveRoomCode ?? "TBA";
+    const displayCodes = rawCodes.map(c => normalizeUnitCode(c)).join(" / ");
+
+    // Push notification to all students enrolled in any of the merged units
+    (async () => {
+      try {
+        const normalizedCodes = rawCodes.map(c => normalizeUnitCode(c));
+        const enrollments = await prisma.enrollment.findMany({
+          where: { unit: { code: { in: normalizedCodes } } },
+          select: { studentId: true },
+        });
+        const studentIds = [...new Set(enrollments.map(e => e.studentId))];
+        if (studentIds.length === 0) return;
+        const payloads = await buildPayloadsForStudents(studentIds, {
+          title: `${displayCodes} — Make-Up Session Added`,
+          body: `A make-up ${lessonType} for ${displayCodes} has been scheduled on ${dateFmt} at ${startTime}–${endTime}, Room ${venueDisplay}.`,
+          data: {
+            type: "EXTRA_SESSION",
+            mergedSessionId,
+            unitCodes: normalizedCodes,
+            date: dateFmt,
+            startTime: startTime!.trim(),
+            endTime: endTime!.trim(),
+            lessonType,
+            roomCode: venueDisplay,
+          },
+        });
+        await sendPushNotificationBatch(payloads);
+      } catch (err) {
+        console.error("[extra-sessions/POST] merged push error:", err);
+      }
+    })();
+
+    return NextResponse.json(
+      { success: true, message: "Merged make-up sessions created", data: created.map(s => ({ ...s, isExtraSession: true })) },
+      { status: 201, headers: corsHeaders },
+    );
+  }
+  // ── End merged make-up path ───────────────────────────────────────────────
 
   // Validate unitCode exists
   const normalisedCode = normalizeUnitCode(unitCode);
@@ -165,10 +260,10 @@ export async function POST(req: NextRequest) {
       const studentIds = enrollments.map((e) => e.studentId);
       if (studentIds.length === 0) return;
       const payloads = await buildPayloadsForStudents(studentIds, {
-        title: "Extra Session Added",
-        body: `${session.unitCode} — make-up ${session.lessonType} on ${dateFmt} at ${session.startTime} in ${venueDisplay}`,
+        title: `${session.unitCode} — Make-Up Session Added`,
+        body: `A make-up ${session.lessonType} for ${session.unitCode} has been scheduled on ${dateFmt} at ${session.startTime}–${session.endTime}, Room ${venueDisplay}.`,
         data: {
-          type: "extra_session",
+          type: "EXTRA_SESSION",
           sessionId: session.id,
           unitCode: session.unitCode,
           date: dateFmt,
@@ -187,7 +282,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json(
     {
-      message: "Make-up session created",
+      success: true,
       data: {
         id: session.id,
         sessionId: session.id,
@@ -198,6 +293,7 @@ export async function POST(req: NextRequest) {
         roomCode: session.roomCode ?? null,
         lessonType: session.lessonType,
         lecturerId: session.lecturerId,
+        isExtraSession: true,
       },
     },
     { status: 201, headers: corsHeaders },

@@ -460,6 +460,9 @@ model Timetable {
   updatedBy           String?
   mergeGroupId        String?    // non-null = shared cross-department lesson group
   rescheduledRoomId   String?    // room used after reschedule (null = same room or not rescheduled)
+  rescheduleSubStatus String?    // sub-state when Rescheduled: Confirmed | Cancelled | Online
+  onlineStartTime     String?    // override start time for Online status
+  onlineEndTime       String?    // override end time for Online status
   isMerged            Boolean    @default(false) // true when part of a MergedSession
   mergedSessionId     String?    // FK → MergedSession.id
   createdAt           DateTime   @default(now())

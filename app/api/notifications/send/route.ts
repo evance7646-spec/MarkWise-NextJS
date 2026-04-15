@@ -15,7 +15,11 @@ export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: corsHeaders });
 }
 
-const VALID_TYPES = ['announcement', 'reminder', 'urgent', 'schedule', 'assignment', 'MERGED_LESSON'] as const;
+const VALID_TYPES = [
+  'announcement', 'reminder', 'urgent', 'schedule', 'assignment',
+  'MERGED_LESSON', 'UNMERGED_LESSON', 'LESSON_CANCELLED', 'LESSON_RESCHEDULED',
+  'LESSON_ONLINE', 'EXTRA_SESSION',
+] as const;
 
 export async function POST(req: NextRequest) {
   // ── Auth ────────────────────────────────────────────────────────────────────
@@ -124,20 +128,22 @@ export async function POST(req: NextRequest) {
 
     // Override Android priority for urgent messages — buildPayloads doesn't support it natively.
     // We send individually so we can track successes.
+    const highPriority = ['urgent', 'MERGED_LESSON', 'UNMERGED_LESSON', 'LESSON_CANCELLED', 'LESSON_RESCHEDULED', 'LESSON_ONLINE'];
     const sendPromises = payloads.map(async (p) => {
       return sendPushNotification({
         ...p,
         data: {
           ...(p.data ?? {}),
-          priority: type === 'urgent' || type === 'MERGED_LESSON' ? 'high' : 'normal',
+          priority: highPriority.includes(type) ? 'high' : 'normal',
         },
       });
     });
 
     const results = await Promise.allSettled(sendPromises);
-    const sentCount = results.filter(
+    const successCount = results.filter(
       (r) => r.status === 'fulfilled' && r.value === true,
     ).length;
+    const failureCount = results.length - successCount;
 
     // ── 3. Create in-app Notification records for each student ────────────────
     if (studentIds.length > 0) {
@@ -164,11 +170,11 @@ export async function POST(req: NextRequest) {
         category,
         severity,
         sentBy,
-        sentCount,
+        sentCount: successCount,
       },
     });
 
-    return NextResponse.json({ success: true, sent: sentCount }, { headers: corsHeaders });
+    return NextResponse.json({ success: true, successCount, failureCount }, { headers: corsHeaders });
   } catch (err) {
     console.error('[notifications/send] Error:', err);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500, headers: corsHeaders });

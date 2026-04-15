@@ -63,6 +63,9 @@ export async function PATCH(
     pendingReason?: string;
     rescheduledTo?: { day: string; startTime: string; endTime: string };
     reschedulePermanent?: boolean;
+    rescheduleSubStatus?: string;
+    onlineStartTime?: string;
+    onlineEndTime?: string;
     clearVenue?: boolean;
     lessonType?: string;
   };
@@ -72,7 +75,8 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400, headers: corsHeaders });
   }
 
-  const { status, reason, pendingReason, rescheduledTo, reschedulePermanent, clearVenue, lessonType } = body;
+  const { status, reason, pendingReason, rescheduledTo, reschedulePermanent, clearVenue, lessonType,
+          rescheduleSubStatus, onlineStartTime, onlineEndTime } = body;
 
   const VALID_LESSON_TYPES = ["LEC","GD","RAT","CAT","LAB","SEM","WRK","TUT","PRE"];
   if (lessonType != null && !VALID_LESSON_TYPES.includes(lessonType)) {
@@ -157,6 +161,8 @@ export async function PATCH(
       updateData.originalVenue = (existing as any).originalVenue ?? (existing as any).venueName ?? "";
       updateData.venueName = null;
     }
+    if (onlineStartTime) updateData.onlineStartTime = onlineStartTime.trim();
+    if (onlineEndTime)   updateData.onlineEndTime   = onlineEndTime.trim();
   } else if (status === "Cancelled") {
     updateData = { ...updateData, reason: reason!.trim() };
   } else if (status === "Rescheduled") {
@@ -167,6 +173,7 @@ export async function PATCH(
       ...updateData,
       rescheduledTo: rescheduledToStr,
       reschedulePermanent: reschedulePermanent ?? false,
+      rescheduleSubStatus: rescheduleSubStatus ?? null,
       day,
       startTime,
       endTime,
@@ -180,7 +187,7 @@ export async function PATCH(
   const updated = await prisma.timetable.update({
     where: { id: entryId },
     data: updateData,
-    include: { unit: true, course: true, room: true, lecturer: true, department: true },
+    include: { unit: true, course: true, room: true, lecturer: true, department: true, mergedSession: true },
   });
 
   // Bump version so student clients detect the status change
@@ -241,7 +248,7 @@ export async function PATCH(
     }
   }
 
-  return NextResponse.json(formatEntry(updated), { headers: corsHeaders });
+  return NextResponse.json({ updatedEntry: formatEntry(updated) }, { headers: corsHeaders });
 }
 
 function parseStoredRescheduledTo(
@@ -279,11 +286,24 @@ function formatEntry(e: any) {
     originalDay: e.originalDay ?? null,
     originalStartTime: e.originalStartTime ?? null,
     originalEndTime: e.originalEndTime ?? null,
+    rescheduleSubStatus: (e as any).rescheduleSubStatus ?? null,
+    onlineStartTime: (e as any).onlineStartTime ?? null,
+    onlineEndTime: (e as any).onlineEndTime ?? null,
     updatedBy: e.updatedBy ?? null,
     updatedAt: e.updatedAt?.toISOString() ?? null,
     yearOfStudy: e.yearOfStudy ?? "",
     semester: e.semester ?? "",
     departmentId: e.departmentId,
     courseId: e.courseId,
+    // Merge state — must never be cleared by a status change
+    isMerged: e.isMerged ?? false,
+    mergedSessionId: e.mergedSessionId ?? null,
+    mergedRoom: e.mergedSession?.mergedRoom ?? null,
+    mergedDay: e.mergedSession?.mergedDay ?? null,
+    mergedStart: e.mergedSession?.mergedStartTime ?? null,
+    mergedEnd: e.mergedSession?.mergedEndTime ?? null,
+    mergedNote: e.mergedSession?.mergedNote ?? null,
+    mergedBy: e.mergedSession?.mergedBy ?? null,
+    mergedUnitCodes: e.mergedSession?.mergedUnitCodes ?? [],
   };
 }

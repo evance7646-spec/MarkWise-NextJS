@@ -299,6 +299,84 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
       include: { unit: true, course: true, room: true, rescheduledRoom: true },
     });
 
+    // ── Propagate schedule changes to merge group ─────────────────────────
+    // If this entry is part of a merged class, keep all sibling entries in sync
+    // so the mobile app sees the correct time for every department's card.
+    if (existing.mergeGroupId) {
+      if (status === "Rescheduled") {
+        // Fetch all siblings (same mergeGroupId, excluding this entry)
+        const siblings = await prisma.timetable.findMany({
+          where: { mergeGroupId: existing.mergeGroupId, id: { not: id } },
+          select: { id: true, day: true, startTime: true, endTime: true, originalDay: true },
+        });
+        if (siblings.length > 0) {
+          await Promise.all(
+            siblings.map(s =>
+              (prisma.timetable.update as any)({
+                where: { id: s.id },
+                data: {
+                  day: updated.day,
+                  startTime: updated.startTime,
+                  endTime: updated.endTime,
+                  rescheduledTo: updated.rescheduledTo ?? null,
+                  reschedulePermanent: updated.reschedulePermanent ?? null,
+                  originalDay: (s as any).originalDay ?? s.day,
+                  originalStartTime: s.startTime,
+                  originalEndTime: s.endTime,
+                  updatedBy: lecturerId ?? "admin",
+                },
+              })
+            )
+          );
+        }
+        // Mirror new time on MergedSession so mobile app reads updated schedule
+        if (existing.mergedSessionId) {
+          prisma.mergedSession.update({
+            where: { id: existing.mergedSessionId },
+            data: {
+              mergedDay: updated.day,
+              mergedStartTime: updated.startTime,
+              mergedEndTime: updated.endTime,
+            },
+          }).catch(err => console.error("[timetable/PUT] mergedSession time sync failed:", err));
+        }
+      } else if ((status === "Confirmed" || status === "Pending") && existing.originalDay) {
+        // Restore sibling entries' original day/time
+        const siblings = await prisma.timetable.findMany({
+          where: { mergeGroupId: existing.mergeGroupId, id: { not: id } },
+          select: { id: true, originalDay: true, originalStartTime: true, originalEndTime: true },
+        });
+        if (siblings.length > 0) {
+          await Promise.all(
+            siblings
+              .filter(s => !!(s as any).originalDay)
+              .map(s =>
+                (prisma.timetable.update as any)({
+                  where: { id: s.id },
+                  data: {
+                    day: (s as any).originalDay,
+                    startTime: (s as any).originalStartTime,
+                    endTime: (s as any).originalEndTime,
+                    originalDay: null,
+                    originalStartTime: null,
+                    originalEndTime: null,
+                    rescheduledTo: null,
+                    reschedulePermanent: null,
+                  },
+                })
+              )
+          );
+        }
+        // Clear rescheduled time override on MergedSession
+        if (existing.mergedSessionId) {
+          prisma.mergedSession.update({
+            where: { id: existing.mergedSessionId },
+            data: { mergedDay: null, mergedStartTime: null, mergedEndTime: null },
+          }).catch(err => console.error("[timetable/PUT] mergedSession clear failed:", err));
+        }
+      }
+    }
+
     // ── Sync room bookings based on status change ──────────────────────────
     if (status === "Cancelled") {
       // Cancel all future reserved bookings for this entry
