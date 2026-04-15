@@ -31,10 +31,11 @@ interface Entry {
   mergeGroupId?: string | null;
 }
 
-interface Course    { id: string; name: string; departmentId: string }
-interface SemYear   { id: string; name: string; course: { id: string } }
-interface SemRef    { id: string; label: string; yearId: string; year: SemYear }
-interface Unit      { id: string; code: string; title: string; semesters?: SemRef[] }
+interface CourseUnit { id: string; code: string; title: string }
+interface CourseSem  { id: string; label: string; units: CourseUnit[] }
+interface CourseYear { id: string; name: string; semesters: CourseSem[] }
+interface Course     { id: string; name: string; departmentId: string; years: CourseYear[] }
+interface Unit       { id: string; code: string; title: string }
 interface Lecturer  { id: string; fullName: string }
 interface Room      { id: string; name: string; roomCode: string; capacity: number; status?: string }
 
@@ -279,10 +280,12 @@ export default function DeptTimetablePage() {
     }
     setSubmitting(true); setSubmitError(null);
     try {
-      const unit   = units.find(u => u.id === form.unitId);
-      const semObj = unit?.semesters?.find(s => s.id === form.semesterId);
-      const yearOfStudy = semObj?.year?.name ?? "";
+      const year     = yearsForCourse.find(y => y.id === form.yearId);
+      const semObj   = year?.semesters.find(s => s.id === form.semesterId);
+      const yearOfStudy = year?.name ?? "";
       const semester    = semObj?.label ?? "";
+      const unit   = filteredUnits.find(u => u.id === form.unitId) ??
+                     units.find(u => u.id === form.unitId);
       const res = await fetch("/api/timetable", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -333,9 +336,9 @@ export default function DeptTimetablePage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const unit   = units.find(u => u.id === form.unitId);
-      const semObj = unit?.semesters?.find(s => s.id === form.semesterId);
-      const yearOfStudy = semObj?.year?.name ?? "";
+      const year     = yearsForCourse.find(y => y.id === form.yearId);
+      const semObj   = year?.semesters.find(s => s.id === form.semesterId);
+      const yearOfStudy = year?.name ?? "";
       const semester    = semObj?.label ?? "";
       const res = await fetch(`/api/timetable/${mergeConflict.conflictId}/merge`, {
         method: "POST",
@@ -369,29 +372,21 @@ export default function DeptTimetablePage() {
 
   const yearsForCourse = useMemo(() => {
     if (!form.courseId) return [];
-    const map = new Map<string, { id: string; name: string }>();
-    units.forEach(u => u.semesters?.forEach(s => {
-      if (s.year?.course?.id === form.courseId && !map.has(s.year.id))
-        map.set(s.year.id, { id: s.year.id, name: s.year.name });
-    }));
-    return Array.from(map.values());
-  }, [units, form.courseId]);
+    return courses.find(c => c.id === form.courseId)?.years ?? [];
+  }, [courses, form.courseId]);
 
   const semestersForYear = useMemo(() => {
     if (!form.yearId) return [];
-    const map = new Map<string, { id: string; label: string }>();
-    units.forEach(u => u.semesters?.forEach(s => {
-      if (s.yearId === form.yearId && !map.has(s.id))
-        map.set(s.id, { id: s.id, label: s.label });
-    }));
-    return Array.from(map.values());
-  }, [units, form.yearId]);
+    return yearsForCourse.find(y => y.id === form.yearId)?.semesters ?? [];
+  }, [yearsForCourse, form.yearId]);
 
-  const filteredUnits = useMemo(() =>
-    form.semesterId
-      ? units.filter(u => u.semesters?.some(s => s.id === form.semesterId))
-      : [],
-    [units, form.semesterId]);
+  const filteredUnits = useMemo(() => {
+    if (!form.semesterId) return [];
+    const semUnits = semestersForYear.find(s => s.id === form.semesterId)?.units ?? [];
+    if (semUnits.length > 0) return semUnits;
+    // Fallback: show all department units if none are linked to this semester
+    return units;
+  }, [semestersForYear, form.semesterId, units]);
 
   const shown = entries
     .filter(e => e.day === activeDay)
