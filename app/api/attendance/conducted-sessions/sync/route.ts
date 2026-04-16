@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
+import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,14 +35,21 @@ export async function POST(req: NextRequest) {
       { status: 401, headers: corsHeaders }
     );
   }
-  let lecturerId: string;
+  // Accept both lecturer and student JWTs — the same app may use either token
+  // depending on the user role that is currently active.
+  let lecturerId: string | null = null;
   try {
     ({ lecturerId } = verifyLecturerAccessToken(token));
-  } catch {
-    return NextResponse.json(
-      { message: "Unauthorized" },
-      { status: 401, headers: corsHeaders }
-    );
+  } catch { /* try student token below */ }
+  if (!lecturerId) {
+    let studentOk = false;
+    try { verifyStudentAccessToken(token); studentOk = true; } catch { /* fall through */ }
+    if (!studentOk) {
+      return NextResponse.json(
+        { message: "Unauthorized" },
+        { status: 401, headers: corsHeaders }
+      );
+    }
   }
 
   let body: { sessions?: SessionPayload[] };
@@ -71,8 +79,8 @@ export async function POST(req: NextRequest) {
   let skipped = 0;
 
   for (const s of sessions) {
-    const unitCode = s.unitCode?.replace(/\s+/g, "").toUpperCase();
-    const lectureRoom = s.lectureRoom?.trim().toUpperCase();
+    const unitCode = s.unitCode?.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+    const lectureRoom = s.lectureRoom?.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
     // Truncate to second precision so all rows are clean regardless of app version
     const rawMs = s.sessionStart ? Math.floor(Number(s.sessionStart) / 1000) * 1000 : null;
     const sessionStart = rawMs ? new Date(rawMs) : null;
@@ -107,7 +115,7 @@ export async function POST(req: NextRequest) {
           lectureRoom,
           lessonType,
           sessionStart,
-          lecturerId,
+          lecturerId: lecturerId ?? "SYSTEM_STUB",
           createdAt: s.createdAt ? new Date(s.createdAt) : new Date(),
         },
       });

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { verifyStudentAccessToken } from "@/lib/studentAuthJwt";
-import { normalizeUnitCode } from "@/lib/unitCode";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -22,8 +21,9 @@ function detectMethod(rawPayload: string): Method {
   return "qr";
 }
 
+/** Canonical code form: uppercase, no spaces, no non-alphanumeric chars. */
 function normaliseCode(code: string): string {
-  return normalizeUnitCode(code);
+  return code.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
 }
 
 // digestToPin: mix 8-hex-char chunks via uint32 Fibonacci hashing, mod 10^6, zero-pad to 6 digits
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
   // --- Step 1: Normalise inputs ---
   // Primary: use explicit body fields. Fallback: parse from rawPayload for QR/BLE.
   let unitCode     = normaliseCode(String(body.unitCode ?? ""));
-  let lectureRoom  = (body.lectureRoom ?? "").trim().toUpperCase();
+  let lectureRoom  = normaliseCode(body.lectureRoom ?? "");
   let sessionStart = Number(body.sessionStart ?? 0) || 0;
   const scannedAt  = Number(body.scannedAt ?? 0) || 0;
 
@@ -153,11 +153,12 @@ export async function POST(req: NextRequest) {
     const normalisedSessionStart = Math.floor(sessionStart / 1000) * 1000;
 
     // --- Step 2: Verify session exists ---
-    // Use ±1 s tolerance to handle old sub-second DB rows and minor clock drift.
-    // Also accept either the room as sent or with spaces stripped ("CLB004" == "CLB 004").
+    // Use ±SESSION_DURATION_MS window so submissions that arrive before the
+    // lecturer's sync has propagated still match. Also accept either the room
+    // as sent or with spaces stripped ("CLB004" == "CLB 004").
     // BLE sends roomCode (e.g. "NCLB") but sessions are stored with room.name
     // (e.g. "NEW COLLEGE LIBRARY BLOCK"), so also resolve via roomCode lookup.
-    const WINDOW_MS = 1000;
+    const SESSION_DURATION_MS = 600_000; // 10 minutes
     const lectureRoomStripped = lectureRoom.replace(/\s+/g, "");
 
     // Resolve roomCode → room.name so BLE submissions can match sessions stored
@@ -185,24 +186,39 @@ export async function POST(req: NextRequest) {
         unitCode: { in: [unitCode, unitCode.replace(/\s+/g, "")] },
         lectureRoom: { in: Array.from(roomCandidates) },
         sessionStart: {
-          gte: new Date(normalisedSessionStart - WINDOW_MS),
-          lte: new Date(normalisedSessionStart + WINDOW_MS),
+          gte: new Date(normalisedSessionStart - SESSION_DURATION_MS),
+          lte: new Date(normalisedSessionStart + SESSION_DURATION_MS),
         },
       },
       select: { id: true, sessionStart: true, lectureRoom: true, lessonType: true, unitCode: true },
-      orderBy: { sessionStart: "asc" },
+      orderBy: { sessionStart: "desc" }, // most recent within the window
     });
-    if (!session) {
-      return NextResponse.json(
-        { message: "Session not found" },
-        { status: 404, headers: corsHeaders }
-      );
-    }
-    // Use the canonical values from the DB for all downstream checks
-    const canonicalSessionStart = new Date(Math.floor(session.sessionStart.getTime() / 1000) * 1000);
-    const canonicalLectureRoom = session.lectureRoom;
-    // Prefer the unitCode stored in the session (already canonical post-migration)
-    const canonicalUnitCode = normalizeUnitCode(session.unitCode);
+
+    // If no conducted session found, create a stub so the attendance record
+    // can still be counted in session analytics. This handles the race where
+    // the student submits before the lecturer's sync has propagated.
+    const effectiveSession = session ?? await prisma.conductedSession.upsert({
+      where: {
+        unitCode_lectureRoom_sessionStart: {
+          unitCode,
+          lectureRoom,
+          sessionStart: new Date(normalisedSessionStart),
+        },
+      },
+      update: {},
+      create: {
+        unitCode,
+        lectureRoom,
+        sessionStart: new Date(normalisedSessionStart),
+        lecturerId: "SYSTEM_STUB",
+      },
+      select: { id: true, sessionStart: true, lectureRoom: true, lessonType: true, unitCode: true },
+    });
+
+    // Canonical values — always use spec-normalised form for storage
+    const canonicalSessionStart = new Date(Math.floor(effectiveSession.sessionStart.getTime() / 1000) * 1000);
+    const canonicalLectureRoom = normaliseCode(effectiveSession.lectureRoom);
+    const canonicalUnitCode = normaliseCode(effectiveSession.unitCode);
 
     // --- Step 3: Validate Manual PIN ---
     if (method === "manual" && rawPayload) {
@@ -254,7 +270,7 @@ export async function POST(req: NextRequest) {
         studentId,
         unitCode: canonicalUnitCode,
         lectureRoom: canonicalLectureRoom,
-        lessonType: session.lessonType ?? null,
+        lessonType: effectiveSession.lessonType ?? null,
         sessionStart: canonicalSessionStart, // already truncated to second precision above
         scannedAt: scannedAtDate,
         deviceId: deviceId ?? null,
@@ -267,7 +283,7 @@ export async function POST(req: NextRequest) {
     // --- Step 7: Return success ---
     return NextResponse.json(
       { attendanceId: record.id, message: "Attendance recorded" },
-      { status: 200, headers: corsHeaders }
+      { status: 201, headers: corsHeaders }
     );
   } catch (err: unknown) {
     console.error("Offline attendance submit error:", err);

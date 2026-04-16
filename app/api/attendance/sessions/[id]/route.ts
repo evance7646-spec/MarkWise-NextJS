@@ -42,6 +42,7 @@ export async function GET(
       status: true,
       expiresAt: true,
       endedAt: true,
+      createdAt: true,
     },
   });
 
@@ -79,6 +80,7 @@ export async function GET(
       lecturerName: lecturer?.fullName ?? "",
       status: effectiveStatus,
       expiresAt: session.expiresAt.getTime(),
+      sessionStart: session.createdAt.getTime(),
     },
     { headers: corsHeaders }
   );

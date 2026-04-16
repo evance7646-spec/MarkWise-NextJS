@@ -61,7 +61,7 @@ export async function POST(
 
   const session = await prisma.onlineAttendanceSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, status: true, expiresAt: true, unitCode: true },
+    select: { id: true, status: true, expiresAt: true, unitCode: true, createdAt: true },
   });
 
   if (!session) {
@@ -116,6 +116,29 @@ export async function POST(
       deviceId,
     },
     select: { id: true },
+  });
+
+  // Also write to OfflineAttendanceRecord (unified attended table) so the
+  // student summary counts online sessions alongside offline/manual records.
+  const normalizedUnitCode = session.unitCode.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+  await prisma.offlineAttendanceRecord.upsert({
+    where: {
+      studentId_unitCode_lectureRoom_sessionStart: {
+        studentId,
+        unitCode: normalizedUnitCode,
+        lectureRoom: "ONLINE",
+        sessionStart: session.createdAt,
+      },
+    },
+    update: {},
+    create: {
+      studentId,
+      unitCode: normalizedUnitCode,
+      lectureRoom: "ONLINE",
+      sessionStart: session.createdAt,
+      scannedAt: new Date(),
+      method: "online",
+    },
   });
 
   return NextResponse.json(

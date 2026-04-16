@@ -78,11 +78,15 @@ export async function GET(req: NextRequest) {
         )
     ),
     offline_attended AS (
+      -- Exclude lectureRoom='ONLINE': those records are also written to
+      -- OnlineAttendanceRecord and counted separately in online_attended to
+      -- preserve backward compatibility with records predating this fix.
       SELECT REPLACE(UPPER("unitCode"), ' ', '') AS unit_code,
              COUNT(DISTINCT "sessionStart") AS cnt
       FROM   "OfflineAttendanceRecord"
       WHERE  "studentId" = ${studentId}
         AND  "unitCode"  != ''
+        AND  UPPER("lectureRoom") != 'ONLINE'
       GROUP  BY REPLACE(UPPER("unitCode"), ' ', '')
     ),
     online_attended AS (

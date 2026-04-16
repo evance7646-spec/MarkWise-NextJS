@@ -177,6 +177,10 @@ export async function POST(
   }
 
   // ── Duplicate check (unique: studentId, unitCode, lectureRoom, sessionStart) ─
+  // Normalise codes to spec form before all DB reads/writes.
+  const normalizedUnitCode = delegation.unitCode.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+  const normalizedRoomCode = delegation.roomCode.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+
   // For LOCAL tokens where /start was never called online, use validFrom as a
   // stable sessionStart so the unique constraint is consistent across all
   // proxy-mark calls for the same delegation.
@@ -186,8 +190,8 @@ export async function POST(
     where: {
       studentId_unitCode_lectureRoom_sessionStart: {
         studentId: targetStudentId,
-        unitCode: delegation.unitCode,
-        lectureRoom: delegation.roomCode,
+        unitCode: normalizedUnitCode,
+        lectureRoom: normalizedRoomCode,
         sessionStart: sessionStartDate,
       },
     },
@@ -204,8 +208,8 @@ export async function POST(
     data: {
       studentId: targetStudentId,
       admissionNumber: targetAdmissionNumber,
-      unitCode: delegation.unitCode,
-      lectureRoom: delegation.roomCode,
+      unitCode: normalizedUnitCode,
+      lectureRoom: normalizedRoomCode,
       lessonType: 'GD',
       sessionStart: sessionStartDate,
       scannedAt: new Date(markedAt),

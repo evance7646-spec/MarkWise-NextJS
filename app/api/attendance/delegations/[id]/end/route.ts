@@ -211,12 +211,15 @@ export async function POST(
   const sessionStartDate = new Date(resolvedSessionStart);
   const scannedAtDate = new Date(body.sessionEnd ?? Date.now());
   const memberIdsArray = [...memberIds];
+  // Normalise codes to spec form (uppercase, spaces stripped, non-alphanumeric stripped)
+  const normalizedUnitCode = delegation.unitCode.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+  const normalizedRoomCode = delegation.roomCode.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
 
   await prisma.offlineAttendanceRecord.createMany({
     data: memberIdsArray.map((sid) => ({
       studentId: sid,
-      unitCode: delegation.unitCode,
-      lectureRoom: delegation.roomCode,
+      unitCode: normalizedUnitCode,
+      lectureRoom: normalizedRoomCode,
       lessonType: "GD",
       method: "GD",
       sessionStart: sessionStartDate,
@@ -231,8 +234,8 @@ export async function POST(
   await prisma.offlineAttendanceRecord.updateMany({
     where: {
       studentId: { in: memberIdsArray },
-      unitCode: delegation.unitCode,
-      lectureRoom: delegation.roomCode,
+      unitCode: normalizedUnitCode,
+      lectureRoom: normalizedRoomCode,
       sessionStart: {
         gte: new Date(resolvedSessionStart - TOLERANCE_MS),
         lte: new Date(resolvedSessionStart + TOLERANCE_MS),
@@ -247,15 +250,15 @@ export async function POST(
   await prisma.conductedSession.upsert({
     where: {
       unitCode_lectureRoom_sessionStart: {
-        unitCode: delegation.unitCode,
-        lectureRoom: delegation.roomCode,
+        unitCode: normalizedUnitCode,
+        lectureRoom: normalizedRoomCode,
         sessionStart: sessionStartDate,
       },
     },
     update: { sessionEnd: new Date(body.sessionEnd ?? endedAt.getTime()) },
     create: {
-      unitCode: delegation.unitCode,
-      lectureRoom: delegation.roomCode,
+      unitCode: normalizedUnitCode,
+      lectureRoom: normalizedRoomCode,
       lessonType: "GD",
       sessionStart: sessionStartDate,
       sessionEnd: new Date(body.sessionEnd ?? endedAt.getTime()),

@@ -86,7 +86,6 @@ export async function POST(req: NextRequest) {
   // ── Validate required fields ─────────────────────────────────────────────
   if (
     !rawAdmission ||
-    !studentId ||
     !rawUnitCode ||
     !rawRoom ||
     typeof sessionStart !== "number" ||
@@ -108,9 +107,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Normalise codes (match how ConductedSession stores them) ─────────────
-  const unitCode = rawUnitCode.replace(/\s+/g, " ").trim().toUpperCase();
-  const lectureRoom = rawRoom.trim().toUpperCase();
+  // ── Normalise codes (spec form: uppercase, spaces stripped, non-alphanumeric stripped) ─
+  const unitCode = rawUnitCode.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
+  const lectureRoom = rawRoom.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
   // Truncate to second precision to match ConductedSession insert logic
   const sessionStartMs = Math.floor(sessionStart / 1000) * 1000;
   const sessionStartDate = new Date(sessionStartMs);
@@ -128,11 +127,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── Verify student identity (both id and admissionNumber must match) ──────
-  const student = await prisma.student.findFirst({
+  // ── Verify student identity ────────────────────────────────────────────────
+  // Look up by admissionNumber within the institution first.
+  // If studentId is also supplied it is used as a fallback if admissionNumber
+  // lookup fails, and the found record is still scoped to the institution.
+  let student = await prisma.student.findFirst({
     where: {
-      id: studentId,
       admissionNumber: { equals: rawAdmission.trim(), mode: "insensitive" },
+      institutionId: lecturer.institutionId,
     },
     select: {
       id: true,
@@ -141,6 +143,22 @@ export async function POST(req: NextRequest) {
       institutionId: true,
     },
   });
+
+  if (!student && studentId) {
+    // Fallback: resolve by studentId (in case admissionNumber lookup fails)
+    student = await prisma.student.findFirst({
+      where: {
+        id: studentId,
+        institutionId: lecturer.institutionId,
+      },
+      select: {
+        id: true,
+        name: true,
+        admissionNumber: true,
+        institutionId: true,
+      },
+    });
+  }
 
   if (!student) {
     return NextResponse.json(
@@ -163,9 +181,9 @@ export async function POST(req: NextRequest) {
     where: { studentId: student.id },
     select: { unitCodes: true },
   });
-  const normalizeCode = (c: string) => c.replace(/\s+/g, " ").trim().toUpperCase();
+  const specNormalize = (c: string) => c.toUpperCase().replace(/\s+/g, "").replace(/[^A-Z0-9]/g, "");
   const isEnrolled =
-    snapshot?.unitCodes.some((uc) => normalizeCode(uc) === unitCode) ?? false;
+    snapshot?.unitCodes.some((uc) => specNormalize(uc) === unitCode) ?? false;
   if (!isEnrolled) {
     return NextResponse.json(
       { message: "Student is not enrolled in this unit" },
