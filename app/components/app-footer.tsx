@@ -1,5 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import { Sparkles, Twitter, Linkedin, Github, Mail, MapPin, Phone } from "lucide-react";
+import { Sparkles, Twitter, Linkedin, Github, Mail, MapPin, Facebook, Instagram } from "lucide-react";
 
 const NAV_COLUMNS = [
   {
@@ -17,17 +19,14 @@ const NAV_COLUMNS = [
       { label: "System Administrator", href: "/admin/register" },
       { label: "Academic Registrar",   href: "/admin/register" },
       { label: "Facilities Manager",   href: "/admin/register" },
-      { label: "Department Admin",     href: "/admin/register" },
-      { label: "Sign In",              href: "/admin/login" },
+      { label: "Department Administrator",     href: "/admin/register" },     
     ],
   },
   {
     heading: "Company",
     links: [
       { label: "About Us",         href: "/about" },
-      { label: "Contact",          href: "/contact" },
-      { label: "Blog",             href: "#" },
-      { label: "Careers",          href: "#" },
+      { label: "Contact",          href: "/contact" },    
       { label: "Privacy Policy",   href: "/privacy" },
       { label: "Terms of Service", href: "/terms" },
     ],
@@ -35,9 +34,11 @@ const NAV_COLUMNS = [
 ];
 
 const SOCIALS = [
-  { label: "Twitter",  href: "#", Icon: Twitter  },
-  { label: "LinkedIn", href: "#", Icon: Linkedin },
-  { label: "GitHub",   href: "#", Icon: Github   },
+  { label: "Twitter",   href: "#", Icon: Twitter,   brandColor: "#000000" },
+  { label: "LinkedIn",  href: "#", Icon: Linkedin,  brandColor: "#0A66C2" },
+  { label: "GitHub",    href: "#", Icon: Github,    brandColor: "#24292E" },
+  { label: "Facebook",  href: "#", Icon: Facebook,  brandColor: "#1877F2" },
+  { label: "Instagram", href: "#", Icon: Instagram, brandColor: "#E1306C" },
 ];
 
 export default function AppFooter() {
@@ -70,7 +71,7 @@ export default function AppFooter() {
             <ul className="space-y-2 text-sm text-slate-400">
               <li className="flex items-center gap-2">
                 <Mail className="h-4 w-4 shrink-0 text-indigo-400" />
-                <span>hello@markwise.app</span>
+                <span>info@markwise.com</span>
               </li>
               <li className="flex items-center gap-2">
                 <MapPin className="h-4 w-4 shrink-0 text-indigo-400" />
@@ -80,12 +81,20 @@ export default function AppFooter() {
 
             {/* Social links */}
             <div className="flex items-center gap-3 pt-2">
-              {SOCIALS.map(({ label, href, Icon }) => (
+              {SOCIALS.map(({ label, href, Icon, brandColor }) => (
                 <Link
                   key={label}
                   href={href}
                   aria-label={label}
-                  className="h-9 w-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 hover:bg-indigo-600 hover:text-white transition-all duration-200 hover:shadow-lg hover:shadow-indigo-500/25"
+                  className="h-9 w-9 rounded-lg bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-all duration-200"
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLAnchorElement).style.backgroundColor = brandColor;
+                    (e.currentTarget as HTMLAnchorElement).style.boxShadow = `0 4px 14px 0 ${brandColor}4D`;
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLAnchorElement).style.backgroundColor = "";
+                    (e.currentTarget as HTMLAnchorElement).style.boxShadow = "";
+                  }}
                 >
                   <Icon className="h-4 w-4" />
                 </Link>
