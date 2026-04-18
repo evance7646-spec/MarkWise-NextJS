@@ -150,7 +150,7 @@ export default function AppFooter() {
             <span className="text-slate-700">·</span>
             <Link href="/terms" className="hover:text-slate-300 transition-colors">Terms</Link>
             <span className="text-slate-700">·</span>
-            <span>Made with <span className="text-red-600">♥</span> for modern education</span>
+            <span>Made with <span className="text-red-400">♥</span> for modern education</span>
           </div>
         </div>
       </div>
