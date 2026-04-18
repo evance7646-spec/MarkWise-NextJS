@@ -177,8 +177,8 @@ function LandingPageContent() {
             </motion.h1>
 
             <motion.p variants={fadeInUp} className="text-base sm:text-lg text-slate-600 dark:text-slate-300 max-w-xl">
-              MarkWise unifies attendance verification, room coordination, assignment workflows,
-              and student group management for institutions running physical, online, and hybrid learning.
+              MarkWise unifies attendance verification, room coordination, assignment workflows, routine updates,student group management, data insights,
+              and learning analytics for institutions running physical, online, and hybrid learning.
             </motion.p>          
 
             <motion.div variants={fadeInUp} className="flex items-center gap-6 pt-4">
@@ -216,7 +216,7 @@ function LandingPageContent() {
                     <CheckCircle className="h-6 w-6 text-green-600 dark:text-green-300" />
                     <div>
                       <div className="font-bold text-green-700 dark:text-green-200">Verified Attendance</div>
-                      <div className="text-xs text-zinc-600 dark:text-zinc-300">Real-time, fraud-proof, and session-based</div>
+                      <div className="text-xs text-zinc-600 dark:text-zinc-300">Fast, real-time, fraud-proof, and session-based</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-cyan-50 dark:bg-cyan-900/30">
@@ -251,7 +251,7 @@ function LandingPageContent() {
                     <Shield className="h-6 w-6 text-pink-600 dark:text-pink-300" />
                     <div>
                       <div className="font-bold text-pink-700 dark:text-pink-200">Secure & Inclusive</div>
-                      <div className="text-xs text-zinc-600 dark:text-zinc-300">Privacy-first, accessible, and mobile-friendly</div>
+                      <div className="text-xs text-zinc-600 dark:text-zinc-300">Privacy-first, offline-capable, accessible, and mobile-friendly</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-indigo-50 dark:bg-indigo-900/30">
@@ -552,7 +552,7 @@ function LandingPageContent() {
             Admin Roles
           </span>
           <h2 className="text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight">
-            Five Roles,
+            Four Roles,
             <span className="block mt-2 bg-gradient-to-r from-indigo-600 to-cyan-600 bg-clip-text text-transparent">
               One Coordinated Institution
             </span>
@@ -566,7 +566,7 @@ function LandingPageContent() {
           variants={staggerContainer}
           initial="hidden"
           animate={rolesInView ? "visible" : "hidden"}
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-6"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
         >
           {adminRoles.map((role) => (
             <motion.div
@@ -630,7 +630,7 @@ function LandingPageContent() {
               className="text-base sm:text-lg mb-10 max-w-2xl mx-auto opacity-90"
             >
               Register as System Administrator to onboard your institution, then add your Academic Registrar,
-              Facilities Manager, and Department Admins to activate the full platform.
+              Facilities Manager, and Department Administrators to activate the full platform.
             </motion.p>
             
             <motion.div
@@ -641,7 +641,7 @@ function LandingPageContent() {
             >
               <Link
                 href="/admin/register"
-                className="group px-10 py-4 bg-white text-indigo-600 rounded-2xl font-semibold text-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
+                className="group px-10 py-4 bg-indigo-600 text-white rounded-2xl font-semibold text-lg hover:shadow-2xl transition-all duration-300 hover:scale-105 flex items-center justify-center gap-2"
               >
                 Get Started — Register Your Institution
                 <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
