@@ -1,9 +1,11 @@
 import jwt from "jsonwebtoken";
+import { randomUUID } from "crypto";
 
 export type LecturerJwtPayload = {
   lecturerId: string;
   email: string;
   phoneNumber: string;
+  jti?: string;
 };
 
 const getJwtSecret = () => {
@@ -15,9 +17,10 @@ const getJwtSecret = () => {
 };
 
 export const signLecturerAccessToken = (payload: LecturerJwtPayload) => {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: "7d" });
+  const jti = payload.jti ?? randomUUID();
+  return jwt.sign({ ...payload, jti }, getJwtSecret(), { expiresIn: "7d" });
 };
 
-export const verifyLecturerAccessToken = (token: string) => {
-  return jwt.verify(token, getJwtSecret()) as LecturerJwtPayload;
+export const verifyLecturerAccessToken = (token: string): LecturerJwtPayload & { jti: string } => {
+  return jwt.verify(token, getJwtSecret()) as LecturerJwtPayload & { jti: string };
 };
