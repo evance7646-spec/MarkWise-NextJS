@@ -27,7 +27,7 @@ function statusColor(value: number, goodThreshold: number, warnThreshold: number
   return "red";
 }
 
-/** Detect overlapping timetable entries within same room+day */
+/** Detect overlapping timetable entries within same room+day using sort + single pass (O(n log n)) */
 function detectTimetableConflicts(
   entries: { id: string; day: string; startTime: string; endTime: string; roomId: string; departmentId: string }[]
 ): Map<string, number> {
@@ -40,18 +40,19 @@ function detectTimetableConflicts(
   }
   const conflictsByDept = new Map<string, Set<string>>();
   for (const [, group] of byRoomDay) {
-    for (let i = 0; i < group.length; i++) {
-      for (let j = i + 1; j < group.length; j++) {
-        const a = group[i], b = group[j];
-        if (a.startTime < b.endTime && a.endTime > b.startTime) {
-          const dA = conflictsByDept.get(a.departmentId) ?? new Set();
-          dA.add(a.id); dA.add(b.id);
-          conflictsByDept.set(a.departmentId, dA);
-          if (b.departmentId !== a.departmentId) {
-            const dB = conflictsByDept.get(b.departmentId) ?? new Set();
-            dB.add(a.id); dB.add(b.id);
-            conflictsByDept.set(b.departmentId, dB);
-          }
+    // Sort by startTime once — then a single pass detects all overlaps
+    const sorted = group.slice().sort((a, b) => a.startTime.localeCompare(b.startTime));
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i];
+      const b = sorted[i + 1];
+      if (a.endTime > b.startTime) {
+        const dA = conflictsByDept.get(a.departmentId) ?? new Set<string>();
+        dA.add(a.id); dA.add(b.id);
+        conflictsByDept.set(a.departmentId, dA);
+        if (b.departmentId !== a.departmentId) {
+          const dB = conflictsByDept.get(b.departmentId) ?? new Set<string>();
+          dB.add(a.id); dB.add(b.id);
+          conflictsByDept.set(b.departmentId, dB);
         }
       }
     }
@@ -176,6 +177,66 @@ export async function GET(req: NextRequest) {
   // Conflict detection
   const conflictsPerDept = detectTimetableConflicts(timetableEntries);
 
+  // ── Pre-build lookup Maps for O(1) per-dept lookups ──────────────────────
+
+  const studentsByDept = new Map<string, typeof students>();
+  for (const s of students) {
+    if (!studentsByDept.has(s.departmentId)) studentsByDept.set(s.departmentId, []);
+    studentsByDept.get(s.departmentId)!.push(s);
+  }
+
+  const unitsByDept = new Map<string, typeof units>();
+  for (const u of units) {
+    if (!unitsByDept.has(u.departmentId)) unitsByDept.set(u.departmentId, []);
+    unitsByDept.get(u.departmentId)!.push(u);
+  }
+
+  const groupsByDept = new Map<string, typeof groups>();
+  for (const g of groups) {
+    const dId = g.unit?.departmentId;
+    if (!dId) continue;
+    if (!groupsByDept.has(dId)) groupsByDept.set(dId, []);
+    groupsByDept.get(dId)!.push(g);
+  }
+
+  const enrollmentsByUnit = new Map<string, number>();
+  for (const e of enrollments) {
+    enrollmentsByUnit.set(e.unitId, (enrollmentsByUnit.get(e.unitId) ?? 0) + 1);
+  }
+
+  const assignmentsByDept = new Map<string, typeof assignments>();
+  for (const a of assignments) {
+    const dId = unitMap.get(a.unitId)?.departmentId;
+    if (!dId) continue;
+    if (!assignmentsByDept.has(dId)) assignmentsByDept.set(dId, []);
+    assignmentsByDept.get(dId)!.push(a);
+  }
+
+  const submissionsByAssignment = new Map<string, number>();
+  for (const s of submissions) {
+    submissionsByAssignment.set(s.assignmentId, (submissionsByAssignment.get(s.assignmentId) ?? 0) + 1);
+  }
+
+  const materialsByDept = new Map<string, typeof materials>();
+  for (const m of materials) {
+    const dId = unitMap.get(m.unitId)?.departmentId;
+    if (!dId) continue;
+    if (!materialsByDept.has(dId)) materialsByDept.set(dId, []);
+    materialsByDept.get(dId)!.push(m);
+  }
+
+  const viewsByMaterial = new Map<string, Set<string>>();
+  for (const v of materialViews) {
+    if (!viewsByMaterial.has(v.materialId)) viewsByMaterial.set(v.materialId, new Set());
+    viewsByMaterial.get(v.materialId)!.add(v.studentId);
+  }
+
+  const groupMembersByGroup = new Map<string, typeof groupMembers>();
+  for (const m of groupMembers) {
+    if (!groupMembersByGroup.has(m.groupId)) groupMembersByGroup.set(m.groupId, []);
+    groupMembersByGroup.get(m.groupId)!.push(m);
+  }
+
   // ── Per-department calculations ────────────────────────────────────────────
 
   interface DeptStats {
@@ -183,25 +244,25 @@ export async function GET(req: NextRequest) {
     name: string;
     totalStudents: number;
     totalLecturers: number;
-    attendance: number;      // 0–100
+    attendance: number;
     studyGroups: number;
-    studyGroupParticipation: number; // pct
-    submissionRate: number;  // 0–100
-    materialAccess: number;  // 0–100
+    studyGroupParticipation: number;
+    submissionRate: number;
+    materialAccess: number;
     timetableConflicts: number;
   }
 
   const deptStats: DeptStats[] = departments.map(dept => {
-    const deptStudents = students.filter(s => s.departmentId === dept.id);
+    const deptStudents = studentsByDept.get(dept.id) ?? [];
     const totalStudents = deptStudents.length;
-    const studentIds = new Set(deptStudents.map(s => s.id));
+    const studentIdSet = new Set(deptStudents.map(s => s.id));
 
-    // Attendance — compute over units belonging to this dept
-    const deptUnits = units.filter(u => u.departmentId === dept.id);
+    // Attendance
+    const deptUnits = unitsByDept.get(dept.id) ?? [];
     let totalExpected = 0, totalPresent = 0;
     for (const u of deptUnits) {
       const sessions = sessionMap.get(u.code) ?? 0;
-      const enrolled = enrollments.filter(e => e.unitId === u.id).length;
+      const enrolled = enrollmentsByUnit.get(u.id) ?? 0;
       const present = attendMap.get(u.code) ?? 0;
       if (sessions > 0 && enrolled > 0) {
         totalExpected += sessions * enrolled;
@@ -213,37 +274,38 @@ export async function GET(req: NextRequest) {
       : 0;
 
     // Study groups
-    const deptGroups = groups.filter(g => g.unit?.departmentId === dept.id);
+    const deptGroups = groupsByDept.get(dept.id) ?? [];
     const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
     const activeGroups = deptGroups.filter(g => g.updatedAt > twoWeeksAgo);
     const studyGroups = activeGroups.length;
-    const groupIds = new Set(deptGroups.map(g => g.id));
-    const membersInDept = groupMembers.filter(m => groupIds.has(m.groupId));
+    const groupIdSet = new Set(deptGroups.map(g => g.id));
     const uniqueStudentsInGroups = new Set(
-      membersInDept.filter(m => studentIds.has(m.studentId)).map(m => m.studentId)
+      [...groupIdSet].flatMap(gId =>
+        (groupMembersByGroup.get(gId) ?? [])
+          .filter(m => studentIdSet.has(m.studentId))
+          .map(m => m.studentId)
+      )
     ).size;
     const studyGroupParticipation = totalStudents > 0
       ? Math.round((uniqueStudentsInGroups / totalStudents) * 100)
       : 0;
 
     // Submission rate
-    const deptAssignmentIds = new Set(
-      assignments.filter(a => unitMap.get(a.unitId)?.departmentId === dept.id).map(a => a.id)
+    const deptAssignments = assignmentsByDept.get(dept.id) ?? [];
+    const deptSubmissionCount = deptAssignments.reduce(
+      (sum, a) => sum + (submissionsByAssignment.get(a.id) ?? 0), 0
     );
-    const deptSubmissions = submissions.filter(s => deptAssignmentIds.has(s.assignmentId));
-    const deptEnrolled = enrollments.filter(e => unitMap.get(e.unitId)?.departmentId === dept.id);
-    const expectedSubmissions = deptAssignmentIds.size * (totalStudents || 1);
+    const expectedSubmissions = deptAssignments.length * (totalStudents || 1);
     const submissionRate = expectedSubmissions > 0
-      ? Math.min(100, Math.round((deptSubmissions.length / expectedSubmissions) * 100))
+      ? Math.min(100, Math.round((deptSubmissionCount / expectedSubmissions) * 100))
       : 0;
 
     // Material access
-    const deptMaterialIds = new Set(
-      materials.filter(m => unitMap.get(m.unitId)?.departmentId === dept.id).map(m => m.id)
-    );
-    const deptViews = materialViews.filter(v => deptMaterialIds.has(v.materialId));
+    const deptMaterials = materialsByDept.get(dept.id) ?? [];
     const uniqueViewers = new Set(
-      deptViews.filter(v => studentIds.has(v.studentId)).map(v => v.studentId)
+      deptMaterials.flatMap(m =>
+        [...(viewsByMaterial.get(m.id) ?? [])].filter(sid => studentIdSet.has(sid))
+      )
     ).size;
     const materialAccess = totalStudents > 0
       ? Math.min(100, Math.round((uniqueViewers / totalStudents) * 100))
@@ -253,7 +315,7 @@ export async function GET(req: NextRequest) {
       id: dept.id,
       name: dept.name,
       totalStudents,
-      totalLecturers: 0, // will be computed below
+      totalLecturers: 0,
       attendance,
       studyGroups,
       studyGroupParticipation,

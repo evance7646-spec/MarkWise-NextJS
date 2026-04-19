@@ -29,19 +29,18 @@ const readUnitsMap = async () => {
 };
 
 const writeUnitsMap = async (map: Record<string, string[]>) => {
-  // Remove all existing records
-  await prisma.unitsByYearSemester.deleteMany();
-  // Insert new records
-  for (const key in map) {
+  const rows = Object.entries(map).map(([key, unitIds]) => {
     const [year, semester] = key.split("-");
-    await prisma.unitsByYearSemester.create({
-      data: {
-        year: parseInt(year, 10),
-        semester: parseInt(semester, 10),
-        unitIds: map[key].join(","),
-      },
-    });
-  }
+    return {
+      year: parseInt(year, 10),
+      semester: parseInt(semester, 10),
+      unitIds: unitIds.join(","),
+    };
+  });
+  await prisma.$transaction([
+    prisma.unitsByYearSemester.deleteMany(),
+    prisma.unitsByYearSemester.createMany({ data: rows }),
+  ]);
 };
 
 /** Extract the first integer from a label like "Year 2" → 2 or "Semester 1" → 1. */

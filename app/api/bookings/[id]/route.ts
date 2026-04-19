@@ -6,17 +6,19 @@ import { verifyFacilitiesManagerJwt } from "@/lib/facilitiesManagerAuthJwt";
 export const runtime = "nodejs";
 
 async function resolveInstitutionId(req: NextRequest): Promise<string | null> {
-  const authHeader = req.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token) return null;
-
+  // Always try cookie-based admin auth first (used by dashboard pages)
   const adminScope = await resolveAdminScope(req);
   if (adminScope.ok && adminScope.institutionId) return adminScope.institutionId;
 
-  try {
-    const payload = verifyFacilitiesManagerJwt(token);
-    if (payload?.institutionId) return payload.institutionId;
-  } catch {}
+  // Fall back to Bearer token (facilities manager JWT from external clients)
+  const authHeader = req.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (token) {
+    try {
+      const payload = verifyFacilitiesManagerJwt(token);
+      if (payload?.institutionId) return payload.institutionId;
+    } catch {}
+  }
 
   return null;
 }

@@ -519,6 +519,7 @@ model OnlineAttendanceRecord {
   @@unique([sessionId, deviceId])
   @@index([sessionId])
   @@index([studentId])
+  @@index([unitCode])
   @@map("OnlineAttendanceRecord")
 }
 
@@ -565,6 +566,8 @@ model Enrollment {
   unit      Unit    @relation(fields: [unitId], references: [id], onDelete: Cascade)
 
   @@unique([studentId, unitId])
+  @@index([unitId])
+  @@index([studentId])
   @@map("Enrollment")
 }
 
@@ -639,6 +642,7 @@ model OfflineAttendanceRecord {
   @@unique([studentId, unitCode, lectureRoom, sessionStart])
   @@index([studentId])
   @@index([unitCode])
+  @@index([institutionId])
   @@index([delegationId])
   @@index([markedByLecturerId])
   @@map("OfflineAttendanceRecord")

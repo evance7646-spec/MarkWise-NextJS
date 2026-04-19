@@ -55,13 +55,12 @@ export async function isStudentEnrolledForUnit(studentId: string, unitCodeOrId: 
     unitId = unit.id;
   }
 
-  // Check direct Enrollment table row
-  const directEnrollment = await prisma.enrollment.findFirst({ where: { studentId, unitId } });
-  if (directEnrollment) return true;
-
-  // Fall back: student is enrolled if their course contains this unit (Enrollment table may be empty)
-  const student = await prisma.student.findFirst({
-    where: { id: studentId, course: { units: { some: { id: unitId } } } },
-  });
-  return !!student;
+  // Check direct enrollment and course-based enrollment in parallel
+  const [directEnrollment, student] = await Promise.all([
+    prisma.enrollment.findFirst({ where: { studentId, unitId } }),
+    prisma.student.findFirst({
+      where: { id: studentId, course: { units: { some: { id: unitId } } } },
+    }),
+  ]);
+  return !!(directEnrollment || student);
 }

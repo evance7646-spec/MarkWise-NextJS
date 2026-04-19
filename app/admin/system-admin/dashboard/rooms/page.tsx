@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { motion } from "framer-motion";
 import { DoorOpen, Search, X, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useSystemAdmin } from "../../context";
@@ -55,27 +55,33 @@ export default function RoomsPage() {
 
   useEffect(() => { fetchRooms(); }, [fetchRooms]);
 
-  const types = [...new Set(rooms.map(r => r.type))].filter(Boolean).sort();
+  const types = useMemo(
+    () => [...new Set(rooms.map(r => r.type))].filter(Boolean).sort(),
+    [rooms]
+  );
 
-  const filtered = rooms.filter(r => {
-    const matchSearch =
-      r.name.toLowerCase().includes(search.toLowerCase()) ||
-      r.buildingCode.toLowerCase().includes(search.toLowerCase()) ||
-      r.roomCode.toLowerCase().includes(search.toLowerCase());
-    const matchType   = typeFilter === "all"   || r.type === typeFilter;
-    const matchStatus = statusFilter === "all" || r.status === statusFilter;
-    return matchSearch && matchType && matchStatus;
-  });
-
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-  const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  const counts = {
-    total:  rooms.length,
-    free:   rooms.filter(r => r.status === "free").length,
-    booked: rooms.filter(r => r.status === "booked").length,
-    held:   rooms.filter(r => r.status === "held").length,
-  };
+  const { filtered, totalPages, paged, counts } = useMemo(() => {
+    const sq = search.toLowerCase();
+    const filtered = rooms.filter(r => {
+      const matchSearch =
+        r.name.toLowerCase().includes(sq) ||
+        r.buildingCode.toLowerCase().includes(sq) ||
+        r.roomCode.toLowerCase().includes(sq);
+      const matchType   = typeFilter === "all"   || r.type === typeFilter;
+      const matchStatus = statusFilter === "all" || r.status === statusFilter;
+      return matchSearch && matchType && matchStatus;
+    });
+    const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+    const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+    // Single pass over full rooms array for status counts
+    const counts = { total: rooms.length, free: 0, booked: 0, held: 0 };
+    for (const r of rooms) {
+      if (r.status === "free")   counts.free++;
+      else if (r.status === "booked") counts.booked++;
+      else if (r.status === "held")   counts.held++;
+    }
+    return { filtered, totalPages, paged, counts };
+  }, [rooms, search, typeFilter, statusFilter, page]);
 
   return (
     <div className="space-y-5">

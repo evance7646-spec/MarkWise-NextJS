@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useFacilitiesManager } from "./context";
 import { motion, AnimatePresence } from "framer-motion";
@@ -751,8 +751,7 @@ export default function FacilitiesManagerPage() {
 
   // Expand all buildings
   const expandAll = () => {
-    const buildings = [...new Set(rooms.map(r => r.buildingCode))];
-    setExpandedBuildings(new Set(buildings));
+    setExpandedBuildings(new Set([...new Set(rooms.map(r => r.buildingCode))]));
   };
 
   // Collapse all buildings
@@ -760,65 +759,54 @@ export default function FacilitiesManagerPage() {
     setExpandedBuildings(new Set());
   };
 
-  // Get unique buildings with names
-  const buildings = [...new Set(rooms.map(r => r.buildingCode))].sort();
-  const buildingOptions = buildings.map(code => ({
-    code,
-    name: buildingNames[code] || code
-  }));
+  // Memoized derivations — avoid re-running on every render
+  const { buildings, buildingOptions, filteredRooms, groupedRooms, stats } = useMemo(() => {
+    const buildings = [...new Set(rooms.map(r => r.buildingCode))].sort();
+    const buildingOptions = buildings.map(code => ({ code, name: buildingNames[code] || code }));
 
-  // Filter rooms
-  const filteredRooms = rooms.filter(room => {
-    const matchesSearch = search === "" || 
-      room.roomCode.toLowerCase().includes(search.toLowerCase()) ||
-      room.name.toLowerCase().includes(search.toLowerCase()) ||
-      room.buildingCode.toLowerCase().includes(search.toLowerCase()) ||
-      (room.buildingName || "").toLowerCase().includes(search.toLowerCase()) ||
-      (room.bookingUnitCode || "").toLowerCase().includes(search.toLowerCase()) ||
-      (room.bookingLecturerName || "").toLowerCase().includes(search.toLowerCase());
-    
-    const matchesBuilding = selectedBuilding === "" || room.buildingCode === selectedBuilding;
-    
-    return matchesSearch && matchesBuilding;
-  });
+    const sq = search.toLowerCase();
+    const filteredRooms = rooms.filter(room => {
+      const matchesSearch = sq === "" ||
+        room.roomCode.toLowerCase().includes(sq) ||
+        room.name.toLowerCase().includes(sq) ||
+        room.buildingCode.toLowerCase().includes(sq) ||
+        (room.buildingName || "").toLowerCase().includes(sq) ||
+        (room.bookingUnitCode || "").toLowerCase().includes(sq) ||
+        (room.bookingLecturerName || "").toLowerCase().includes(sq);
+      const matchesBuilding = selectedBuilding === "" || room.buildingCode === selectedBuilding;
+      return matchesSearch && matchesBuilding;
+    });
 
-  // Group rooms by building and floor
-  const groupedRooms = filteredRooms.reduce((acc, room) => {
-    const buildingKey = room.buildingCode;
-    if (!acc[buildingKey]) {
-      acc[buildingKey] = {
-        buildingName: buildingNames[buildingKey] || buildingKey,
-        floors: {}
-      };
+    // Group by building then floor in one pass
+    const groupedRooms: Record<string, { buildingName: string; floors: Record<number, Room[]> }> = {};
+    for (const room of filteredRooms) {
+      if (!groupedRooms[room.buildingCode]) {
+        groupedRooms[room.buildingCode] = { buildingName: buildingNames[room.buildingCode] || room.buildingCode, floors: {} };
+      }
+      const floor = room.floor;
+      if (!groupedRooms[room.buildingCode].floors[floor]) groupedRooms[room.buildingCode].floors[floor] = [];
+      groupedRooms[room.buildingCode].floors[floor].push(room);
     }
-    if (!acc[buildingKey].floors[room.floor]) {
-      acc[buildingKey].floors[room.floor] = [];
+    // Sort floors
+    for (const building of Object.keys(groupedRooms)) {
+      const floors = groupedRooms[building].floors;
+      groupedRooms[building].floors = Object.keys(floors)
+        .map(Number).sort((a, b) => a - b)
+        .reduce((acc, floor) => { acc[floor] = floors[floor]; return acc; }, {} as Record<number, Room[]>);
     }
-    acc[buildingKey].floors[room.floor].push(room);
-    return acc;
-  }, {} as Record<string, { buildingName: string; floors: Record<number, Room[]> }>);
 
-  // Sort floors in each building
-  Object.keys(groupedRooms).forEach(building => {
-    const floors = groupedRooms[building].floors;
-    groupedRooms[building].floors = Object.keys(floors)
-      .sort((a, b) => Number(a) - Number(b))
-      .reduce((acc, floor) => {
-        acc[Number(floor)] = floors[Number(floor)];
-        return acc;
-      }, {} as Record<number, Room[]>);
-  });
+    // Single pass for all stats instead of 5 separate filter passes
+    const stats = { total: rooms.length, free: 0, reserved: 0, occupied: 0, unavailable: 0, buildings: buildings.length, totalCapacity: 0 };
+    for (const r of rooms) {
+      stats.totalCapacity += r.capacity;
+      if (r.status === "free") stats.free++;
+      else if (r.status === "reserved") stats.reserved++;
+      else if (r.status === "occupied") stats.occupied++;
+      else if (r.status === "unavailable") stats.unavailable++;
+    }
 
-  // Calculate stats
-  const stats = {
-    total: rooms.length,
-    free: rooms.filter(r => r.status === "free").length,
-    reserved: rooms.filter(r => r.status === "reserved").length,
-    occupied: rooms.filter(r => r.status === "occupied").length,
-    unavailable: rooms.filter(r => r.status === "unavailable").length,
-    buildings: buildings.length,
-    totalCapacity: rooms.reduce((sum, r) => sum + r.capacity, 0)
-  };
+    return { buildings, buildingOptions, filteredRooms, groupedRooms, stats };
+  }, [rooms, search, selectedBuilding, buildingNames]);
 
   // Create a static timestamp for SSR that won't change
   const staticTimestamp = "Loading...";

@@ -216,14 +216,25 @@ async function gatherUnitReportData(
     },
     include: { records: { select: { studentId: true } } },
   });
+  // Sort sessions by start time once, then use a scan window for O((n+m) log n) matching
+  const sortedSessions = sessions.slice().sort((a, b) => a.sessionStart.getTime() - b.sessionStart.getTime());
+  const FIFTEEN_MIN_MS = 15 * 60_000;
   const onlineToSessionKey = new Map<string, string>();
   for (const os of onlineSessions) {
     const osMs = os.createdAt.getTime();
     let bestKey: string | null = null;
     let bestDiff = Infinity;
-    for (const s of sessions) {
-      const diff = Math.abs(s.sessionStart.getTime() - osMs);
-      if (diff < 15 * 60_000 && diff < bestDiff) { bestDiff = diff; bestKey = s.key; }
+    // Binary search for first candidate within window
+    let lo = 0, hi = sortedSessions.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (sortedSessions[mid].sessionStart.getTime() < osMs - FIFTEEN_MIN_MS) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    for (let i = lo; i < sortedSessions.length; i++) {
+      const diff = Math.abs(sortedSessions[i].sessionStart.getTime() - osMs);
+      if (diff > FIFTEEN_MIN_MS) break;
+      if (diff < bestDiff) { bestDiff = diff; bestKey = sortedSessions[i].key; }
     }
     if (bestKey) onlineToSessionKey.set(os.id, bestKey);
   }
@@ -239,10 +250,17 @@ async function gatherUnitReportData(
     for (const r of os.records) presenceMap.add(`${r.studentId}__${key}`);
   }
 
-  // 7. Per-student stats
+  // 7. Per-student stats — pre-build attended count from presenceMap (O(P) instead of O(n*m))
   const totalSessions = sessions.length;
+  const attendedByStudent = new Map<string, number>();
+  for (const key of presenceMap) {
+    const sep = key.indexOf('__');
+    if (sep === -1) continue;
+    const sid = key.slice(0, sep);
+    attendedByStudent.set(sid, (attendedByStudent.get(sid) ?? 0) + 1);
+  }
   const students: StudentRow[] = roster.map(({ studentId, admissionNumber, name }) => {
-    const attended = sessions.filter((s) => presenceMap.has(`${studentId}__${s.key}`)).length;
+    const attended = attendedByStudent.get(studentId) ?? 0;
     const rate     = totalSessions > 0 ? Math.round((attended / totalSessions) * 100) : 0;
     return { studentId, admissionNumber, name, attended, totalSessions, rate, status: studentStatus(rate) };
   });
@@ -414,13 +432,20 @@ async function gatherPerformanceData(
     select: { validFrom: true },
   });
   const FIVE_MIN_MS_PERF = 5 * 60 * 1000;
-  const offlineTimesForDel = offlineSessions.map((s) => s.sessionStart.getTime());
+  const BUCKET_MS = FIVE_MIN_MS_PERF;
+  // Build a Set of 5-min buckets from offline session times for O(1) dedup lookup
+  const offlineTimeBuckets = new Set<number>(
+    offlineSessions.flatMap((s) => {
+      const t = s.sessionStart.getTime();
+      return [Math.floor(t / BUCKET_MS), Math.ceil(t / BUCKET_MS)];
+    })
+  );
   const standaloneDelegations = delegationsAll.filter((d) => {
     const delegMs = Number(d.validFrom);
     return (
       delegMs >= start.getTime() &&
       delegMs <= end.getTime() &&
-      !offlineTimesForDel.some((t) => Math.abs(t - delegMs) <= FIVE_MIN_MS_PERF)
+      !offlineTimeBuckets.has(Math.round(delegMs / BUCKET_MS))
     );
   });
   const delegationCount = standaloneDelegations.length;

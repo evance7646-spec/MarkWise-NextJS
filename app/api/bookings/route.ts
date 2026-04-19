@@ -6,17 +6,19 @@ import { verifyFacilitiesManagerJwt } from "@/lib/facilitiesManagerAuthJwt";
 export const runtime = "nodejs";
 
 async function resolveInstitutionId(req: NextRequest): Promise<string | null> {
-  const authHeader = req.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token) return null;
-
+  // Always try cookie-based admin auth first (used by dashboard pages)
   const adminScope = await resolveAdminScope(req);
   if (adminScope.ok && adminScope.institutionId) return adminScope.institutionId;
 
-  try {
-    const payload = verifyFacilitiesManagerJwt(token);
-    if (payload?.institutionId) return payload.institutionId;
-  } catch {}
+  // Fall back to Bearer token (used by mobile/external clients with facilities manager JWT)
+  const authHeader = req.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (token) {
+    try {
+      const payload = verifyFacilitiesManagerJwt(token);
+      if (payload?.institutionId) return payload.institutionId;
+    } catch {}
+  }
 
   return null;
 }
@@ -54,15 +56,23 @@ export async function GET(req: NextRequest) {
   };
   if (statusParam) where.status = statusParam;
 
-  const bookings = await prisma.booking.findMany({
-    where,
-    orderBy: { startAt: "asc" },
-    include: {
-      room: { select: { id: true, buildingCode: true, roomCode: true, name: true, capacity: true, type: true, floor: true } },
-      lecturer: { select: { id: true, fullName: true, email: true } },
-      unit: { select: { id: true, code: true, title: true } },
-    },
-  });
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '500', 10), 1000);
+  const page = Math.max(parseInt(searchParams.get('page') ?? '1', 10), 1);
+
+  const [bookings, total] = await Promise.all([
+    prisma.booking.findMany({
+      where,
+      orderBy: { startAt: "asc" },
+      take: limit,
+      skip: (page - 1) * limit,
+      include: {
+        room: { select: { id: true, buildingCode: true, roomCode: true, name: true, capacity: true, type: true, floor: true } },
+        lecturer: { select: { id: true, fullName: true, email: true } },
+        unit: { select: { id: true, code: true, title: true } },
+      },
+    }),
+    prisma.booking.count({ where }),
+  ]);
 
   // Normalize unit.name for UI compatibility
   const normalized = bookings.map((b) => ({
@@ -70,5 +80,7 @@ export async function GET(req: NextRequest) {
     unit: b.unit ? { ...b.unit, name: b.unit.title } : null,
   }));
 
-  return NextResponse.json({ bookings: normalized, total: normalized.length });
+  return NextResponse.json({ bookings: normalized, total, page, limit }, {
+    headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=120' },
+  });
 }

@@ -14,6 +14,9 @@ export async function GET(req: NextRequest) {
   const requestedDeptId = (searchParams.get('departmentId') ?? '').trim();
   const requestedInstId = (searchParams.get('institutionId') ?? '').trim();
   const courseId = searchParams.get('courseId');
+  const limit = Math.min(parseInt(searchParams.get('limit') ?? '500', 10), 1000);
+  const page = Math.max(parseInt(searchParams.get('page') ?? '1', 10), 1);
+  const skip = (page - 1) * limit;
 
   // Institution-wide path: return all students across the institution
   if (scope.isInstitutionAdmin && requestedInstId && !requestedDeptId) {
@@ -24,16 +27,23 @@ export async function GET(req: NextRequest) {
     try {
       const where: any = { institutionId: instId };
       if (courseId) where.courseId = courseId;
-      const students = await prisma.student.findMany({
-        where,
-        orderBy: { name: 'asc' },
-        include: {
-          auth: { select: { id: true } },
-          _count: { select: { enrollments: true } },
-          course: { select: { name: true } },
-        },
+      const [students, total] = await Promise.all([
+        prisma.student.findMany({
+          where,
+          orderBy: { name: 'asc' },
+          take: limit,
+          skip,
+          include: {
+            auth: { select: { id: true } },
+            _count: { select: { enrollments: true } },
+            course: { select: { name: true } },
+          },
+        }),
+        prisma.student.count({ where }),
+      ]);
+      return NextResponse.json({ students, total, page, limit }, {
+        headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=120' },
       });
-      return NextResponse.json({ students });
     } catch {
       return NextResponse.json({ error: 'Failed to fetch students' }, { status: 500 });
     }
@@ -75,12 +85,19 @@ export async function GET(req: NextRequest) {
   try {
     const where: any = { departmentId };
     if (courseId) where.courseId = courseId;
-    const students = await prisma.student.findMany({
-      where,
-      orderBy: { name: 'asc' },
-      include: includeOpts,
+    const [students, total] = await Promise.all([
+      prisma.student.findMany({
+        where,
+        orderBy: { name: 'asc' },
+        take: limit,
+        skip,
+        include: includeOpts,
+      }),
+      prisma.student.count({ where }),
+    ]);
+    return NextResponse.json({ students, total, page, limit }, {
+      headers: { 'Cache-Control': 'private, max-age=30, stale-while-revalidate=120' },
     });
-    return NextResponse.json({ students });
   } catch {
     return NextResponse.json({ error: 'Failed to fetch students' }, { status: 500 });
   }

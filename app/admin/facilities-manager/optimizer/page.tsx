@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import {
   Search,
   AlertTriangle,
@@ -17,7 +18,7 @@ import {
 } from "lucide-react";
 
 // ─── Auth helper ────────────────────────────────────────────────────────────
-function getAuth(): { token: string; institutionId: string } | null {
+function getLocalAuth(): { token: string; institutionId: string } | null {
   if (typeof window === "undefined") return null;
   const token = localStorage.getItem("facilitiesManagerToken");
   if (!token) return null;
@@ -119,19 +120,30 @@ function statusBadge(status: string) {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function OptimizerPage() {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("finder");
-  const [auth, setAuth] = useState<{ token: string; institutionId: string } | null>(null);
+  const [auth, setAuth] = useState<{ token: string | null; institutionId: string } | null>(null);
 
   useEffect(() => {
-    setAuth(getAuth());
-  }, []);
+    // Try localStorage token first (facilities manager direct login)
+    const local = getLocalAuth();
+    if (local) { setAuth(local); return; }
+    // Fall back to cookie-based admin auth
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.institutionId) setAuth({ token: null, institutionId: data.institutionId });
+        else router.push("/admin/login");
+      })
+      .catch(() => router.push("/admin/login"));
+  }, [router]);
 
   if (!auth) {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400">
         <div className="text-center">
           <Zap className="w-12 h-12 mx-auto mb-3 text-gray-700" />
-          <p>Session expired. Please log in again.</p>
+          <p>Loading...</p>
         </div>
       </div>
     );
@@ -188,7 +200,7 @@ export default function OptimizerPage() {
 // ════════════════════════════════════════════════════════════════════════════
 // 1. Free Room Finder
 // ════════════════════════════════════════════════════════════════════════════
-function FreeRoomFinder({ auth }: { auth: { token: string; institutionId: string } }) {
+function FreeRoomFinder({ auth }: { auth: { token: string | null; institutionId: string } }) {
   const todayDate = new Date().toISOString().slice(0, 10);
   const nowH = new Date().getHours();
   const defaultStart = `${String(nowH).padStart(2, "0")}:00`;
@@ -348,7 +360,7 @@ function FreeRoomFinder({ auth }: { auth: { token: string; institutionId: string
 // ════════════════════════════════════════════════════════════════════════════
 // 2. Underutilized Rooms
 // ════════════════════════════════════════════════════════════════════════════
-function UnderutilizedRooms({ auth }: { auth: { token: string; institutionId: string } }) {
+function UnderutilizedRooms({ auth }: { auth: { token: string | null; institutionId: string } }) {
   const [rows, setRows] = useState<UtilizationRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -398,9 +410,10 @@ function UnderutilizedRooms({ auth }: { auth: { token: string; institutionId: st
     try {
       const res = await fetch("/api/rooms/bulk-status", {
         method: "PATCH",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${auth.token}`,
+          ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
         },
         body: JSON.stringify({ roomIds: Array.from(selected), status: "unavailable" }),
       });
@@ -427,9 +440,10 @@ function UnderutilizedRooms({ auth }: { auth: { token: string; institutionId: st
     try {
       const res = await fetch("/api/rooms/bulk-status", {
         method: "PATCH",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${auth.token}`,
+          ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
         },
         body: JSON.stringify({ roomIds: Array.from(selected), status: "free" }),
       });
@@ -587,7 +601,7 @@ function UnderutilizedRooms({ auth }: { auth: { token: string; institutionId: st
 // ════════════════════════════════════════════════════════════════════════════
 // 3. Availability Heatmap
 // ════════════════════════════════════════════════════════════════════════════
-function AvailabilityHeatmap({ auth }: { auth: { token: string; institutionId: string } }) {
+function AvailabilityHeatmap({ auth }: { auth: { token: string | null; institutionId: string } }) {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<string>("");
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -733,7 +747,7 @@ function AvailabilityHeatmap({ auth }: { auth: { token: string; institutionId: s
 // ════════════════════════════════════════════════════════════════════════════
 // 4. Conflict Scanner
 // ════════════════════════════════════════════════════════════════════════════
-function ConflictScanner({ auth }: { auth: { token: string; institutionId: string } }) {
+function ConflictScanner({ auth }: { auth: { token: string | null; institutionId: string } }) {
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -904,7 +918,7 @@ function ConflictScanner({ auth }: { auth: { token: string; institutionId: strin
 // ════════════════════════════════════════════════════════════════════════════
 // 5. Capacity Waste Report
 // ════════════════════════════════════════════════════════════════════════════
-function CapacityWasteReport({ auth }: { auth: { token: string; institutionId: string } }) {
+function CapacityWasteReport({ auth }: { auth: { token: string | null; institutionId: string } }) {
   const [rows, setRows] = useState<UtilizationRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

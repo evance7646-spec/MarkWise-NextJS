@@ -10,6 +10,22 @@ type SseController = ReadableStreamDefaultController<Uint8Array>;
 // Map from UPPERCASE unit code → set of active SSE controllers
 const unitSubscribers = new Map<string, Set<SseController>>();
 
+// Send a keepalive comment every 20 seconds to detect dead connections
+// and prevent proxies/load-balancers from closing idle SSE streams.
+const keepaliveEncoder = new TextEncoder();
+const keepaliveBytes = keepaliveEncoder.encode(": keepalive\n\n");
+setInterval(() => {
+  for (const [, subs] of unitSubscribers) {
+    for (const ctrl of [...subs]) {
+      try {
+        ctrl.enqueue(keepaliveBytes);
+      } catch {
+        subs.delete(ctrl);
+      }
+    }
+  }
+}, 20_000).unref();
+
 export function subscribeToUnit(unitCode: string, ctrl: SseController) {
   const key = unitCode.trim().toUpperCase();
   if (!unitSubscribers.has(key)) unitSubscribers.set(key, new Set());

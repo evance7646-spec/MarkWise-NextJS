@@ -16,25 +16,23 @@ const VALID_STATUSES: RoomStatus[] = ['free', 'reserved', 'occupied', 'unavailab
 async function resolveAuth(
   req: NextRequest
 ): Promise<{ institutionId: string; actorId: string } | { error: string; status: number }> {
-  const authHeader = req.headers.get('authorization');
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  if (!token) {
-    return { error: 'Missing authorization token.', status: 401 };
-  }
-
-  // Try admin JWT first
+  // Try cookie-based admin auth first (used by dashboard pages)
   const adminScope = await resolveAdminScope(req);
   if (adminScope.ok && adminScope.institutionId) {
     return { institutionId: adminScope.institutionId, actorId: adminScope.adminId };
   }
 
-  // Try room manager JWT
-  try {
-    const payload = verifyFacilitiesManagerJwt(token);
-    if (payload?.id && payload?.institutionId) {
-      return { institutionId: payload.institutionId, actorId: payload.id };
-    }
-  } catch {}
+  // Fall back to Bearer token (facilities manager JWT from external clients)
+  const authHeader = req.headers.get('authorization');
+  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (token) {
+    try {
+      const payload = verifyFacilitiesManagerJwt(token);
+      if (payload?.id && payload?.institutionId) {
+        return { institutionId: payload.institutionId, actorId: payload.id };
+      }
+    } catch {}
+  }
 
   return {
     error: 'Unauthorized. Valid admin or room manager token required.',

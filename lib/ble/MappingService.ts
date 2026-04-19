@@ -74,8 +74,7 @@ export class MappingService {
 
     // A well-formed unit code has 2-6 letters immediately followed by digits
     // (with or without a space), e.g. "SCH 2170", "sch2170", "ENG 101".
-    // We use this to detect (and silently correct) cases where the DB rows have
-    // code ↔ title swapped at data-entry time.
+    // Defined once outside the loop to avoid recompilation on every iteration.
     const CODE_PATTERN = /^[A-Za-z]{2,6}\s*\d+/;
 
     for (const u of units) {

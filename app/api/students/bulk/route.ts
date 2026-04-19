@@ -59,6 +59,11 @@ export async function POST(req: NextRequest) {
   let created = 0;
   let skipped = 0;
 
+  // Collect all admission numbers and emails for bulk duplicate check
+  const candidateAdmissions = new Set<string>();
+  const candidateEmails = new Set<string>();
+  const validRows: { name: string; admissionNumber: string; courseId: string; email: string | null; year: number }[] = [];
+
   for (const raw of students) {
     const s = raw as Record<string, unknown>;
     const name = String(s.name ?? "").trim();
@@ -67,48 +72,50 @@ export async function POST(req: NextRequest) {
     const emailRaw = String(s.email ?? "").trim();
     const email = emailRaw || null;
 
-    if (!name || !admissionNumber || !courseId) {
-      skipped++;
-      continue;
-    }
+    if (!name || !admissionNumber || !courseId) { skipped++; continue; }
 
-    // Duplicate check
-    const exists = await prisma.student.findFirst({
-      where: { admissionNumber },
-      select: { id: true },
-    });
-    if (exists) {
-      skipped++;
-      continue;
-    }
+    candidateAdmissions.add(admissionNumber);
+    if (email) candidateEmails.add(email);
+    validRows.push({ name, admissionNumber, courseId, email, year: typeof s.year === "number" ? s.year : 1 });
+  }
 
-    // Email uniqueness — skip if email already taken
-    if (email) {
-      const emailTaken = await prisma.student.findFirst({
-        where: { email },
-        select: { id: true },
-      });
-      if (emailTaken) {
-        skipped++;
-        continue;
-      }
-    }
+  // Bulk fetch existing records to avoid per-row queries
+  const [existingAdmissions, existingEmails] = await Promise.all([
+    candidateAdmissions.size > 0
+      ? prisma.student.findMany({
+          where: { admissionNumber: { in: [...candidateAdmissions] } },
+          select: { admissionNumber: true },
+        })
+      : [],
+    candidateEmails.size > 0
+      ? prisma.student.findMany({
+          where: { email: { in: [...candidateEmails] } },
+          select: { email: true },
+        })
+      : [],
+  ]);
+  const takenAdmissions = new Set(existingAdmissions.map(s => s.admissionNumber));
+  const takenEmails = new Set(existingEmails.map(s => s.email));
 
+  const toInsert = validRows.filter(row => {
+    if (takenAdmissions.has(row.admissionNumber)) { skipped++; return false; }
+    if (row.email && takenEmails.has(row.email)) { skipped++; return false; }
+    return true;
+  });
+
+  // Batch insert in chunks of 100
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < toInsert.length; i += BATCH_SIZE) {
+    const batch = toInsert.slice(i, i + BATCH_SIZE);
     try {
-      await prisma.student.create({
-        data: {
-          name,
-          admissionNumber,
-          email,
-          courseId,
-          departmentId,
-          institutionId,
-          year: typeof s.year === "number" ? s.year : 1,
-        },
+      const result = await prisma.student.createMany({
+        data: batch.map(row => ({ ...row, departmentId, institutionId })),
+        skipDuplicates: true,
       });
-      created++;
+      created += result.count;
+      skipped += batch.length - result.count;
     } catch {
-      skipped++;
+      skipped += batch.length;
     }
   }
 

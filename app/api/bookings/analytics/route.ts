@@ -6,17 +6,19 @@ import { verifyFacilitiesManagerJwt } from "@/lib/facilitiesManagerAuthJwt";
 export const runtime = "nodejs";
 
 async function resolveInstitutionId(req: NextRequest): Promise<string | null> {
-  const authHeader = req.headers.get("authorization");
-  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
-  if (!token) return null;
-
+  // Always try cookie-based admin auth first (used by dashboard pages)
   const adminScope = await resolveAdminScope(req);
   if (adminScope.ok && adminScope.institutionId) return adminScope.institutionId;
 
-  try {
-    const payload = verifyFacilitiesManagerJwt(token);
-    if (payload?.institutionId) return payload.institutionId;
-  } catch {}
+  // Fall back to Bearer token (facilities manager JWT from mobile/external clients)
+  const authHeader = req.headers.get("authorization");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (token) {
+    try {
+      const payload = verifyFacilitiesManagerJwt(token);
+      if (payload?.institutionId) return payload.institutionId;
+    } catch {}
+  }
 
   return null;
 }
@@ -71,72 +73,44 @@ export async function GET(req: NextRequest) {
     }),
   ]);
 
-  // Summary counts
-  const todayCount = allBookings.filter(
-    (b) => b.startAt >= startOfToday && b.startAt <= endOfToday
-  ).length;
-  const thisWeekCount = allBookings.filter(
-    (b) => b.startAt >= monday && b.startAt <= sunday
-  ).length;
-  const totalBookings = allBookings.length;
-
+  // Single pass over allBookings — builds all aggregates simultaneously
+  // instead of 6 separate filter/reduce passes (O(6n) → O(n))
+  let todayCount = 0;
+  let thisWeekCount = 0;
   const statusCounts: Record<string, number> = {};
-  for (const b of allBookings) {
-    statusCounts[b.status] = (statusCounts[b.status] ?? 0) + 1;
-  }
+  let totalDurationMs = 0;
+  const hourMap: Record<number, number> = {};
+  for (let h = 0; h < 24; h++) hourMap[h] = 0;
+  const roomBookingMap: Record<string, { count: number; totalMinutes: number; roomCode: string; buildingCode: string; name: string }> = {};
 
-  const cancelled = statusCounts["cancelled"] ?? 0;
-  const cancellationRate = totalBookings > 0 ? Math.round((cancelled / totalBookings) * 100) : 0;
-
-  const totalDurationMs = allBookings
-    .filter((b) => b.status !== "cancelled")
-    .reduce((sum, b) => sum + (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()), 0);
-  const nonCancelledCount = totalBookings - cancelled;
-  const avgDurationMinutes = nonCancelledCount > 0
-    ? Math.round(totalDurationMs / nonCancelledCount / 60_000)
-    : 0;
-
-  // Room status summary
-  const roomsSummary = {
-    free: rooms.filter((r) => r.status === "free").length,
-    reserved: rooms.filter((r) => r.status === "reserved").length,
-    occupied: rooms.filter((r) => r.status === "occupied").length,
-    unavailable: rooms.filter((r) => r.status === "unavailable").length,
-    total: rooms.length,
-  };
-
-  // Bookings by day (last 14 days)
-  const dayMap: Record<string, number> = {};
   const fourteenDaysAgo = new Date(now); fourteenDaysAgo.setDate(now.getDate() - 13);
+  const dayMap: Record<string, number> = {};
   for (let d = new Date(fourteenDaysAgo); d <= now; d.setDate(d.getDate() + 1)) {
     dayMap[d.toISOString().slice(0, 10)] = 0;
   }
+
   for (const b of allBookings) {
-    const key = new Date(b.startAt).toISOString().slice(0, 10);
-    if (key in dayMap) dayMap[key]++;
-  }
-  const bookingsByDay = Object.entries(dayMap).map(([date, count]) => ({ date, count }));
+    // status counts
+    statusCounts[b.status] = (statusCounts[b.status] ?? 0) + 1;
 
-  // Peak hours
-  const hourMap: Record<number, number> = {};
-  for (let h = 0; h < 24; h++) hourMap[h] = 0;
-  for (const b of allBookings.filter((b) => b.status !== "cancelled")) {
+    // today / this-week counts
+    if (b.startAt >= startOfToday && b.startAt <= endOfToday) todayCount++;
+    if (b.startAt >= monday && b.startAt <= sunday) thisWeekCount++;
+
+    // day buckets (last 14 days)
+    const dayKey = new Date(b.startAt).toISOString().slice(0, 10);
+    if (dayKey in dayMap) dayMap[dayKey]++;
+
+    // skip cancelled for duration, peak-hours, room-utilisation
+    if (b.status === "cancelled") continue;
+
+    totalDurationMs += new Date(b.endAt).getTime() - new Date(b.startAt).getTime();
     hourMap[new Date(b.startAt).getHours()]++;
-  }
-  const peakHours = Object.entries(hourMap)
-    .map(([h, count]) => ({ hour: Number(h), count }))
-    .sort((a, b) => a.hour - b.hour);
 
-  // Top rooms by booking count
-  const roomBookingMap: Record<string, { count: number; totalMinutes: number; roomCode: string; buildingCode: string; name: string }> = {};
-  for (const b of allBookings.filter((bk) => bk.status !== "cancelled")) {
     if (!roomBookingMap[b.roomId]) {
       roomBookingMap[b.roomId] = {
-        count: 0,
-        totalMinutes: 0,
-        roomCode: b.room.roomCode,
-        buildingCode: b.room.buildingCode,
-        name: b.room.name,
+        count: 0, totalMinutes: 0,
+        roomCode: b.room.roomCode, buildingCode: b.room.buildingCode, name: b.room.name,
       };
     }
     roomBookingMap[b.roomId].count++;
@@ -144,6 +118,31 @@ export async function GET(req: NextRequest) {
       (new Date(b.endAt).getTime() - new Date(b.startAt).getTime()) / 60_000
     );
   }
+
+  const totalBookings = allBookings.length;
+  const cancelled = statusCounts["cancelled"] ?? 0;
+  const cancellationRate = totalBookings > 0 ? Math.round((cancelled / totalBookings) * 100) : 0;
+  const nonCancelledCount = totalBookings - cancelled;
+  const avgDurationMinutes = nonCancelledCount > 0
+    ? Math.round(totalDurationMs / nonCancelledCount / 60_000)
+    : 0;
+
+  // Room status summary — single pass
+  const roomsSummary = { free: 0, reserved: 0, occupied: 0, unavailable: 0, total: rooms.length };
+  for (const r of rooms) {
+    if (r.status === "free") roomsSummary.free++;
+    else if (r.status === "reserved") roomsSummary.reserved++;
+    else if (r.status === "occupied") roomsSummary.occupied++;
+    else if (r.status === "unavailable") roomsSummary.unavailable++;
+  }
+
+  const bookingsByDay = Object.entries(dayMap).map(([date, count]) => ({ date, count }));
+
+  const peakHours = Object.entries(hourMap)
+    .map(([h, count]) => ({ hour: Number(h), count }))
+    .sort((a, b) => a.hour - b.hour);
+
+  // Top rooms by booking count
   const topRooms = Object.entries(roomBookingMap)
     .map(([roomId, v]) => ({
       roomId,

@@ -22,36 +22,7 @@ function extractToken(req: NextRequest): string {
   return new URL(req.url).searchParams.get('token') ?? '';
 }
 
-/**
- * Resolve a unitId param (UUID, raw code, stripped code, or display string "Title (CODE)")
- * to the Unit row. Returns null if not found.
- */
-async function resolveUnit(param: string) {
-  if (!param) return null;
-  // UUID: return as-is (the caller needs the row too, so look it up)
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(param);
-  if (isUuid) {
-    return prisma.unit.findUnique({ where: { id: param } });
-  }
-  // Extract code from display strings like "ORGANIC CHEMISTRY (SCH 2170)"
-  // Also handles space-stripped variants like "ORGANICCHEMISTRY(SCH2170)"
-  let code = param.trim();
-  const parenMatch = code.match(/\(([^)]+)\)\s*$/);
-  if (parenMatch) code = parenMatch[1].trim();
-  // Case-insensitive match on raw code
-  let unit = await prisma.unit.findFirst({ where: { code: { equals: code, mode: 'insensitive' } } });
-  if (unit) return unit;
-  // Strip spaces from input and try again
-  const normalised = code.replace(/\s+/g, '').toUpperCase();
-  unit = await prisma.unit.findFirst({ where: { code: { equals: normalised, mode: 'insensitive' } } });
-  if (unit) return unit;
-  // Final fallback: strip spaces from DB-side codes too (e.g. "SCH2170" matches stored "SCH 2170")
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM "Unit" WHERE REPLACE(UPPER(code), ' ', '') = ${normalised} LIMIT 1
-  `;
-  if (rows.length > 0) return prisma.unit.findUnique({ where: { id: rows[0].id } });
-  return null;
-}
+import { resolveUnit } from '@/lib/unitCode';
 
 /**
  * Identify the caller's role and ID from the JWT by inspecting payload fields.
@@ -141,10 +112,11 @@ export async function GET(req: NextRequest) {
     }
 
     // Build variant sets (uuid + code + stripped code) for legacy data compatibility
+    const allowedUnitIdSet = new Set(allowedUnitIds); // O(1) lookup vs O(n) Array.includes
     const unitMap = new Map<string, string>(); // variantKey → canonical code
     const allVariants: string[] = [];
     for (const u of unitRows) {
-      if (!allowedUnitIds.includes(u.id)) continue;
+      if (!allowedUnitIdSet.has(u.id)) continue;
       const stripped = u.code.replace(/\s+/g, '').toUpperCase();
       for (const v of [u.id, u.code, stripped]) {
         allVariants.push(v);

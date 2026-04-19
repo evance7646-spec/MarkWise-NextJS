@@ -4,6 +4,7 @@ import { verifyLecturerAccessToken } from '@/lib/lecturerAuthJwt';
 import { prisma } from '@/lib/prisma';
 import { ALLOWED_MIME_TYPES, MAX_FILE_BYTES } from '@/lib/fileStorage';
 import { randomUUID } from 'crypto';
+import { resolveUnit } from '@/lib/unitCode';
 
 export const runtime = 'nodejs';
 
@@ -12,29 +13,6 @@ const corsHeaders = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
-
-/** Resolve a unit param (UUID or code) to a Unit row. */
-async function resolveUnit(param: string) {
-  const byId = await prisma.unit.findUnique({ where: { id: param } });
-  if (byId) return byId;
-  let code = param.trim();
-  const parenMatch = code.match(/\(([^)]+)\)\s*$/);
-  if (parenMatch) code = parenMatch[1].trim();
-  const byCode = await prisma.unit.findFirst({
-    where: { code: { equals: code, mode: 'insensitive' } },
-  });
-  if (byCode) return byCode;
-  const normalised = code.replace(/\s+/g, '').toUpperCase();
-  const byNorm = await prisma.unit.findFirst({
-    where: { code: { equals: normalised, mode: 'insensitive' } },
-  });
-  if (byNorm) return byNorm;
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM "Unit" WHERE REPLACE(UPPER(code), ' ', '') = ${normalised} LIMIT 1
-  `;
-  if (rows.length > 0) return prisma.unit.findUnique({ where: { id: rows[0].id } });
-  return null;
-}
 
 export function OPTIONS() {
   return new NextResponse(null, { status: 200, headers: corsHeaders });

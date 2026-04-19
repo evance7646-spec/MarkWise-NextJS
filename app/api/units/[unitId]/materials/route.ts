@@ -3,35 +3,7 @@ import { verifyLecturerAccessToken } from '@/lib/lecturerAuthJwt';
 import { verifyStudentAccessToken } from '@/lib/studentAuthJwt';
 import { prisma } from '@/lib/prisma';
 import { saveUploadedFile } from '@/lib/fileStorage';
-
-/** Accepts a UUID, a unit code, or a display string like "Unit Title (CODE)". Returns the Unit row or null. */
-async function resolveUnit(param: string) {
-  // Try exact UUID match first
-  const byId = await prisma.unit.findUnique({ where: { id: param } });
-  if (byId) return byId;
-  // Extract code from display strings like "INORGANIC CHEMISTRY (SCH 2180)"
-  // Also handles space-stripped variants like "INORGANICCHEMISTRY(SCH2180)"
-  let code = param.trim();
-  const parenMatch = code.match(/\(([^)]+)\)\s*$/);
-  if (parenMatch) code = parenMatch[1].trim();
-  // Try case-insensitive code match
-  const byCode = await prisma.unit.findFirst({
-    where: { code: { equals: code, mode: 'insensitive' } },
-  });
-  if (byCode) return byCode;
-  // Strip spaces from input and try again
-  const normalised = code.replace(/\s+/g, '').toUpperCase();
-  const byNormalised = await prisma.unit.findFirst({
-    where: { code: { equals: normalised, mode: 'insensitive' } },
-  });
-  if (byNormalised) return byNormalised;
-  // Final fallback: strip spaces from DB-side codes too (e.g. "SCH2180" matches stored "SCH 2180")
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    SELECT id FROM "Unit" WHERE REPLACE(UPPER(code), ' ', '') = ${normalised} LIMIT 1
-  `;
-  if (rows.length > 0) return prisma.unit.findUnique({ where: { id: rows[0].id } });
-  return null;
-}
+import { resolveUnit } from '@/lib/unitCode';
 
 function formatMaterial(m: any) {
   return {
