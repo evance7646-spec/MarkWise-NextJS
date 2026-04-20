@@ -1,10 +1,14 @@
 /**
  * Weekly timetable status reset.
  *
- * Every Saturday at 00:00 server time, any timetable entry whose status is
- * 'Cancelled', 'Rescheduled', or 'Online' and whose change is NOT permanent
- * is reset back to 'Pending'.  If the venue was cleared for an Online entry,
- * it is restored from originalVenue.
+ * Every Saturday at 23:59 server time, any timetable entry whose status is
+ * 'Cancelled', 'Rescheduled', 'Online', or 'Confirmed' and whose change is NOT permanent
+ * is reset back to 'Pending' and all time/venue fields are restored to their original
+ * admin-set state.  If the venue was cleared for an Online entry, it is restored from
+ * originalVenue. The day, startTime, and endTime are restored from their original values.
+ *
+ * Permanent reschedules (reschedulePermanent = true) are NOT reset, as they persist
+ * for the entire semester.
  *
  * After the DB update, a `timetable:reset` SSE event is broadcast to every
  * connected student so their timetable syncs immediately.
@@ -18,9 +22,10 @@ export async function resetWeeklyStatuses(): Promise<void> {
   console.log("[timetable-reset] Running weekly status reset …");
   try {
     // Collect affected entries first (need unit codes + courseIds for post-processing)
+    // Exclude entries where reschedulePermanent is true (semester-wide changes)
     const affected = await prisma.timetable.findMany({
       where: {
-        status: { in: ["Cancelled", "Rescheduled", "Online"] },
+        status: { in: ["Cancelled", "Rescheduled", "Online", "Confirmed"] },
         OR: [
           { reschedulePermanent: false },
           { reschedulePermanent: null },
@@ -30,6 +35,9 @@ export async function resetWeeklyStatuses(): Promise<void> {
         id: true,
         courseId: true,
         originalVenue: true,
+        originalDay: true,
+        originalStartTime: true,
+        originalEndTime: true,
         unit: { select: { code: true } },
       },
     });
@@ -40,24 +48,39 @@ export async function resetWeeklyStatuses(): Promise<void> {
     }
 
     // Single atomic SQL update:
-    //  - status → 'Pending'
+    //  - status → 'Pending' (restore to original admin-set state)
+    //  - day restored from originalDay
+    //  - startTime restored from originalStartTime
+    //  - endTime restored from originalEndTime
     //  - venueName restored from originalVenue when present
-    //  - originalVenue cleared
+    //  - originalDay/StartTime/EndTime/Venue cleared
+    //  - rescheduledRoomId cleared (back to original room)
+    //  - rescheduleSubStatus, rescheduledTo, reason cleared
     //  - updatedBy / updatedAt refreshed
     await prisma.$executeRaw`
       UPDATE "Timetable"
       SET
-        status         = 'Pending',
-        "venueName"    = COALESCE("originalVenue", "venueName"),
-        "originalVenue"= NULL,
-        "updatedBy"    = 'system',
-        "updatedAt"    = NOW()
+        status                = 'Pending',
+        day                   = COALESCE("originalDay", day),
+        "startTime"           = COALESCE("originalStartTime", "startTime"),
+        "endTime"             = COALESCE("originalEndTime", "endTime"),
+        "venueName"           = COALESCE("originalVenue", "venueName"),
+        "originalDay"         = NULL,
+        "originalStartTime"   = NULL,
+        "originalEndTime"     = NULL,
+        "originalVenue"       = NULL,
+        "rescheduledRoomId"   = NULL,
+        "rescheduleSubStatus" = NULL,
+        "rescheduledTo"       = NULL,
+        "reason"              = NULL,
+        "updatedBy"           = 'system',
+        "updatedAt"           = NOW()
       WHERE
-        status IN ('Cancelled', 'Rescheduled', 'Online')
+        status IN ('Cancelled', 'Rescheduled', 'Online', 'Confirmed')
         AND ("reschedulePermanent" IS NULL OR "reschedulePermanent" = false)
     `;
 
-    console.log(`[timetable-reset] Reset ${affected.length} entries to Pending.`);
+    console.log(`[timetable-reset] Reset ${affected.length} entries to original admin-set state.`);
 
     // Bump timetable version for each affected course so polling clients detect the change
     const courseIds = [...new Set(affected.map((e) => e.courseId))];
@@ -72,7 +95,7 @@ export async function resetWeeklyStatuses(): Promise<void> {
     // Broadcast SSE event to all connected student streams
     broadcastToAllSubscribed({
       event: "timetable:reset",
-      message: "Weekly reset applied",
+      message: "Weekly reset applied - timetables restored to original schedule",
     });
 
     console.log("[timetable-reset] Done.");
@@ -83,11 +106,11 @@ export async function resetWeeklyStatuses(): Promise<void> {
 
 /** Register the weekly cron.  Call once from instrumentation.ts on server start. */
 export function startWeeklyResetCron(): void {
-  // Every Saturday at 00:00:00 server local time
-  cron.schedule("0 0 * * 6", () => {
+  // Every Saturday at 23:59:00 server local time
+  cron.schedule("59 23 * * 6", () => {
     resetWeeklyStatuses().catch((err) =>
       console.error("[timetable-reset] Unhandled cron error:", err),
     );
   });
-  console.log("[timetable-reset] Weekly reset cron registered (0 0 * * 6).");
+  console.log("[timetable-reset] Weekly reset cron registered (59 23 * * 6 - Saturday 23:59).");
 }
