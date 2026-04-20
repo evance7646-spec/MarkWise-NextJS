@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Calendar, Search, Plus, X, Loader2, Users,
@@ -8,6 +8,8 @@ import {
   Filter, ChevronDown, Zap, Building2, AlertCircle, Trash2,
 } from "lucide-react";
 import { useDepartmentAdmin } from "../../context";
+
+// ─── Types ────────────────────────────────────────────────────────────────
 
 interface Entry {
   id: string;
@@ -32,12 +34,12 @@ interface Entry {
 }
 
 interface CourseUnit { id: string; code: string; title: string }
-interface CourseSem  { id: string; label: string; units: CourseUnit[] }
+interface CourseSem { id: string; label: string; units: CourseUnit[] }
 interface CourseYear { id: string; name: string; semesters: CourseSem[] }
-interface Course     { id: string; name: string; departmentId: string; years: CourseYear[] }
-interface Unit       { id: string; code: string; title: string }
-interface Lecturer  { id: string; fullName: string }
-interface Room      { id: string; name: string; roomCode: string; capacity: number; status?: string }
+interface Course { id: string; name: string; departmentId: string; years: CourseYear[] }
+interface Unit { id: string; code: string; title: string }
+interface Lecturer { id: string; fullName: string }
+interface Room { id: string; name: string; roomCode: string; capacity: number; status?: string }
 
 interface MergeEntry {
   id: string;
@@ -59,8 +61,14 @@ interface MergeEntry {
   studentCount: number;
 }
 
-const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+interface CacheEntry {
+  courses: Course[];
+  units: Unit[];
+  lecturers: Lecturer[];
+  timestamp: number;
+}
 
+const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 const DAY_COLORS: Record<string, { bg: string; text: string; dot: string }> = {
   Monday:    { bg: "bg-indigo-500",  text: "text-indigo-600",  dot: "bg-indigo-500"  },
   Tuesday:   { bg: "bg-violet-500",  text: "text-violet-600",  dot: "bg-violet-500"  },
@@ -76,20 +84,7 @@ const STATUS_META: Record<string, { pill: string; dot: string }> = {
   Cancelled: { pill: "bg-red-50     text-red-700     border border-red-200",     dot: "bg-red-400"     },
 };
 
-// Time slots 07:00 – 20:00 for grid view
 const TIME_SLOTS = Array.from({ length: 14 }, (_, i) => `${String(i + 7).padStart(2, "0")}:00`);
-
-// "HH:MM" → minutes from midnight
-function timeToMins(t: string) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
-
-// Format duration in minutes → "2h", "1h 30m", "45m"
-function formatDuration(mins: number) {
-  if (mins <= 0) return "—";
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h === 0) return `${m}m`;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
 
 const EMPTY_FORM = {
   courseId: "", yearId: "", semesterId: "", unitId: "",
@@ -100,19 +95,26 @@ const EMPTY_FORM = {
 const inp = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition disabled:opacity-40 disabled:cursor-not-allowed";
 const lbl = "block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide";
 
-// ── Build startAt / endAt ISO timestamps for a day-name + HH:mm window ────
-// The rooms API derives day-of-week and time from UTC values, so we construct
-// a UTC date falling on the correct day of week in the near future.
+// ─── Utilities ────────────────────────────────────────────────────────────
+
+function timeToMins(t: string) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
+function formatDuration(mins: number) {
+  if (mins <= 0) return "—";
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h === 0) return `${m}m`;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 function buildWindowTimestamps(dayName: string, startTime: string, endTime: string) {
   const DAY_IDX: Record<string, number> = {
-    Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3,
-    Thursday: 4, Friday: 5, Saturday: 6,
+    Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6,
   };
   const target = DAY_IDX[dayName] ?? 1;
   const now = new Date();
   const todayUTC = now.getUTCDay();
   let daysAhead = (target - todayUTC + 7) % 7;
-  if (daysAhead === 0) daysAhead = 7; // always a future date
+  if (daysAhead === 0) daysAhead = 7;
   const [sh, sm] = startTime.split(":").map(Number);
   const [eh, em] = endTime.split(":").map(Number);
   const base = new Date(Date.UTC(
@@ -123,6 +125,8 @@ function buildWindowTimestamps(dayName: string, startTime: string, endTime: stri
   return { startAt: startAt.toISOString(), endAt: endAt.toISOString() };
 }
 
+// ─── Main Component ───────────────────────────────────────────────────────
+
 export default function DeptTimetablePage() {
   const admin = useDepartmentAdmin();
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -131,6 +135,10 @@ export default function DeptTimetablePage() {
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState<"list" | "grid">("list");
   const [statusFilter, setStatusFilter] = useState("all");
+
+  // ── OPTIMIZATION: Data caching ─────────────────────────────────────────────
+  const [dataCache, setDataCache] = useState<CacheEntry | null>(null);
+  const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
   // Modal state
   const [showModal, setShowModal]           = useState(false);
@@ -145,6 +153,10 @@ export default function DeptTimetablePage() {
   const [submitError, setSubmitError]       = useState<string | null>(null);
   const [mergeConflict, setMergeConflict]   = useState<{ conflictId: string; message: string } | null>(null);
 
+  // ── OPTIMIZATION: Session tracking ────────────────────────────────────────
+  const [entriesAddedInSession, setEntriesAddedInSession] = useState(0);
+  const [lastSuccessMessage, setLastSuccessMessage] = useState<string | null>(null);
+
   // Delete state
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleting, setDeleting]               = useState(false);
@@ -154,6 +166,9 @@ export default function DeptTimetablePage() {
   const [drawerEntries, setDrawerEntries]     = useState<MergeEntry[]>([]);
   const [drawerTotal, setDrawerTotal]         = useState<number>(0);
   const [drawerLoading, setDrawerLoading]     = useState(false);
+
+  // ── OPTIMIZATION: Debounce timer for room fetching ─────────────────────────
+  const roomFetchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchEntries = useCallback(async () => {
     if (!admin?.departmentId) return;
@@ -212,9 +227,7 @@ export default function DeptTimetablePage() {
     }
   }, []);
 
-  // ── Open modal ─────────────────────────────────────────────────────
-  // Open modal — load courses, units (with semester hierarchy), lecturers.
-  // Rooms are intentionally NOT loaded here — they load dynamically after time is chosen.
+  // ── OPTIMIZATION: Fetch with cache check ───────────────────────────────────
   const openModal = useCallback(async () => {
     if (!admin?.departmentId) return;
     setForm({ ...EMPTY_FORM });
@@ -222,6 +235,18 @@ export default function DeptTimetablePage() {
     setMergeConflict(null);
     setAvailableRooms([]);
     setShowModal(true);
+
+    // Check cache validity
+    const now = Date.now();
+    if (dataCache && (now - dataCache.timestamp) < CACHE_TTL) {
+      // Use cached data
+      setCourses(dataCache.courses);
+      setUnits(dataCache.units);
+      setLecturers(dataCache.lecturers);
+      return; // No need for setModalLoading since we already have data
+    }
+
+    // Cache miss or expired, fetch fresh data
     setModalLoading(true);
     try {
       const [c, u, l] = await Promise.all([
@@ -232,44 +257,69 @@ export default function DeptTimetablePage() {
         fetch(`/api/lecturers?departmentId=${admin.departmentId}`, { credentials: "include" })
           .then(r => r.ok ? r.json() : []).catch(() => []),
       ]);
-      setCourses(Array.isArray(c) ? c : ((c as any).courses ?? (c as any).data ?? []));
-      setUnits(Array.isArray(u) ? u : ((u as any).units ?? (u as any).data ?? []));
-      setLecturers(Array.isArray(l) ? l : ((l as any).lecturers ?? (l as any).data ?? []));
+      const coursesData = Array.isArray(c) ? c : ((c as any).courses ?? (c as any).data ?? []);
+      const unitsData = Array.isArray(u) ? u : ((u as any).units ?? (u as any).data ?? []);
+      const lecturersData = Array.isArray(l) ? l : ((l as any).lecturers ?? (l as any).data ?? []);
+      
+      setCourses(coursesData);
+      setUnits(unitsData);
+      setLecturers(lecturersData);
+      
+      // Cache the data
+      setDataCache({
+        courses: coursesData,
+        units: unitsData,
+        lecturers: lecturersData,
+        timestamp: now,
+      });
     } catch (err) {
       console.error("[timetable] openModal fetch error:", err);
     } finally {
       setModalLoading(false);
     }
-  }, [admin?.departmentId]);
+  }, [admin?.departmentId, dataCache]);
 
-  // Fetch only rooms that are FREE for the chosen day + time slot.
+  // ── OPTIMIZATION: Debounced room fetching ──────────────────────────────────
   const fetchAvailableRooms = useCallback(async (day: string, startTime: string, endTime: string) => {
     if (!admin?.institutionId || !day || !startTime || !endTime) return;
     if (startTime >= endTime) return;
-    setRoomsLoading(true);
-    setAvailableRooms([]);
-    try {
-      const { startAt, endAt } = buildWindowTimestamps(day, startTime, endTime);
-      const url = `/api/rooms?institutionId=${admin.institutionId}&startAt=${encodeURIComponent(startAt)}&endAt=${encodeURIComponent(endAt)}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) return;
-      const payload = await res.json();
-      const raw: any[] = Array.isArray(payload) ? payload : (payload?.data?.rooms ?? payload?.rooms ?? []);
-      // Only show rooms that are free for this window
-      const free = raw.filter(r => !r.status || r.status === "free" || r.status === "available");
-      setAvailableRooms(free.map(r => ({
-        id: r.id,
-        name: r.name,
-        roomCode: r.roomCode ?? r.room_code ?? "",
-        capacity: r.capacity ?? 0,
-        status: r.status,
-      })));
-    } catch (err) {
-      console.error("[timetable] fetchAvailableRooms error:", err);
-    } finally {
-      setRoomsLoading(false);
-    }
+
+    // Clear previous timer
+    if (roomFetchTimerRef.current) clearTimeout(roomFetchTimerRef.current);
+
+    // Set new debounced timer (400ms)
+    roomFetchTimerRef.current = setTimeout(async () => {
+      setRoomsLoading(true);
+      setAvailableRooms([]);
+      try {
+        const { startAt, endAt } = buildWindowTimestamps(day, startTime, endTime);
+        const url = `/api/rooms?institutionId=${admin.institutionId}&startAt=${encodeURIComponent(startAt)}&endAt=${encodeURIComponent(endAt)}`;
+        const res = await fetch(url, { credentials: "include" });
+        if (!res.ok) return;
+        const payload = await res.json();
+        const raw: any[] = Array.isArray(payload) ? payload : (payload?.data?.rooms ?? payload?.rooms ?? []);
+        const free = raw.filter(r => !r.status || r.status === "free" || r.status === "available");
+        setAvailableRooms(free.map(r => ({
+          id: r.id,
+          name: r.name,
+          roomCode: r.roomCode ?? r.room_code ?? "",
+          capacity: r.capacity ?? 0,
+          status: r.status,
+        })));
+      } catch (err) {
+        console.error("[timetable] fetchAvailableRooms error:", err);
+      } finally {
+        setRoomsLoading(false);
+      }
+    }, 400); // 400ms debounce
   }, [admin?.institutionId]);
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (roomFetchTimerRef.current) clearTimeout(roomFetchTimerRef.current);
+    };
+  }, []);
 
   const handleChange = useCallback((field: string, value: string) => {
     setForm(prev => {
@@ -296,14 +346,29 @@ export default function DeptTimetablePage() {
     });
   }, [availableRooms]);
 
-  // Trigger room fetch whenever day or time changes (and all three are set)
   useEffect(() => {
     if (showModal && form.day && form.startTime && form.endTime && form.startTime < form.endTime) {
       fetchAvailableRooms(form.day, form.startTime, form.endTime);
     }
   }, [showModal, form.day, form.startTime, form.endTime, fetchAvailableRooms]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // ── OPTIMIZATION: Smart form reset after successful submission ──────────────
+  const resetFormAfterSuccess = useCallback(() => {
+    // Keep: courseId, yearId, lecturerId (most reusable across entries)
+    // Reset: unitId, day (will be filled), startTime, endTime, roomId, venueName
+    setForm(prev => ({
+      ...prev,
+      unitId: "",
+      day: "Monday", // or preserve current day?
+      startTime: "08:00",
+      endTime: "10:00",
+      roomId: "",
+      venueName: "",
+    }));
+    setAvailableRooms([]);
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent, mode: "submit" | "submitAndAdd" = "submit") => {
     e.preventDefault();
     if (!form.courseId || !form.yearId || !form.semesterId || !form.unitId ||
         !form.lecturerId || !form.roomId) {
@@ -312,7 +377,7 @@ export default function DeptTimetablePage() {
     if (form.startTime >= form.endTime) {
       setSubmitError("End time must be after start time."); return;
     }
-    setSubmitting(true); setSubmitError(null);
+    setSubmitting(true); setSubmitError(null); setLastSuccessMessage(null);
     try {
       const year     = yearsForCourse.find(y => y.id === form.yearId);
       const semObj   = year?.semesters.find(s => s.id === form.semesterId);
@@ -356,8 +421,23 @@ export default function DeptTimetablePage() {
         setSubmitError(d.error ?? `Error ${res.status}`);
         return;
       }
-      setShowModal(false);
-      fetchEntries();
+
+      // ── SUCCESS ────────────────────────────────────────────────────────
+      const newCount = entriesAddedInSession + 1;
+      setEntriesAddedInSession(newCount);
+      setLastSuccessMessage(`✓ Entry created (${newCount} this session)`);
+
+      await fetchEntries();
+
+      if (mode === "submitAndAdd") {
+        // Keep modal open, reset form intelligently
+        resetFormAfterSuccess();
+        // Clear any old messages after 2 seconds
+        setTimeout(() => setLastSuccessMessage(null), 2000);
+      } else {
+        // Close modal
+        setShowModal(false);
+      }
     } catch (err: any) {
       setSubmitError(err?.message ?? "Failed to create entry.");
     } finally {
@@ -393,8 +473,11 @@ export default function DeptTimetablePage() {
         return;
       }
       setMergeConflict(null);
-      setShowModal(false);
-      fetchEntries();
+      setEntriesAddedInSession(prev => prev + 1);
+      setLastSuccessMessage(`✓ Joint class created (${entriesAddedInSession + 1} this session)`);
+      await fetchEntries();
+      setTimeout(() => setLastSuccessMessage(null), 2000);
+      resetFormAfterSuccess();
     } catch (err: any) {
       setSubmitError(err?.message ?? "Merge failed.");
     } finally {
@@ -402,8 +485,7 @@ export default function DeptTimetablePage() {
     }
   };
 
-  // ── Derived lists ──────────────────────────────────────────────────────────
-
+  // ── Derived lists (memoized) ───────────────────────────────────────────────
   const yearsForCourse = useMemo(() => {
     if (!form.courseId) return [];
     return courses.find(c => c.id === form.courseId)?.years ?? [];
@@ -418,7 +500,6 @@ export default function DeptTimetablePage() {
     if (!form.semesterId) return [];
     const semUnits = semestersForYear.find(s => s.id === form.semesterId)?.units ?? [];
     if (semUnits.length > 0) return semUnits;
-    // Fallback: show all department units if none are linked to this semester
     return units;
   }, [semestersForYear, form.semesterId, units]);
 
@@ -575,7 +656,7 @@ export default function DeptTimetablePage() {
         )}
       </div>
 
-      {/* ══ LIST VIEW ════════════════════════════════════════════════════════ */}
+      {/* ── List view ─────────────────────────────────────────────────────── */}
       {activeTab === "list" && (
         <AnimatePresence mode="wait">
           <motion.div
@@ -704,33 +785,6 @@ export default function DeptTimetablePage() {
                           </button>
                         )}
                       </div>
-                      {/* Mobile summary */}
-                      <div className="flex sm:hidden items-center justify-between mt-1">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <GraduationCap className="h-3.5 w-3.5" /><span>{e.lecturerName ?? "—"}</span>
-                          <span className="text-gray-300">·</span>
-                          <MapPin className="h-3.5 w-3.5" /><span>{e.venueName ?? "—"}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${st.pill}`}>{e.status}</span>
-                          <button
-                            onClick={() => setDeleteConfirmId(isConfirmingDelete ? null : e.id)}
-                            className="rounded-lg p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 transition"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                      {/* Mobile delete confirm row */}
-                      {isConfirmingDelete && (
-                        <div className="sm:hidden col-span-full flex items-center justify-between gap-2 rounded-xl bg-red-50 border border-red-200 px-3 py-2 mt-1">
-                          <span className="text-xs text-red-700 font-medium">Delete this entry?</span>
-                          <div className="flex gap-1.5">
-                            <button onClick={() => setDeleteConfirmId(null)} className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition">No</button>
-                            <button onClick={() => handleDelete(e.id)} disabled={deleting} className="rounded-lg bg-red-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-red-600 disabled:opacity-50 transition">{deleting ? "…" : "Yes, delete"}</button>
-                          </div>
-                        </div>
-                      )}
                     </motion.div>
                   );
                 })}
@@ -740,7 +794,7 @@ export default function DeptTimetablePage() {
         </AnimatePresence>
       )}
 
-      {/* ══ GRID VIEW (time-axis) ════════════════════════════════════════════ */}
+      {/* ── Grid View ───────────────────────────────────────────────────────– */}
       {activeTab === "grid" && (
         <AnimatePresence mode="wait">
           <motion.div
@@ -815,7 +869,7 @@ export default function DeptTimetablePage() {
         </AnimatePresence>
       )}
 
-      {/* ── Joint Class Detail Drawer ──────────────────────────────────────── */}
+      {/* ── Joint Class Drawer ──────────────────────────────────────────────– */}
       <AnimatePresence>
         {drawerGroupId && (
           <>
@@ -903,18 +957,16 @@ export default function DeptTimetablePage() {
         )}
       </AnimatePresence>
 
-      {/* ── New Entry Modal ─────────────────────────────────────────────────── */}
+      {/* ── Modal (OPTIMIZED) ──────────────────────────────────────────────────– */}
       <AnimatePresence>
         {showModal && (
           <>
-            {/* Backdrop — fades independently so its opacity doesn't compound with the card */}
             <motion.div
               key="modal-backdrop"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
               onClick={() => setShowModal(false)}
             />
-            {/* Card — centred using a non-animated wrapper; only scale/translate animate */}
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
             <motion.div
               key="modal"
@@ -931,8 +983,10 @@ export default function DeptTimetablePage() {
                     <Plus className="h-4 w-4 text-indigo-600" />
                   </div>
                   <div>
-                    <h2 className="text-base font-bold text-gray-900">New Timetable Entry</h2>
-                    <p className="text-xs text-gray-400">Scope → Unit → Lecturer → Time → Room</p>
+                    <h2 className="text-base font-bold text-gray-900">Timetable Entries</h2>
+                    <p className="text-xs text-gray-400">
+                      {entriesAddedInSession > 0 ? `${entriesAddedInSession} added this session` : "Scope → Unit → Lecturer → Time → Room"}
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => setShowModal(false)} className="rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition">
@@ -941,12 +995,25 @@ export default function DeptTimetablePage() {
               </div>
 
               <div className="px-6 py-5">
+                {/* Success message */}
+                {lastSuccessMessage && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    className="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 flex items-center gap-2 text-sm text-emerald-700 font-medium"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    {lastSuccessMessage}
+                  </motion.div>
+                )}
+
                 {modalLoading ? (
                   <div className="space-y-3">
                     {[1,2,3,4,5].map(i => <div key={i} className="h-11 rounded-xl bg-gray-100 animate-pulse" />)}
                   </div>
                 ) : (
-                  <form onSubmit={handleSubmit} className="space-y-5">
+                  <form className="space-y-5">
 
                     {/* Step 1 — Scope */}
                     <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
@@ -1121,11 +1188,21 @@ export default function DeptTimetablePage() {
                     <div className="flex gap-3 pt-1">
                       <button type="button" onClick={() => setShowModal(false)}
                         className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">
-                        Cancel
+                        Close
                       </button>
-                      <button type="submit" disabled={submitting || !form.roomId}
+                      <button 
+                        type="button"
+                        onClick={(e) => handleSubmit(e as any, "submitAndAdd")}
+                        disabled={submitting || !form.roomId}
+                        className="flex-1 rounded-xl border border-indigo-600 bg-white py-2.5 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition flex items-center justify-center gap-2">
+                        {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : <><Plus className="h-4 w-4" /> Add & Continue</>}
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={(e) => handleSubmit(e as any, "submit")}
+                        disabled={submitting || !form.roomId}
                         className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40 shadow-sm shadow-indigo-200 transition flex items-center justify-center gap-2">
-                        {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : <><Plus className="h-4 w-4" /> Create Entry</>}
+                        {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : <><Plus className="h-4 w-4" /> Create & Close</>}
                       </button>
                     </div>
 
@@ -1141,3 +1218,4 @@ export default function DeptTimetablePage() {
     </div>
   );
 }
+
