@@ -10,13 +10,33 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  compress: true,
   typescript: { ignoreBuildErrors: true },
+
+  // Serve PDFKit data files during output tracing
   outputFileTracingIncludes: {
     "/api/reports/generate": ["./node_modules/pdfkit/js/data/**/*"],
   },
-  async headers() {
-    return [{ source: "/(.*)", headers: securityHeaders }];
+
+  images: {
+    formats: ["image/avif", "image/webp"],
+    minimumCacheTTL: 60,
   },
+
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: securityHeaders,
+      },
+      {
+        // Long-lived cache for static assets (Next.js hashes these)
+        source: "/_next/static/(.*)",
+        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+      },
+    ];
+  },
+
   async rewrites() {
     return [
       // Mobile app — prefix-less paths → /api/*
@@ -32,10 +52,10 @@ const nextConfig: NextConfig = {
       { source: "/notifications/:path*", destination: "/api/notifications/:path*" },
       { source: "/materials/:path*",     destination: "/api/materials/:path*" },
       { source: "/auth/:path*",          destination: "/api/auth/:path*" },
-      { source: "/assignments",           destination: "/api/assignments" },
-      { source: "/assignments/:path*",    destination: "/api/assignments/:path*" },
-      { source: "/files/:path*",          destination: "/api/files/:path*" },
-      { source: "/attendance/:path*",      destination: "/api/attendance/:path*" },
+      { source: "/assignments",          destination: "/api/assignments" },
+      { source: "/assignments/:path*",   destination: "/api/assignments/:path*" },
+      { source: "/files/:path*",         destination: "/api/files/:path*" },
+      { source: "/attendance/:path*",    destination: "/api/attendance/:path*" },
       { source: "/meeting-invites",          destination: "/api/meeting-invites" },
       { source: "/meeting-invites/:path*",   destination: "/api/meeting-invites/:path*" },
     ];

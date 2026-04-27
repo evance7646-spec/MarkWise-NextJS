@@ -354,18 +354,14 @@ export default function DeptTimetablePage() {
 
   // ── OPTIMIZATION: Smart form reset after successful submission ──────────────
   const resetFormAfterSuccess = useCallback(() => {
-    // Keep: courseId, yearId, lecturerId (most reusable across entries)
-    // Reset: unitId, day (will be filled), startTime, endTime, roomId, venueName
+    // Keep courseId, yearId, semesterId, lecturerId, day, startTime, endTime so
+    // batch entry at the same scope/time-slot only needs a new unit + room pick.
     setForm(prev => ({
       ...prev,
       unitId: "",
-      day: "Monday", // or preserve current day?
-      startTime: "08:00",
-      endTime: "10:00",
       roomId: "",
       venueName: "",
     }));
-    setAvailableRooms([]);
   }, []);
 
   const handleSubmit = async (e: React.FormEvent, mode: "submit" | "submitAndAdd" = "submit") => {
@@ -427,7 +423,33 @@ export default function DeptTimetablePage() {
       setEntriesAddedInSession(newCount);
       setLastSuccessMessage(`✓ Entry created (${newCount} this session)`);
 
-      await fetchEntries();
+      // Optimistic local insert — avoids a full fetchEntries() round-trip.
+      // The server returns the created row; we enrich it with names from local state.
+      const created = await res.json();
+      const lecturerObj = lecturers.find(l => l.id === form.lecturerId);
+      const courseObj   = courses.find(c => c.id === form.courseId);
+      const roomObj     = availableRooms.find(r => r.id === form.roomId);
+      setEntries(prev => [...prev, {
+        id:           created.id,
+        day:          created.day,
+        startTime:    created.startTime,
+        endTime:      created.endTime,
+        unitCode:     unit?.code ?? "",
+        unitTitle:    unit?.title ?? "",
+        venueName:    created.venueName ?? form.venueName,
+        roomId:       created.roomId,
+        roomName:     roomObj?.name,
+        status:       created.status ?? "Pending",
+        lecturerName: lecturerObj?.fullName,
+        lecturerId:   created.lecturerId,
+        courseName:   courseObj?.name,
+        courseId:     created.courseId,
+        departmentId: created.departmentId,
+        semester:     created.semester ?? semester,
+        yearOfStudy:  created.yearOfStudy ?? yearOfStudy,
+        unitId:       created.unitId,
+        mergeGroupId: null,
+      }]);
 
       if (mode === "submitAndAdd") {
         // Keep modal open, reset form intelligently
@@ -503,15 +525,17 @@ export default function DeptTimetablePage() {
     return units;
   }, [semestersForYear, form.semesterId, units]);
 
-  const shown = entries
-    .filter(e => e.day === activeDay)
-    .filter(e => statusFilter === "all" || e.status === statusFilter)
-    .filter(e => !search ||
-      (e.unitCode  ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (e.unitTitle ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (e.lecturerName ?? "").toLowerCase().includes(search.toLowerCase()) ||
-      (e.courseName ?? "").toLowerCase().includes(search.toLowerCase()))
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const shown = useMemo(() =>
+    entries
+      .filter(e => e.day === activeDay)
+      .filter(e => statusFilter === "all" || e.status === statusFilter)
+      .filter(e => !search ||
+        (e.unitCode  ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (e.unitTitle ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (e.lecturerName ?? "").toLowerCase().includes(search.toLowerCase()) ||
+        (e.courseName ?? "").toLowerCase().includes(search.toLowerCase()))
+      .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+    [entries, activeDay, statusFilter, search]);
 
   const daySummary = useMemo(() =>
     DAYS.map(d => ({ day: d, count: entries.filter(e => e.day === d).length })),

@@ -1,5 +1,5 @@
 "use client";
-import React, { ReactNode, useState, useEffect, useCallback } from "react";
+import { ReactNode, useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { DepartmentAdminInfo, DepartmentAdminContext } from "./context";
 import { usePathname, useRouter } from "next/navigation";
@@ -193,14 +193,15 @@ function SidebarContent({
 // ============================================================================
 // NOTIFICATION DROPDOWN
 // ============================================================================
+const STATIC_NOTIFICATIONS = [
+  { id: 1, title: "New course request", message: "CS 301 needs approval", time: "5 min ago", type: "info" },
+  { id: 2, title: "Attendance alert", message: "3 lecturers missed today", time: "1 hour ago", type: "warning" },
+  { id: 3, title: "Timetable updated", message: "Changes pending review", time: "3 hours ago", type: "success" },
+] as const;
+
 function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
-  
-  const notifications = [
-    { id: 1, title: "New course request", message: "CS 301 needs approval", time: "5 min ago", type: "info" },
-    { id: 2, title: "Attendance alert", message: "3 lecturers missed today", time: "1 hour ago", type: "warning" },
-    { id: 3, title: "Timetable updated", message: "Changes pending review", time: "3 hours ago", type: "success" },
-  ];
+  const notifications = STATIC_NOTIFICATIONS;
 
   return (
     <div className="relative">
@@ -208,10 +209,13 @@ function NotificationDropdown() {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="Open notifications"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         className="relative rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
       >
         <Bell className="h-5 w-5" />
-        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white" aria-label="3 unread notifications">
           3
         </span>
       </motion.button>
@@ -339,12 +343,11 @@ export default function DepartmentAdminLayout({ children }: { children: ReactNod
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
-  // Handle scroll effect
+  const handleScroll = useCallback(() => setScrolled(window.scrollY > 10), []);
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 10);
-    window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, [handleScroll]);
 
   // Fetch admin data
   useEffect(() => {
@@ -370,12 +373,12 @@ export default function DepartmentAdminLayout({ children }: { children: ReactNod
       .catch(() => router.push("/admin/login"));
   }, [router]);
 
-  // Get current page label
-  const currentPage = NAV_ITEMS.find(n =>
-    pathname === n.href || (n.href !== `${BASE}/dashboard` && pathname.startsWith(n.href))
-  );
-  const pageLabel = currentPage?.label ?? "Dashboard";
-  const pageIcon = currentPage?.icon ?? LayoutDashboard;
+  const { pageLabel, PageIcon } = useMemo(() => {
+    const current = NAV_ITEMS.find(n =>
+      pathname === n.href || (n.href !== `${BASE}/dashboard` && pathname.startsWith(n.href))
+    );
+    return { pageLabel: current?.label ?? "Dashboard", PageIcon: current?.icon ?? LayoutDashboard };
+  }, [pathname]);
 
   // Loading state with shimmer effect
   if (loading) {
@@ -454,8 +457,9 @@ export default function DepartmentAdminLayout({ children }: { children: ReactNod
             className="sticky top-0 z-30 flex h-14 shrink-0 items-center gap-3 border-b px-4 backdrop-blur-lg transition-all"
           >
             {/* Mobile menu button */}
-            <button 
-              onClick={() => setDrawerOpen(true)} 
+            <button
+              onClick={() => setDrawerOpen(true)}
+              aria-label="Open navigation menu"
               className="rounded-lg p-2 text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-700 md:hidden"
             >
               <Menu className="h-5 w-5" />
@@ -464,12 +468,12 @@ export default function DepartmentAdminLayout({ children }: { children: ReactNod
             {/* Page title with icon */}
             <div className="flex items-center gap-2 min-w-0">
               <div className="rounded-lg bg-indigo-100 p-1.5">
-                {React.createElement(pageIcon, { className: "h-4 w-4 text-indigo-600" })}
+                <PageIcon className="h-4 w-4 text-indigo-600" />
               </div>
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-gray-500 hidden sm:inline">Department</span>
                 <ChevronRight className="hidden sm:block h-3 w-3 text-gray-400" />
-                <span className="font-semibold text-gray-900 truncate">{pageLabel}</span>
+                <span className="font-semibold text-gray-900 truncate" aria-current="page">{pageLabel}</span>
               </div>
             </div>
 
@@ -478,8 +482,9 @@ export default function DepartmentAdminLayout({ children }: { children: ReactNod
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
-                  type="text"
+                  type="search"
                   placeholder="Search students, courses, or lecturers..."
+                  aria-label="Search students, courses, or lecturers"
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
                 />
               </div>

@@ -2,21 +2,19 @@
  * GET /api/lecturer/units/:unitCode/students
  *
  * Returns the full roster of students enrolled in the given unit so the
- * app can cache them locally (SQLite) for offline manual-mark lookups.
+ * app can cache them locally for offline manual-mark lookups.
  *
- * Auth: Bearer lecturer JWT
- * Path param: unitCode — normalized (strip spaces, uppercase) before any query
+ * Auth:  Bearer lecturer JWT
+ * 400   unitCode param is blank
+ * 401   token missing or invalid / lecturer record not found
+ * 403   lecturer not timetable-assigned to this unit
+ * 404   unit does not exist
+ * 200   { students: [{ studentId, studentName, admissionNumber }] }
+ *       Empty unit returns { students: [] }, never 404.
  *
- * Authorization gate:
- *   Lecturer must belong to the same institution as the unit (institutionId
- *   from DB record, or ?institutionId query param as fallback if the JWT
- *   payload does not carry it). No timetable-assignment check is required.
- *
- * Enrollment source: StudentEnrollmentSnapshot.unitCodes (String[])
- * — the Enrollment join-table is NOT used; enrollment POST only writes snapshots.
- *
- * Response 200: [{ studentId, studentName, admissionNumber }]
- *   Empty unit → [] (not 404)
+ * Enrollment source: StudentEnrollmentSnapshot.unitCodes (String[]) —
+ * the primary enrollment store written by POST /api/student/enrollment.
+ * Consistent with /attendance and /attendance/grid sibling routes.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -44,7 +42,7 @@ export async function GET(
     .trim();
   if (!token) {
     return NextResponse.json(
-      { message: "Unauthorized" },
+      { error: "Unauthorized" },
       { status: 401, headers: corsHeaders },
     );
   }
@@ -54,87 +52,94 @@ export async function GET(
     ({ lecturerId } = verifyLecturerAccessToken(token));
   } catch {
     return NextResponse.json(
-      { message: "Unauthorized" },
+      { error: "Unauthorized" },
       { status: 401, headers: corsHeaders },
     );
   }
 
-  // ── Normalize unit code ───────────────────────────────────────────────────
+  // ── Normalize unit code (strip all spaces, uppercase) ────────────────────
+  // Matches the normalization used in /attendance and /attendance/grid.
   const { unitCode: rawParam } = await params;
-  const unitCode = decodeURIComponent(rawParam).replace(/\s+/g, " ").trim().toUpperCase();
+  const unitCode = decodeURIComponent(rawParam).replace(/\s+/g, "").toUpperCase();
   if (!unitCode) {
     return NextResponse.json(
-      { message: "unitCode is required" },
+      { error: "unitCode is required" },
       { status: 400, headers: corsHeaders },
     );
   }
 
-  // ── Resolve institutionId ────────────────────────────────────────────────
-  // Primary: look up from the Lecturer record.
-  // Fallback: ?institutionId query param sent by the app.
-  const lecturer = await prisma.lecturer.findUnique({
-    where: { id: lecturerId },
-    select: { institutionId: true },
-  });
-  const institutionId =
-    lecturer?.institutionId ??
-    (req.nextUrl.searchParams.get("institutionId")?.trim() || null);
-  if (!institutionId) {
+  try {
+    // ── Resolve unit (case-insensitive, space-tolerant) ───────────────────
+    const unitRows = await prisma.$queryRaw<{ id: string }[]>`
+      SELECT id
+      FROM "Unit"
+      WHERE UPPER(REPLACE(code, ' ', '')) = ${unitCode}
+      LIMIT 1
+    `;
+    if (unitRows.length === 0) {
+      return NextResponse.json(
+        { error: "Unit not found" },
+        { status: 404, headers: corsHeaders },
+      );
+    }
+    const unitId = unitRows[0].id;
+
+    // ── Authorization: lecturer must be timetable-assigned to this unit ───
+    const timetableEntry = await prisma.timetable.findFirst({
+      where: { lecturerId, unitId },
+      select: { id: true },
+    });
+    if (!timetableEntry) {
+      return NextResponse.json(
+        { error: "Forbidden" },
+        { status: 403, headers: corsHeaders },
+      );
+    }
+
+    // ── Resolve institutionId from DB — never from caller input ──────────
+    const lecturer = await prisma.lecturer.findUnique({
+      where: { id: lecturerId },
+      select: { institutionId: true },
+    });
+    if (!lecturer?.institutionId) {
+      return NextResponse.json(
+        { error: "Unauthorized" },
+        { status: 401, headers: corsHeaders },
+      );
+    }
+    const { institutionId } = lecturer;
+
+    // ── Fetch enrolled students ───────────────────────────────────────────
+    // StudentEnrollmentSnapshot.unitCodes is the primary store written by
+    // POST /api/student/enrollment. Normalize stored codes at query time
+    // so "SCH 2170" and "SCH2170" both match the requested unitCode.
+    const students = await prisma.$queryRaw<
+      { studentId: string; studentName: string; admissionNumber: string }[]
+    >`
+      SELECT
+        s.id                AS "studentId",
+        s.name              AS "studentName",
+        s."admissionNumber"
+      FROM "StudentEnrollmentSnapshot" es
+      JOIN "Student" s ON s.id = es."studentId"
+      WHERE s."institutionId" = ${institutionId}
+        AND EXISTS (
+          SELECT 1
+          FROM unnest(es."unitCodes") AS uc
+          WHERE UPPER(REPLACE(uc, ' ', '')) = ${unitCode}
+        )
+      ORDER BY s.name ASC
+    `;
+
     return NextResponse.json(
-      { message: "Unauthorized" },
-      { status: 401, headers: corsHeaders },
+      { students },
+      { status: 200, headers: corsHeaders },
+    );
+  } catch (err) {
+    console.error("[GET /api/lecturer/units/:unitCode/students]", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500, headers: corsHeaders },
     );
   }
-
-  // ── Find the unit (case-insensitive match on stored code) ─────────────────
-  const unitRows = await prisma.$queryRaw<{ id: string; departmentId: string }[]>`
-    SELECT id, "departmentId"
-    FROM "Unit"
-    WHERE UPPER(REGEXP_REPLACE(code, '\s+', ' ', 'g')) = ${unitCode}
-    LIMIT 1
-  `;
-  if (unitRows.length === 0) {
-    return NextResponse.json(
-      { message: "Unit not found" },
-      { status: 404, headers: corsHeaders },
-    );
-  }
-  const unit = unitRows[0];
-
-  // ── Timetable assignment check ────────────────────────────────────────────
-  // Per spec: 404 if this lecturer is not assigned to the unit.
-  const timetableEntry = await prisma.timetable.findFirst({
-    where: { lecturerId, unitId: unit.id },
-    select: { id: true },
-  });
-  if (!timetableEntry) {
-    return NextResponse.json(
-      { message: "Unit not found or not assigned to you" },
-      { status: 404, headers: corsHeaders },
-    );
-  }
-
-  // ── Fetch enrolled students ───────────────────────────────────────────────
-  // Enrollment is stored in StudentEnrollmentSnapshot.unitCodes (String[]).
-  // Normalize stored codes at query time — handles "SCH 2170" == "SCH2170".
-  // Also filter by institutionId to prevent cross-institution data leaks.
-  const students = await prisma.$queryRaw<
-    { studentId: string; studentName: string; admissionNumber: string }[]
-  >`
-    SELECT
-      s.id              AS "studentId",
-      s.name            AS "studentName",
-      s."admissionNumber"
-    FROM "StudentEnrollmentSnapshot" es
-    JOIN "Student" s ON s.id = es."studentId"
-    WHERE s."institutionId" = ${institutionId}
-      AND EXISTS (
-        SELECT 1
-        FROM unnest(es."unitCodes") AS uc
-        WHERE UPPER(REGEXP_REPLACE(uc, '\s+', ' ', 'g')) = ${unitCode}
-      )
-    ORDER BY s.name ASC
-  `;
-
-  return NextResponse.json(students, { status: 200, headers: corsHeaders });
 }

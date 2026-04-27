@@ -2,22 +2,23 @@
 
 import { useState, useEffect } from "react";
 
-const MOBILE_BREAKPOINT = 768;
-const TABLET_BREAKPOINT = 1024;
+const MOBILE_MAX = 767;
+const TABLET_MAX = 1023;
+
+function getBreakpoints() {
+  const w = window.innerWidth;
+  return { isMobile: w <= MOBILE_MAX, isTablet: w > MOBILE_MAX && w <= TABLET_MAX };
+}
 
 export function useMobile() {
-  const [isMobile, setIsMobile] = useState(false);
-  const [isTablet, setIsTablet] = useState(false);
+  const [state, setState] = useState({ isMobile: false, isTablet: false });
 
   useEffect(() => {
-    const mobileQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT - 1}px)`);
-    const tabletQuery = window.matchMedia(`(min-width: ${MOBILE_BREAKPOINT}px) and (max-width: ${TABLET_BREAKPOINT - 1}px)`);
-
-    const update = () => {
-      setIsMobile(mobileQuery.matches);
-      setIsTablet(tabletQuery.matches);
-    };
+    const update = () => setState(getBreakpoints());
     update();
+
+    const mobileQuery = window.matchMedia(`(max-width: ${MOBILE_MAX}px)`);
+    const tabletQuery = window.matchMedia(`(min-width: ${MOBILE_MAX + 1}px) and (max-width: ${TABLET_MAX}px)`);
 
     mobileQuery.addEventListener("change", update);
     tabletQuery.addEventListener("change", update);
@@ -27,7 +28,7 @@ export function useMobile() {
     };
   }, []);
 
-  return { isMobile, isTablet, isDesktop: !isMobile && !isTablet };
+  return { ...state, isDesktop: !state.isMobile && !state.isTablet };
 }
 
 export default useMobile;

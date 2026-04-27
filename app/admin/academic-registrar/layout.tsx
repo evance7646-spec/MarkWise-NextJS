@@ -1,13 +1,13 @@
 "use client";
-import React, { ReactNode, useState, useEffect } from "react";
+import { ReactNode, useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { AcademicRegistrarContext, type AcademicRegistrarInfo } from "./context";
 import { usePathname, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  LayoutDashboard, Users, BookOpen, ClipboardCheck, FileText,
-  ShieldCheck, BarChart3, Settings2, GraduationCap,
-  Menu, X, LogOut, ChevronRight, ClipboardList, Layers, Calendar,
+  LayoutDashboard, Users, FileText,
+  ShieldCheck, BarChart3, Settings2,
+  Menu, X, LogOut, ChevronRight, ClipboardList, Layers,
   Building2, Bell, Search, ChevronDown, School,
 } from "lucide-react";
 
@@ -175,13 +175,15 @@ function SidebarContent({
 // ============================================================================
 // NOTIFICATION DROPDOWN
 // ============================================================================
+const STATIC_NOTIFICATIONS = [
+  { id: 1, title: "New enrollment request", message: "3 students pending approval", time: "5 min ago", type: "info" },
+  { id: 2, title: "Transcript request",     message: "Student #2024/001 requested", time: "1 hour ago", type: "warning" },
+  { id: 3, title: "Timetable updated",      message: "Changes pending review",       time: "3 hours ago", type: "success" },
+] as const;
+
 function NotificationDropdown() {
   const [isOpen, setIsOpen] = useState(false);
-  const notifications = [
-    { id: 1, title: "New enrollment request", message: "3 students pending approval", time: "5 min ago", type: "info" },
-    { id: 2, title: "Transcript request",     message: "Student #2024/001 requested", time: "1 hour ago", type: "warning" },
-    { id: 3, title: "Timetable updated",      message: "Changes pending review",       time: "3 hours ago", type: "success" },
-  ];
+  const notifications = STATIC_NOTIFICATIONS;
 
   return (
     <div className="relative">
@@ -189,10 +191,13 @@ function NotificationDropdown() {
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setIsOpen(!isOpen)}
+        aria-label="Open notifications"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         className="relative rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700"
       >
         <Bell className="h-5 w-5" />
-        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white">
+        <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white" aria-label="3 unread notifications">
           3
         </span>
       </motion.button>
@@ -316,11 +321,11 @@ export default function AcademicRegistrarLayout({ children }: { children: ReactN
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
+  const handleScroll = useCallback(() => setScrolled(window.scrollY > 10), []);
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 10);
-    window.addEventListener("scroll", handleScroll);
+    window.addEventListener("scroll", handleScroll, { passive: true });
     return () => window.removeEventListener("scroll", handleScroll);
-  }, []);
+  }, [handleScroll]);
 
   useEffect(() => {
     fetch("/api/auth/me", { credentials: "include" })
@@ -341,11 +346,12 @@ export default function AcademicRegistrarLayout({ children }: { children: ReactN
       .catch(() => router.push("/admin/login"));
   }, [router]);
 
-  const currentPage = NAV_ITEMS.find(n =>
-    pathname === n.href || (n.href !== `${BASE}/dashboard` && pathname.startsWith(n.href))
-  );
-  const pageLabel = currentPage?.label ?? "Dashboard";
-  const PageIcon  = currentPage?.icon ?? LayoutDashboard;
+  const { pageLabel, PageIcon } = useMemo(() => {
+    const current = NAV_ITEMS.find(n =>
+      pathname === n.href || (n.href !== `${BASE}/dashboard` && pathname.startsWith(n.href))
+    );
+    return { pageLabel: current?.label ?? "Dashboard", PageIcon: current?.icon ?? LayoutDashboard };
+  }, [pathname]);
 
   if (loading) {
     return (
@@ -419,6 +425,7 @@ export default function AcademicRegistrarLayout({ children }: { children: ReactN
           >
             <button
               onClick={() => setDrawerOpen(true)}
+              aria-label="Open navigation menu"
               className="rounded-lg p-2 text-gray-500 transition-all hover:bg-gray-100 hover:text-gray-700 md:hidden"
             >
               <Menu className="h-5 w-5" />
@@ -441,8 +448,9 @@ export default function AcademicRegistrarLayout({ children }: { children: ReactN
               <div className="relative w-full">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
                 <input
-                  type="text"
+                  type="search"
                   placeholder="Search students, courses, or lecturers…"
+                  aria-label="Search students, courses, or lecturers"
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 py-1.5 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500 transition-all"
                 />
               </div>

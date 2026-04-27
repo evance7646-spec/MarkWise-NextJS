@@ -373,6 +373,7 @@ model Room {
   @@unique([institutionId, buildingCode, roomCode])
   @@index([institutionId, buildingCode])
   @@index([bleId])
+  @@index([institutionId, isActive, status])
   @@map("Room")
 }
 
@@ -415,6 +416,8 @@ model Booking {
   @@index([roomId])
   @@index([lecturerId])
   @@index([roomId, startAt, endAt])
+  @@index([roomId, status])
+  @@index([lecturerId, startAt, endAt])
   @@map("Booking")
 }
 
@@ -484,6 +487,7 @@ model Timetable {
   @@index([roomId])
   @@index([day, roomId])
   @@index([day, lecturerId])
+  @@index([courseId, day, startTime, endTime])
   @@index([rescheduledRoomId])
   @@index([mergedSessionId])
   @@map("Timetable")

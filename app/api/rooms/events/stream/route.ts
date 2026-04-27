@@ -24,6 +24,8 @@ export async function GET(request: Request) {
     );
   }
 
+  let cleanup: (() => void) | undefined;
+
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(
@@ -35,23 +37,33 @@ export async function GET(request: Request) {
       );
 
       const unsubscribe = subscribeRoomEvents((payload) => {
-        controller.enqueue(toSseChunk("room.status.changed", { apiVersion: "v1", ...payload }));
+        try {
+          controller.enqueue(toSseChunk("room.status.changed", { apiVersion: "v1", ...payload }));
+        } catch {
+          teardown();
+        }
       });
 
       const heartbeat = setInterval(() => {
-        controller.enqueue(toSseChunk("heartbeat", { ts: new Date().toISOString() }));
-      }, 20000);
+        try {
+          controller.enqueue(toSseChunk("heartbeat", { ts: new Date().toISOString() }));
+        } catch {
+          teardown();
+        }
+      }, 20_000);
 
-      const handleAbort = () => {
+      const teardown = () => {
         clearInterval(heartbeat);
         unsubscribe();
-        controller.close();
+        request.signal.removeEventListener("abort", teardown);
+        try { controller.close(); } catch { /* already closed */ }
       };
 
-      request.signal.addEventListener("abort", handleAbort);
+      cleanup = teardown;
+      request.signal.addEventListener("abort", teardown);
     },
     cancel() {
-      return undefined;
+      cleanup?.();
     },
   });
 

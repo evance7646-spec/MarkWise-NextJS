@@ -208,8 +208,6 @@ async function assertNoConflicts(
 }
 
 export async function createHold(input: { roomId: string; lecturerId: string; startAt: Date; endAt: Date }) {
-  console.log('Creating hold with input:', input); // Debug log
-  
   await expireHolds();
 
   return prisma.$transaction(async (tx) => {
@@ -243,7 +241,6 @@ export async function createHold(input: { roomId: string; lecturerId: string; st
 
     await recomputeRoomStatus(tx, input.roomId, "hold.created", input.lecturerId);
 
-    console.log('Hold created:', hold); // Debug log
     return hold;
   }, { maxWait: 10000, timeout: 30000 });
 }
@@ -257,8 +254,6 @@ export async function confirmHold(input: {
   startAt: Date;  // FIX: Added missing parameter
   endAt: Date;    // FIX: Added missing parameter
 }) {
-  console.log('Confirming hold with input:', input); // Debug log
-  
   await expireHolds();
 
   return prisma.$transaction(async (tx) => {
@@ -270,7 +265,6 @@ export async function confirmHold(input: {
     });
 
     if (existing) {
-      console.log('Found existing booking with same idempotency key:', existing); // Debug log
       return {
         booking: existing,
         idempotentReplay: true,
@@ -289,12 +283,6 @@ export async function confirmHold(input: {
     if (!hold.room) {
       throw new ApiError(404, "ROOM_NOT_FOUND", "Room not found for this hold.");
     }
-
-    if (!hold) {
-      throw new ApiError(404, "HOLD_NOT_FOUND", "Hold not found.");
-    }
-
-    console.log('Found hold:', hold); // Debug log
 
     if (hold.lecturerId !== input.lecturerId) {
       throw new ApiError(403, "HOLD_FORBIDDEN", "Hold belongs to another lecturer.");
@@ -354,19 +342,19 @@ export async function confirmHold(input: {
           message: `Your booking for room ${roomDisplayName} is confirmed from ${hold.startAt.toLocaleString()} to ${hold.endAt.toLocaleString()}.`,
         },
       });
-      // Notify all admins in the institution (use institutionId from room)
+      // Notify all admins in the institution
       const admins = await tx.admin.findMany({
         where: { institutionId: hold.room.institutionId },
         select: { id: true },
       });
-      for (const admin of admins) {
-        await tx.notification.create({
-          data: {
+      if (admins.length > 0) {
+        await tx.notification.createMany({
+          data: admins.map((admin) => ({
             userId: admin.id,
             userType: 'admin',
             title: 'Room Booked',
             message: `Room ${roomDisplayName} was booked by a lecturer from ${hold.startAt.toLocaleString()} to ${hold.endAt.toLocaleString()}.`,
-          },
+          })),
         });
       }
     } catch (error) {
@@ -405,8 +393,6 @@ export async function confirmHold(input: {
 }
 
 export async function cancelBooking(input: { bookingId: string; actorId: string; actorRole: "admin" | "lecturer" }) {
-  console.log('Cancelling booking:', input); // Debug log
-  
   await expireHolds();
 
   return prisma.$transaction(async (tx) => {
@@ -453,15 +439,14 @@ export async function cancelBooking(input: { bookingId: string; actorId: string;
         where: { institutionId: booking.room.institutionId },
         select: { id: true },
       });
-      
-      for (const admin of admins) {
-        await tx.notification.create({
-          data: {
+      if (admins.length > 0) {
+        await tx.notification.createMany({
+          data: admins.map((admin) => ({
             userId: admin.id,
             userType: 'admin',
             title: 'Room Booking Cancelled',
             message: `A booking for room ${roomDisplayName} was cancelled.`,
-          },
+          })),
         });
       }
     }
@@ -473,8 +458,6 @@ export async function cancelBooking(input: { bookingId: string; actorId: string;
 }
 
 export async function getBookingById(bookingId: string) {
-  console.log('Getting booking by id:', bookingId); // Debug log
-  
   await expireHolds();
 
   const booking = await prisma.booking.findUnique({
