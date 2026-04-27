@@ -7,6 +7,9 @@
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui",
     "postinstall": "prisma generate",
     "reset:ble-ids": "tsx scripts/reset-ble-ids.ts",
     "migrate:ble-ids": "tsx scripts/migrate-ble-ids.ts",
@@ -49,17 +52,21 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@fast-check/vitest": "^0.4.0",
     "@tailwindcss/postcss": "^4.0.0",
     "@types/luxon": "^3.7.1",
     "@types/node": "^20.17.0",
     "@types/nodemailer": "^8.0.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
+    "@vitest/ui": "^4.1.5",
     "eslint": "^9.22.0",
     "eslint-config-next": "15.2.3",
+    "fast-check": "^4.7.0",
     "prisma": "^6.19.2",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitest": "^4.1.5"
   }
 }
