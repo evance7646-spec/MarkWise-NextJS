@@ -259,6 +259,7 @@ export async function GET(
           admissionNumber: s.admissionNumber,
           attended,
           conducted,
+          conductedSessions: conducted,
           attendancePercent: conducted > 0 ? Math.round((attended / conducted) * 100) : 0,
           percentage,
         };

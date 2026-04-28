@@ -73,41 +73,47 @@ export async function GET(req: NextRequest) {
       select: { id: true, code: true, title: true },
     });
     const unitCodes = units.map((u) => u.code);
-
-    // ── 3. Enrolled students per unit ─────────────────────────────────────────
-    const enrollmentCounts = await prisma.enrollment.groupBy({
-      by: ["unitId"],
-      where: { unitId: { in: unitIds } },
-      _count: { studentId: true },
-    });
-    const enrolledMap = new Map(
-      enrollmentCounts.map((e) => [e.unitId, e._count.studentId]),
-    );
-
-    // ── 4. Session counts + attendance totals ─────────────────────────────────
-    // Normalised code list for $queryRaw IN() clauses.
-    // normalizeCode strips all non-alphanumeric chars so "SCH 2170" → "SCH2170"
-    // regardless of how the unit code was stored in each table.
+    // normCodes: no-space uppercase — used for $queryRaw IN() comparisons
     const normCodes = units.map((u) => normalizeCode(u.code));
-    // OnlineAttendanceSession.unitCode is stored via normalizeUnitCode() at creation
-    // ("SCH 2170" format — letters + space + digits). Using raw unit.code here would
-    // miss any session where the Unit table stores the code without a space.
+    // normalisedUnitCodes: "SCH 2170" form — matches OnlineAttendanceSession.unitCode
     const normalisedUnitCodes = units.map((u) => normalizeUnitCode(u.code));
 
-    const [onlineSessions, offlineSessions, delegationSessions] =
+    // ── 3. Lecturer institution + enrolled students (StudentEnrollmentSnapshot) ──
+    // Primary enrollment source — consistent with /students and /attendance siblings.
+    const lecturerRecord = await prisma.lecturer.findUnique({
+      where: { id: lecturerId },
+      select: { institutionId: true },
+    });
+    if (!lecturerRecord?.institutionId) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+    const { institutionId } = lecturerRecord;
+
+    const enrollmentRows = await prisma.$queryRaw<{ normCode: string; cnt: bigint }[]>(
+      Prisma.sql`
+        SELECT UPPER(REPLACE(uc, ' ', '')) AS "normCode", COUNT(*) AS cnt
+        FROM   "StudentEnrollmentSnapshot" es
+        JOIN   "Student" s ON s.id = es."studentId"
+        CROSS JOIN LATERAL unnest(es."unitCodes") AS uc
+        WHERE  s."institutionId" = ${institutionId}
+          AND  UPPER(REPLACE(uc, ' ', '')) IN (${Prisma.join(normCodes)})
+        GROUP BY UPPER(REPLACE(uc, ' ', ''))
+      `
+    );
+    const enrolledMap = new Map(enrollmentRows.map((r) => [r.normCode, Number(r.cnt)]));
+
+    // ── 4. Session counts + attendance totals + assignment/material counts ─────
+    const [onlineSessions, offlineSessions, delegationSessions, assignmentCounts, materialCounts] =
       await Promise.all([
-        // Online sessions (ended only) — query by normalisedUnitCodes to match
-        // the "SCH 2170" format stored by the POST /api/attendance/sessions route.
+        // Online sessions (ended only) — stored with normalizeUnitCode() at creation
         prisma.onlineAttendanceSession.findMany({
           where: { lecturerId, unitCode: { in: normalisedUnitCodes }, endedAt: { not: null } },
           select: { unitCode: true, _count: { select: { records: true } } },
         }),
 
-        // Offline sessions — normalization-tolerant $queryRaw so that manual-mark
-        // sessions (stored with spaces) and BLE sessions (stored without) are both found.
-        // Exclude lectureRoom = 'ONLINE' rows: those are registered by the app's
-        // sync-on-create for online sessions and are already counted via onlineSessions
-        // (OnlineAttendanceSession). Counting them here would double-count the session.
+        // Offline sessions — space-tolerant raw query (manual sessions may store "SCH 2170",
+        // BLE sessions "SCH2170"; UPPER(REPLACE(...)) matches both).
+        // Exclude lectureRoom = 'ONLINE': already counted via OnlineAttendanceSession.
         prisma.$queryRaw<{ normCode: string; sessionStart: Date }[]>(Prisma.sql`
           SELECT UPPER(REPLACE("unitCode", ' ', '')) AS "normCode",
                  "sessionStart"
@@ -122,7 +128,21 @@ export async function GET(req: NextRequest) {
           where: { createdBy: lecturerId, unitCode: { in: unitCodes }, used: true },
           select: { id: true, unitCode: true, validFrom: true },
         }),
+
+        // Assignment and material counts per unit
+        prisma.assignment.groupBy({
+          by: ["unitId"],
+          where: { unitId: { in: unitIds } },
+          _count: { id: true },
+        }),
+        prisma.material.groupBy({
+          by: ["unitId"],
+          where: { unitId: { in: unitIds } },
+          _count: { id: true },
+        }),
       ]);
+    const assignMap = new Map(assignmentCounts.map((a) => [a.unitId, a._count.id]));
+    const matMap    = new Map(materialCounts.map((m)   => [m.unitId, m._count.id]));
 
     // Offline attendance records — DISTINCT (student, session) pair to prevent JOIN
     // inflation: if one OfflineAttendanceRecord matches multiple ConductedSession rows
@@ -213,33 +233,28 @@ export async function GET(req: NextRequest) {
     // ── 6. Build response ──────────────────────────────────────────────────────
     const result = units
       .map((unit) => {
-        const enrolledStudents = enrolledMap.get(unit.id) ?? 0;
+        const nc = normalizeCode(unit.code);
+        const enrolledStudents = enrolledMap.get(nc) ?? 0;
         const { conductedSessions, totalAttendances } =
-          sessionStats.get(normalizeCode(unit.code)) ?? { conductedSessions: 0, totalAttendances: 0 };
-
-        const avgAttended =
-          conductedSessions > 0
-            ? Math.round(totalAttendances / conductedSessions)
-            : 0;
+          sessionStats.get(nc) ?? { conductedSessions: 0, totalAttendances: 0 };
 
         const attendancePercent =
           enrolledStudents > 0 && conductedSessions > 0
             ? Math.min(
-                Math.round(
-                  (totalAttendances / (enrolledStudents * conductedSessions)) * 100,
-                ),
+                Math.round((totalAttendances / (enrolledStudents * conductedSessions)) * 100),
                 100,
               )
             : 0;
 
         return {
-          unitCode: normalizeUnitCode(unit.code),
-          unitName: unit.title,
+          unitCode:         nc,
+          unitName:         unit.title,
           enrolledStudents,
           conductedSessions,
-          totalPresent: totalAttendances,
-          avgAttended,
+          totalPresent:     totalAttendances,
           attendancePercent,
+          assignments:      assignMap.get(unit.id) ?? 0,
+          materials:        matMap.get(unit.id)    ?? 0,
         };
       })
       .sort((a, b) => a.unitCode.localeCompare(b.unitCode));

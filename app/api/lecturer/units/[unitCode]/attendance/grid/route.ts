@@ -189,7 +189,8 @@ export async function GET(
     interface SessionOut {
       sessionId: string;    // canonical identifier used as key in student records
       sessionStart: number; // Unix ms
-      session_date: string; // "YYYY-MM-DD"
+      date: string;         // ISO-8601 datetime e.g. "2025-03-01T08:00:00.000Z"
+      session_date: string; // "YYYY-MM-DD" (kept for backward compat)
       lectureRoom: string;
       label: string;
       lessonType: string;   // e.g. "LEC", "TUT", "LAB", "PRE", "Online", "Group"
@@ -267,6 +268,7 @@ export async function GET(
         out = {
           sessionId:    s.id,
           sessionStart: s.time.getTime(),
+          date:         s.time.toISOString(),
           session_date: isoDate,
           lectureRoom:  "ONLINE",
           label:        `ONL ${onlCount}`,
@@ -278,6 +280,7 @@ export async function GET(
         out = {
           sessionId:    s.id,
           sessionStart: s.sessionStart.getTime(),
+          date:         s.sessionStart.toISOString(),
           session_date: isoDate,
           lectureRoom:  s.lectureRoom,
           label:        `LEC ${lecCount}`,
@@ -289,6 +292,7 @@ export async function GET(
         out = {
           sessionId:    s.id,
           sessionStart: s.time.getTime(),
+          date:         s.time.toISOString(),
           session_date: isoDate,
           lectureRoom:  "GD",
           label:        `LEC ${lecCount}`,
@@ -354,12 +358,15 @@ export async function GET(
       presenceSet.add(`${r.studentId}_${r.delegationId}`);
     }
 
-    // Build grid rows — student records keyed by sessionId (not column index)
-    // so the client can match by ID regardless of array ordering.
+    // Build grid rows — attendance[] is a boolean array aligned with sessionObjects;
+    // records{} (keyed by sessionId) is kept for backward-compatibility.
     const students = enrolledStudents.map((s) => ({
       studentId:       s.studentId,
       admissionNumber: s.admissionNumber,
       name:            s.name,
+      attendance: sessionObjects.map((sess) =>
+        presenceSet.has(`${s.studentId}_${sess.sessionId}`)
+      ),
       records: Object.fromEntries(
         sessionObjects.map((sess) => [
           sess.sessionId,

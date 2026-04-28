@@ -111,12 +111,12 @@ export async function GET(req: NextRequest) {
       `,
     ),
 
-    // Source 3: delegation
+    // Source 3: delegation — cast validFrom to epoch-ms so Number() works correctly.
     prisma.$queryRaw<{ normCode: string; validFrom: string }[]>(
       Prisma.sql`
         SELECT
           UPPER(REPLACE("unitCode", ' ', '')) AS "normCode",
-          "validFrom"::text AS "validFrom"
+          (EXTRACT(EPOCH FROM "validFrom") * 1000)::text AS "validFrom"
         FROM "Delegation"
         WHERE UPPER(REPLACE("unitCode", ' ', '')) IN (${Prisma.join(codes)})
           AND used = true

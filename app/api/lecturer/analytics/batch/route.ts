@@ -139,6 +139,21 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // ── Lecturer institutionId (needed for enrollment query) ─────────────────
+  let institutionId: string;
+  try {
+    const lecturerRecord = await prisma.lecturer.findUnique({
+      where: { id: lecturerId },
+      select: { institutionId: true },
+    });
+    if (!lecturerRecord?.institutionId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
+    }
+    institutionId = lecturerRecord.institutionId;
+  } catch {
+    return NextResponse.json({ error: "Internal server error" }, { status: 500, headers: corsHeaders });
+  }
+
   try {
     // ── 1. Resolve units ───────────────────────────────────────────────────
     const units = await prisma.$queryRaw<{ id: string; code: string }[]>(
@@ -166,14 +181,21 @@ export async function POST(req: NextRequest) {
       assignmentCounts,
       materialCounts,
     ] = await Promise.all([
-      // Enrolled students per unit
-      unitIds.length > 0
-        ? prisma.enrollment.groupBy({
-            by: ["unitId"],
-            where: { unitId: { in: unitIds } },
-            _count: { studentId: true },
-          })
-        : Promise.resolve([] as { unitId: string; _count: { studentId: number } }[]),
+      // Enrolled students from StudentEnrollmentSnapshot (primary enrollment source —
+      // consistent with /students and /attendance siblings).
+      normCodes.length > 0
+        ? prisma.$queryRaw<{ normCode: string; cnt: bigint }[]>(
+            Prisma.sql`
+              SELECT UPPER(REPLACE(uc, ' ', '')) AS "normCode", COUNT(*) AS cnt
+              FROM   "StudentEnrollmentSnapshot" es
+              JOIN   "Student" s ON s.id = es."studentId"
+              CROSS JOIN LATERAL unnest(es."unitCodes") AS uc
+              WHERE  s."institutionId" = ${institutionId}
+                AND  UPPER(REPLACE(uc, ' ', '')) IN (${Prisma.join(normCodes)})
+              GROUP BY UPPER(REPLACE(uc, ' ', ''))
+            `
+          )
+        : Promise.resolve([] as { normCode: string; cnt: bigint }[]),
 
       // Online ended sessions — stored with normalizeUnitCode() at creation ("SCH 2170" format)
       normalisedUnitCodes.length > 0
@@ -183,14 +205,19 @@ export async function POST(req: NextRequest) {
           })
         : Promise.resolve([] as { unitCode: string; _count: { records: number } }[]),
 
-      // Offline sessions (unitCode stored normalised — no spaces, uppercase).
-      // Exclude lectureRoom = 'ONLINE': those rows are registered by the app's
-      // sync-on-create for online sessions and are already counted via onlineSessions.
+      // Offline sessions — space-tolerant $queryRaw (manual sessions may store "SCH 2170",
+      // BLE sessions "SCH2170"; exact Prisma match would miss the other form).
+      // Exclude lectureRoom = 'ONLINE': already counted via onlineSessions.
       normCodes.length > 0
-        ? prisma.conductedSession.findMany({
-            where: { lecturerId, unitCode: { in: normCodes }, NOT: { lectureRoom: "ONLINE" } },
-            select: { unitCode: true, sessionStart: true },
-          })
+        ? prisma.$queryRaw<{ unitCode: string; sessionStart: Date }[]>(
+            Prisma.sql`
+              SELECT UPPER(REPLACE("unitCode", ' ', '')) AS "unitCode", "sessionStart"
+              FROM   "ConductedSession"
+              WHERE  "lecturerId" = ${lecturerId}
+                AND  UPPER(REPLACE("unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+                AND  UPPER("lectureRoom") != 'ONLINE'
+            `
+          )
         : Promise.resolve([] as { unitCode: string; sessionStart: Date }[]),
 
       // Delegation / GD group sessions (unitCode stored raw)
@@ -201,14 +228,14 @@ export async function POST(req: NextRequest) {
           })
         : Promise.resolve([] as { unitCode: string; validFrom: Date | bigint }[]),
 
-      // Offline attendance records — ALL methods, INNER JOINed to this lecturer's
-      // ConductedSession rows so marks from other lecturers are excluded.
-      // Exclude lectureRoom = 'ONLINE' sessions: those students are counted via
-      // onlineSessions._count.records (OnlineAttendanceRecord), not here.
+      // Offline attendance records — DISTINCT (studentId, sessionId) to prevent inflation
+      // when a student has multiple OfflineAttendanceRecord rows for the same session
+      // (e.g. BLE + manual confirmation). Each unique (student, session) pair = 1 mark.
       normCodes.length > 0
         ? prisma.$queryRaw<{ unitCode: string }[]>(
             Prisma.sql`
-              SELECT UPPER(REPLACE(oar."unitCode", ' ', '')) AS "unitCode"
+              SELECT DISTINCT UPPER(REPLACE(oar."unitCode", ' ', '')) AS "unitCode",
+                     oar."studentId", cs."id" AS "sessionId"
               FROM   "OfflineAttendanceRecord" oar
               INNER JOIN "ConductedSession" cs
                 ON  UPPER(REPLACE(cs."unitCode", ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
@@ -250,7 +277,9 @@ export async function POST(req: NextRequest) {
     ]);
 
     // ── 3. Build lookup maps ───────────────────────────────────────────────
-    const enrolledMap = new Map(enrollmentCounts.map((e) => [e.unitId, e._count.studentId]));
+    const enrolledMap = new Map(
+      (enrollmentCounts as { normCode: string; cnt: bigint }[]).map((r) => [r.normCode, Number(r.cnt)])
+    );
     const assignMap = new Map(assignmentCounts.map((a) => [a.unitId, a._count.id]));
     const matMap = new Map(materialCounts.map((m) => [m.unitId, m._count.id]));
 
@@ -318,7 +347,7 @@ export async function POST(req: NextRequest) {
     for (const normCode of normCodes) {
       const requestKey = normToRequestKey.get(normCode)!;
       const unit = normToUnit.get(normCode);
-      const enrolledStudents = unit ? (enrolledMap.get(unit.id) ?? 0) : 0;
+      const enrolledStudents = enrolledMap.get(normCode) ?? 0;
       const { conductedSessions, totalPresent } = statsMap.get(normCode) ?? {
         conductedSessions: 0,
         totalPresent: 0,
