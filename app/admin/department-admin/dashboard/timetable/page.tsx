@@ -95,6 +95,25 @@ const EMPTY_FORM = {
 const inp = "w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 focus:border-indigo-400 transition disabled:opacity-40 disabled:cursor-not-allowed";
 const lbl = "block text-xs font-semibold text-gray-500 mb-1.5 uppercase tracking-wide";
 
+function Req() {
+  return <span className="ml-0.5 font-normal normal-case text-red-400">*</span>;
+}
+
+function SectionHeader({ num, label, done }: { num: number; label: string; done: boolean }) {
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition-all ${
+        done ? "bg-emerald-100 text-emerald-600" : "bg-indigo-100 text-indigo-600"
+      }`}>
+        {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : num}
+      </div>
+      <p className={`text-xs font-bold uppercase tracking-wider ${done ? "text-emerald-600" : "text-gray-600"}`}>
+        {label}
+      </p>
+    </div>
+  );
+}
+
 // ─── Utilities ────────────────────────────────────────────────────────────
 
 function timeToMins(t: string) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
@@ -981,259 +1000,358 @@ export default function DeptTimetablePage() {
         )}
       </AnimatePresence>
 
-      {/* ── Modal (OPTIMIZED) ──────────────────────────────────────────────────– */}
+      {/* ── Modal ─────────────────────────────────────────────────────────────── */}
       <AnimatePresence>
         {showModal && (
           <>
             <motion.div
               key="modal-backdrop"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
               onClick={() => setShowModal(false)}
             />
             <div className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none">
-            <motion.div
-              key="modal"
-              initial={{ opacity: 0, scale: 0.95, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 8 }}
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
-              className="relative w-full max-w-2xl max-h-[92vh] overflow-y-auto rounded-2xl bg-white text-gray-900 shadow-2xl pointer-events-auto"
-            >
-              {/* Modal header */}
-              <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-4 flex items-center justify-between rounded-t-2xl">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100">
-                    <Plus className="h-4 w-4 text-indigo-600" />
-                  </div>
-                  <div>
-                    <h2 className="text-base font-bold text-gray-900">Timetable Entries</h2>
-                    <p className="text-xs text-gray-400">
-                      {entriesAddedInSession > 0 ? `${entriesAddedInSession} added this session` : "Scope → Unit → Lecturer → Time → Room"}
-                    </p>
-                  </div>
-                </div>
-                <button onClick={() => setShowModal(false)} className="rounded-xl p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 transition">
-                  <X className="h-5 w-5" />
-                </button>
-              </div>
-
-              <div className="px-6 py-5">
-                {/* Success message */}
-                {lastSuccessMessage && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="mb-4 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 flex items-center gap-2 text-sm text-emerald-700 font-medium"
-                  >
-                    <CheckCircle2 className="h-4 w-4" />
-                    {lastSuccessMessage}
-                  </motion.div>
-                )}
-
-                {modalLoading ? (
-                  <div className="space-y-3">
-                    {[1,2,3,4,5].map(i => <div key={i} className="h-11 rounded-xl bg-gray-100 animate-pulse" />)}
-                  </div>
-                ) : (
-                  <form className="space-y-5">
-
-                    {/* Step 1 — Scope */}
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">1</span>
-                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Scope</p>
+              <motion.div
+                key="modal"
+                initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                transition={{ type: "spring", stiffness: 380, damping: 28 }}
+                className="relative w-full max-w-xl pointer-events-auto flex flex-col rounded-2xl bg-white shadow-[0_24px_64px_rgba(0,0,0,0.28)] overflow-hidden max-h-[92vh]"
+              >
+                {/* ── Gradient header ──────────────────────────────────────── */}
+                <div className="relative overflow-hidden bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 px-6 pt-5 pb-6 shrink-0">
+                  <div className="pointer-events-none absolute -top-10 -right-10 h-40 w-40 rounded-full bg-white/5" />
+                  <div className="pointer-events-none absolute -bottom-8 -left-6 h-28 w-28 rounded-full bg-white/5" />
+                  <div className="relative flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20">
+                        <Calendar className="h-5 w-5 text-white" />
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div>
-                          <label className={lbl}>Course <span className="text-red-400 normal-case font-normal">*</span></label>
-                          <select required value={form.courseId} onChange={e => handleChange("courseId", e.target.value)} className={inp}>
-                            <option value="">Select course…</option>
-                            {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className={lbl}>Year <span className="text-red-400 normal-case font-normal">*</span></label>
-                          <select required value={form.yearId} onChange={e => handleChange("yearId", e.target.value)}
-                            disabled={!form.courseId || yearsForCourse.length === 0} className={inp}>
-                            <option value="">{!form.courseId ? "Select course first" : yearsForCourse.length === 0 ? "No years found" : "Select year…"}</option>
-                            {yearsForCourse.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className={lbl}>Semester <span className="text-red-400 normal-case font-normal">*</span></label>
-                          <select required value={form.semesterId} onChange={e => handleChange("semesterId", e.target.value)}
-                            disabled={!form.yearId || semestersForYear.length === 0} className={inp}>
-                            <option value="">{!form.yearId ? "Select year first" : semestersForYear.length === 0 ? "No semesters" : "Select semester…"}</option>
-                            {semestersForYear.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Step 2 — Unit */}
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">2</span>
-                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Unit</p>
-                      </div>
-                      <select required value={form.unitId} onChange={e => handleChange("unitId", e.target.value)}
-                        disabled={!form.semesterId || filteredUnits.length === 0} className={inp}>
-                        <option value="">{!form.semesterId ? "Complete scope first" : filteredUnits.length === 0 ? "No units in this semester" : "Select unit…"}</option>
-                        {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.code} – {u.title}</option>)}
-                      </select>
-                    </div>
-
-                    {/* Step 3 — Lecturer */}
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">3</span>
-                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Lecturer</p>
-                      </div>
-                      <select required value={form.lecturerId} onChange={e => handleChange("lecturerId", e.target.value)}
-                        disabled={!form.unitId} className={inp}>
-                        <option value="">{!form.unitId ? "Select unit first" : "Select lecturer…"}</option>
-                        {lecturers.map(l => <option key={l.id} value={l.id}>{l.fullName}</option>)}
-                      </select>
-                    </div>
-
-                    {/* Step 4 — Time */}
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">4</span>
-                        <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Time Slot</p>
-                      </div>
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <label className={lbl}>Day <span className="text-red-400 normal-case font-normal">*</span></label>
-                          <select required value={form.day} onChange={e => handleChange("day", e.target.value)}
-                            disabled={!form.lecturerId} className={inp}>
-                            {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className={lbl}>Start <span className="text-red-400 normal-case font-normal">*</span></label>
-                          <input required type="time" value={form.startTime} onChange={e => handleChange("startTime", e.target.value)}
-                            disabled={!form.lecturerId} className={inp} />
-                        </div>
-                        <div>
-                          <label className={lbl}>End <span className="text-red-400 normal-case font-normal">*</span></label>
-                          <input required type="time" value={form.endTime} onChange={e => handleChange("endTime", e.target.value)}
-                            disabled={!form.lecturerId} className={inp} />
-                        </div>
-                      </div>
-                      {form.startTime && form.endTime && form.startTime >= form.endTime && (
-                        <p className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">
-                          <AlertCircle className="h-3.5 w-3.5" /> End time must be after start time.
+                      <div>
+                        <h2 className="text-base font-bold text-white leading-tight">New Timetable Entry</h2>
+                        <p className="mt-0.5 text-xs text-indigo-200">
+                          {entriesAddedInSession > 0
+                            ? `${entriesAddedInSession} entr${entriesAddedInSession === 1 ? "y" : "ies"} added this session`
+                            : admin?.departmentName ?? "Department Admin"}
                         </p>
-                      )}
-                      {timeSlotReady && form.startTime < form.endTime && (
-                        <p className="flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50 rounded-lg px-3 py-2">
-                          <Clock className="h-3.5 w-3.5" /> Duration: {timeToMins(form.endTime) - timeToMins(form.startTime)} minutes
-                        </p>
-                      )}
-                    </div>
-
-                    {/* Step 5 — Room */}
-                    <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white">5</span>
-                          <p className="text-xs font-bold text-gray-700 uppercase tracking-wider">Venue / Room</p>
-                        </div>
-                        {roomsLoading && (
-                          <span className="flex items-center gap-1.5 text-xs text-indigo-500 font-medium">
-                            <Loader2 className="h-3 w-3 animate-spin" /> Checking…
-                          </span>
-                        )}
-                        {!roomsLoading && timeSlotReady && availableRooms.length > 0 && (
-                          <span className="flex items-center gap-1 text-xs text-emerald-600 font-semibold">
-                            <CheckCircle2 className="h-3 w-3" /> {availableRooms.length} room{availableRooms.length !== 1 ? "s" : ""} free
-                          </span>
-                        )}
                       </div>
-                      <select required value={form.roomId} onChange={e => handleChange("roomId", e.target.value)}
-                        disabled={!timeSlotReady || roomsLoading || availableRooms.length === 0} className={inp}>
-                        <option value="">
-                          {!timeSlotReady ? "Select day and time first" : roomsLoading ? "Checking availability…" : availableRooms.length === 0 ? "No rooms free for this slot" : "Select room…"}
-                        </option>
-                        {availableRooms.map(r => (
-                          <option key={r.id} value={r.id}>{r.roomCode} – {r.name} (cap: {r.capacity})</option>
+                    </div>
+                    <button onClick={() => setShowModal(false)}
+                      className="rounded-xl p-1.5 text-white/60 hover:bg-white/10 hover:text-white transition">
+                      <X className="h-5 w-5" />
+                    </button>
+                  </div>
+                  {/* Step progress */}
+                  {(() => {
+                    const steps = [
+                      { label: "Scope",    done: !!(form.courseId && form.yearId && form.semesterId) },
+                      { label: "Unit",     done: !!form.unitId },
+                      { label: "Lecturer", done: !!form.lecturerId },
+                      { label: "Time",     done: !!timeSlotReady },
+                      { label: "Room",     done: !!form.roomId },
+                    ];
+                    return (
+                      <div className="relative mt-5 flex items-start">
+                        {steps.map((step, i) => (
+                          <div key={step.label} className="flex-1 flex flex-col items-center">
+                            <div className="relative w-full flex items-center justify-center">
+                              {i > 0 && (
+                                <div className={`absolute right-1/2 left-0 top-1/2 -translate-y-1/2 h-px transition-colors ${steps[i - 1].done ? "bg-white/60" : "bg-white/20"}`} />
+                              )}
+                              {i < steps.length - 1 && (
+                                <div className={`absolute left-1/2 right-0 top-1/2 -translate-y-1/2 h-px transition-colors ${step.done ? "bg-white/60" : "bg-white/20"}`} />
+                              )}
+                              <div className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold ring-2 transition-all ${
+                                step.done ? "bg-white ring-white text-indigo-700" : "bg-indigo-700/60 ring-white/30 text-white/70"
+                              }`}>
+                                {step.done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+                              </div>
+                            </div>
+                            <span className={`mt-1.5 text-[9px] font-semibold tracking-wide uppercase ${step.done ? "text-white/90" : "text-white/40"}`}>
+                              {step.label}
+                            </span>
+                          </div>
                         ))}
-                      </select>
-                      {!roomsLoading && timeSlotReady && availableRooms.length === 0 && (
-                        <p className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 rounded-lg px-3 py-2">
-                          <AlertCircle className="h-3.5 w-3.5" /> All rooms booked. Try a different time.
-                        </p>
-                      )}
-                      {form.roomId && !roomsLoading && (
-                        <p className="flex items-center gap-1.5 text-xs text-gray-500 bg-white border border-gray-100 rounded-lg px-3 py-2">
-                          <MapPin className="h-3.5 w-3.5 text-indigo-400" /> {form.venueName}
-                        </p>
-                      )}
-                    </div>
+                      </div>
+                    );
+                  })()}
+                </div>
 
-                    {/* Joint class merge prompt */}
-                    {mergeConflict && (
-                      <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100">
-                            <Users className="h-4 w-4 text-amber-600" />
+                {/* ── Scrollable body ───────────────────────────────────────── */}
+                <div className="overflow-y-auto flex-1 px-6 py-5 space-y-5">
+                  <AnimatePresence>
+                    {lastSuccessMessage && (
+                      <motion.div key="success-toast"
+                        initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden">
+                        <div className="mb-1 rounded-xl bg-emerald-50 border border-emerald-200 px-4 py-3 flex items-center gap-2.5 text-sm text-emerald-700 font-medium">
+                          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-500" />
+                          {lastSuccessMessage}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {modalLoading ? (
+                    <div className="space-y-3 py-2">
+                      {[80, 48, 48, 96, 80].map((h, i) => (
+                        <div key={i} style={{ height: h }} className="rounded-xl bg-gray-100 animate-pulse" />
+                      ))}
+                    </div>
+                  ) : (
+                    <form className="space-y-5" onSubmit={e => e.preventDefault()}>
+
+                      {/* Step 1 — Academic Scope */}
+                      <section>
+                        <SectionHeader num={1} label="Academic Scope" done={!!(form.courseId && form.yearId && form.semesterId)} />
+                        <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div>
+                            <label className={lbl}>Course <Req /></label>
+                            <select required value={form.courseId} onChange={e => handleChange("courseId", e.target.value)} className={inp}>
+                              <option value="">Select course…</option>
+                              {courses.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
                           </div>
                           <div>
-                            <p className="text-sm font-bold text-amber-800">Joint Class Opportunity</p>
-                            <p className="text-xs text-amber-700 mt-0.5">{mergeConflict.message}</p>
-                            <p className="text-xs text-gray-500 mt-1">Your students will share this session with the existing group.</p>
+                            <label className={lbl}>Year <Req /></label>
+                            <select required value={form.yearId} onChange={e => handleChange("yearId", e.target.value)}
+                              disabled={!form.courseId || yearsForCourse.length === 0} className={inp}>
+                              <option value="">{!form.courseId ? "Course first" : yearsForCourse.length === 0 ? "No years" : "Select year…"}</option>
+                              {yearsForCourse.map(y => <option key={y.id} value={y.id}>{y.name}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className={lbl}>Semester <Req /></label>
+                            <select required value={form.semesterId} onChange={e => handleChange("semesterId", e.target.value)}
+                              disabled={!form.yearId || semestersForYear.length === 0} className={inp}>
+                              <option value="">{!form.yearId ? "Year first" : semestersForYear.length === 0 ? "No semesters" : "Select…"}</option>
+                              {semestersForYear.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                            </select>
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => setMergeConflict(null)}
-                            className="flex-1 rounded-xl border border-gray-200 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition">
-                            Cancel
-                          </button>
-                          <button type="button" onClick={handleMerge} disabled={submitting}
-                            className="flex-1 rounded-xl bg-amber-500 py-2 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50 transition">
-                            {submitting ? "Joining…" : "Join as Joint Class"}
-                          </button>
+                      </section>
+
+                      {/* Step 2 — Unit */}
+                      <section>
+                        <SectionHeader num={2} label="Unit" done={!!form.unitId} />
+                        <div className="mt-3">
+                          <select required value={form.unitId} onChange={e => handleChange("unitId", e.target.value)}
+                            disabled={!form.semesterId || filteredUnits.length === 0} className={inp}>
+                            <option value="">{!form.semesterId ? "Complete scope first" : filteredUnits.length === 0 ? "No units in this semester" : "Select unit…"}</option>
+                            {filteredUnits.map(u => <option key={u.id} value={u.id}>{u.code} – {u.title}</option>)}
+                          </select>
                         </div>
-                      </div>
-                    )}
+                      </section>
 
-                    {/* Error */}
-                    {submitError && (
-                      <div className="flex items-start gap-2.5 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
-                        <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-                        <p className="text-xs text-red-700">{submitError}</p>
-                      </div>
-                    )}
+                      {/* Step 3 — Lecturer */}
+                      <section>
+                        <SectionHeader num={3} label="Lecturer" done={!!form.lecturerId} />
+                        <div className="mt-3">
+                          <select required value={form.lecturerId} onChange={e => handleChange("lecturerId", e.target.value)}
+                            disabled={!form.unitId} className={inp}>
+                            <option value="">{!form.unitId ? "Select unit first" : "Select lecturer…"}</option>
+                            {lecturers.map(l => <option key={l.id} value={l.id}>{l.fullName}</option>)}
+                          </select>
+                        </div>
+                      </section>
 
-                    {/* Actions */}
-                    <div className="flex gap-3 pt-1">
-                      <button type="button" onClick={() => setShowModal(false)}
-                        className="flex-1 rounded-xl border border-gray-200 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">
-                        Close
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={(e) => handleSubmit(e as any, "submitAndAdd")}
-                        disabled={submitting || !form.roomId}
-                        className="flex-1 rounded-xl border border-indigo-600 bg-white py-2.5 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 transition flex items-center justify-center gap-2">
-                        {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : <><Plus className="h-4 w-4" /> Add & Continue</>}
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={(e) => handleSubmit(e as any, "submit")}
-                        disabled={submitting || !form.roomId}
-                        className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40 shadow-sm shadow-indigo-200 transition flex items-center justify-center gap-2">
-                        {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : <><Plus className="h-4 w-4" /> Create & Close</>}
-                      </button>
-                    </div>
+                      {/* Step 4 — Time Slot */}
+                      <section>
+                        <SectionHeader num={4} label="Time Slot" done={!!(form.startTime && form.endTime && form.startTime < form.endTime)} />
+                        <div className="mt-3 space-y-3">
+                          <div>
+                            <label className={lbl}>Day <Req /></label>
+                            <div className="flex gap-1.5">
+                              {DAYS.map(d => (
+                                <button key={d} type="button" disabled={!form.lecturerId}
+                                  onClick={() => handleChange("day", d)}
+                                  className={`flex-1 rounded-lg py-2 text-[11px] font-bold tracking-wide transition disabled:opacity-30 disabled:cursor-not-allowed ${
+                                    form.day === d
+                                      ? "bg-indigo-600 text-white shadow-sm shadow-indigo-300"
+                                      : "bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-gray-700"
+                                  }`}>
+                                  {d.slice(0, 3)}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-end gap-3">
+                            <div className="flex-1">
+                              <label className={lbl}>Start <Req /></label>
+                              <input required type="time" value={form.startTime}
+                                onChange={e => handleChange("startTime", e.target.value)}
+                                disabled={!form.lecturerId} className={inp} />
+                            </div>
+                            <span className="pb-2.5 text-gray-400 font-medium text-sm select-none">→</span>
+                            <div className="flex-1">
+                              <label className={lbl}>End <Req /></label>
+                              <input required type="time" value={form.endTime}
+                                onChange={e => handleChange("endTime", e.target.value)}
+                                disabled={!form.lecturerId} className={inp} />
+                            </div>
+                            {timeSlotReady && form.startTime < form.endTime && (
+                              <div className="shrink-0 pb-0.5">
+                                <span className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 border border-indigo-100 px-2.5 py-2 text-xs font-semibold text-indigo-600">
+                                  <Clock className="h-3.5 w-3.5" />
+                                  {formatDuration(timeToMins(form.endTime) - timeToMins(form.startTime))}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          {form.startTime && form.endTime && form.startTime >= form.endTime && (
+                            <p className="flex items-center gap-1.5 rounded-lg bg-red-50 border border-red-100 px-3 py-2 text-xs text-red-600">
+                              <AlertCircle className="h-3.5 w-3.5 shrink-0" /> End time must be after start time.
+                            </p>
+                          )}
+                        </div>
+                      </section>
 
-                  </form>
-                )}
-              </div>
-            </motion.div>
+                      {/* Step 5 — Venue / Room */}
+                      <section>
+                        <div className="flex items-center justify-between">
+                          <SectionHeader num={5} label="Venue / Room" done={!!form.roomId} />
+                          {roomsLoading && (
+                            <span className="flex items-center gap-1.5 text-xs text-indigo-500 font-medium">
+                              <Loader2 className="h-3 w-3 animate-spin" /> Checking…
+                            </span>
+                          )}
+                          {!roomsLoading && timeSlotReady && availableRooms.length > 0 && (
+                            <span className="flex items-center gap-1 text-xs text-emerald-600 font-semibold">
+                              <CheckCircle2 className="h-3 w-3" />
+                              {availableRooms.length} room{availableRooms.length !== 1 ? "s" : ""} free
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-3">
+                          {!timeSlotReady ? (
+                            <div className="rounded-xl border-2 border-dashed border-gray-200 py-7 text-center">
+                              <p className="text-xs font-medium text-gray-400">Complete the time slot to see available rooms</p>
+                            </div>
+                          ) : roomsLoading ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              {[1, 2, 3, 4].map(i => <div key={i} className="h-16 rounded-xl bg-gray-100 animate-pulse" />)}
+                            </div>
+                          ) : availableRooms.length === 0 ? (
+                            <div className="rounded-xl border-2 border-dashed border-amber-200 bg-amber-50 py-6 text-center">
+                              <p className="text-sm font-semibold text-amber-700">No rooms free for this slot</p>
+                              <p className="mt-0.5 text-xs text-amber-500">Try a different day or time</p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                              {availableRooms.map(r => (
+                                <button key={r.id} type="button" onClick={() => handleChange("roomId", r.id)}
+                                  className={`rounded-xl border-2 p-3 text-left transition-all ${
+                                    form.roomId === r.id
+                                      ? "border-indigo-500 bg-indigo-50 shadow-sm"
+                                      : "border-gray-200 bg-white hover:border-indigo-300 hover:bg-gray-50"
+                                  }`}>
+                                  <div className="flex items-center justify-between gap-1">
+                                    <span className="text-sm font-bold text-gray-900 truncate">{r.roomCode}</span>
+                                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
+                                      form.roomId === r.id ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600"
+                                    }`}>cap {r.capacity}</span>
+                                  </div>
+                                  <p className="mt-0.5 text-xs text-gray-500 truncate">{r.name}</p>
+                                  {form.roomId === r.id && (
+                                    <div className="mt-1.5 flex items-center gap-1 text-[10px] font-semibold text-indigo-600">
+                                      <CheckCircle2 className="h-3 w-3" /> Selected
+                                    </div>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </section>
+
+                      {/* Ready-to-schedule summary */}
+                      <AnimatePresence>
+                        {form.roomId && !mergeConflict && (
+                          <motion.div key="summary"
+                            initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
+                            className="rounded-xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 p-4">
+                            <div className="flex items-center gap-2 mb-3">
+                              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                              <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Ready to schedule</p>
+                            </div>
+                            {(() => {
+                              const su = filteredUnits.find(u => u.id === form.unitId) ?? units.find(u => u.id === form.unitId);
+                              const sl = lecturers.find(l => l.id === form.lecturerId);
+                              return (
+                                <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-xs">
+                                  <dt className="font-medium text-gray-400">Unit</dt>
+                                  <dd className="truncate font-semibold text-gray-800">{su?.code} – {su?.title}</dd>
+                                  <dt className="font-medium text-gray-400">Lecturer</dt>
+                                  <dd className="truncate font-semibold text-gray-800">{sl?.fullName}</dd>
+                                  <dt className="font-medium text-gray-400">When</dt>
+                                  <dd className="font-semibold text-gray-800">{form.day} · {form.startTime} – {form.endTime}</dd>
+                                  <dt className="font-medium text-gray-400">Venue</dt>
+                                  <dd className="truncate font-semibold text-gray-800">{form.venueName}</dd>
+                                </dl>
+                              );
+                            })()}
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Joint class merge prompt */}
+                      {mergeConflict && (
+                        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 space-y-3">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+                              <Users className="h-4 w-4 text-amber-600" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-amber-800">Joint Class Opportunity</p>
+                              <p className="text-xs text-amber-700 mt-0.5">{mergeConflict.message}</p>
+                              <p className="text-xs text-gray-500 mt-1">Students will share this session.</p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => setMergeConflict(null)}
+                              className="flex-1 rounded-xl border border-gray-200 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-50 transition">
+                              Cancel
+                            </button>
+                            <button type="button" onClick={handleMerge} disabled={submitting}
+                              className="flex-1 rounded-xl bg-amber-500 py-2 text-xs font-semibold text-white hover:bg-amber-600 disabled:opacity-50 transition">
+                              {submitting ? "Joining…" : "Join as Joint Class"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error */}
+                      {submitError && (
+                        <div className="flex items-start gap-2.5 rounded-xl bg-red-50 border border-red-200 px-4 py-3">
+                          <AlertCircle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                          <p className="text-xs text-red-700">{submitError}</p>
+                        </div>
+                      )}
+
+                    </form>
+                  )}
+                </div>
+
+                {/* ── Sticky footer ─────────────────────────────────────────── */}
+                <div className="shrink-0 border-t border-gray-100 bg-gray-50/80 px-6 py-4 flex gap-3">
+                  <button type="button" onClick={() => setShowModal(false)}
+                    className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition">
+                    Close
+                  </button>
+                  <button type="button" onClick={(e) => handleSubmit(e as any, "submitAndAdd")}
+                    disabled={submitting || !form.roomId}
+                    className="flex-1 rounded-xl border-2 border-indigo-600 bg-white py-2.5 text-sm font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-2">
+                    {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : <><Plus className="h-4 w-4" /> Add & Continue</>}
+                  </button>
+                  <button type="button" onClick={(e) => handleSubmit(e as any, "submit")}
+                    disabled={submitting || !form.roomId}
+                    className="flex-1 rounded-xl bg-indigo-600 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-indigo-200 transition flex items-center justify-center gap-2">
+                    {submitting ? <><Loader2 className="h-4 w-4 animate-spin" /> Creating…</> : <><Plus className="h-4 w-4" /> Create & Close</>}
+                  </button>
+                </div>
+
+              </motion.div>
             </div>
           </>
         )}
