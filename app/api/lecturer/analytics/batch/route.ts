@@ -18,6 +18,7 @@
  *       "totalPresent": 432,
  *       "avgAttended": 36,
  *       "attendancePercent": 80,
+ *       "atRiskCount": 3,
  *       "assignments": 3,
  *       "materials": 7
  *     }
@@ -109,7 +110,6 @@ export async function POST(req: NextRequest) {
   }
 
   // Parse optional date range — used for plannedSessions calculation.
-  // If absent, plannedSessions and completionRate are omitted from the response.
   let parsedStart: Date | null = null;
   let parsedEnd:   Date | null = null;
   if (typeof startDateRaw === "string" && typeof endDateRaw === "string") {
@@ -167,7 +167,6 @@ export async function POST(req: NextRequest) {
     const normToUnit = new Map(units.map((u) => [norm(u.code), u]));
     const unitIds = units.map((u) => u.id);
     const rawUnitCodes = units.map((u) => u.code);
-    // OnlineAttendanceSession stores the normalizeUnitCode() output at creation ("SCH 2170" format)
     const normalisedUnitCodes = rawUnitCodes.map(normalizeUnitCode);
 
     // ── 2. Parallel fetch ─────────────────────────────────────────────────
@@ -180,9 +179,9 @@ export async function POST(req: NextRequest) {
       timetableEntries,
       assignmentCounts,
       materialCounts,
+      perStudentAttendance,
     ] = await Promise.all([
-      // Enrolled students from StudentEnrollmentSnapshot (primary enrollment source —
-      // consistent with /students and /attendance siblings).
+      // Enrolled students from StudentEnrollmentSnapshot
       normCodes.length > 0
         ? prisma.$queryRaw<{ normCode: string; cnt: bigint }[]>(
             Prisma.sql`
@@ -197,7 +196,7 @@ export async function POST(req: NextRequest) {
           )
         : Promise.resolve([] as { normCode: string; cnt: bigint }[]),
 
-      // Online ended sessions — stored with normalizeUnitCode() at creation ("SCH 2170" format)
+      // Online ended sessions
       normalisedUnitCodes.length > 0
         ? prisma.onlineAttendanceSession.findMany({
             where: { lecturerId, unitCode: { in: normalisedUnitCodes }, endedAt: { not: null } },
@@ -205,9 +204,7 @@ export async function POST(req: NextRequest) {
           })
         : Promise.resolve([] as { unitCode: string; _count: { records: number } }[]),
 
-      // Offline sessions — space-tolerant $queryRaw (manual sessions may store "SCH 2170",
-      // BLE sessions "SCH2170"; exact Prisma match would miss the other form).
-      // Exclude lectureRoom = 'ONLINE': already counted via onlineSessions.
+      // Offline sessions — exclude ONLINE room rows
       normCodes.length > 0
         ? prisma.$queryRaw<{ unitCode: string; sessionStart: Date }[]>(
             Prisma.sql`
@@ -220,7 +217,7 @@ export async function POST(req: NextRequest) {
           )
         : Promise.resolve([] as { unitCode: string; sessionStart: Date }[]),
 
-      // Delegation / GD group sessions (unitCode stored raw)
+      // Delegation / GD group sessions
       rawUnitCodes.length > 0
         ? prisma.delegation.findMany({
             where: { createdBy: lecturerId, unitCode: { in: rawUnitCodes }, used: true },
@@ -228,9 +225,7 @@ export async function POST(req: NextRequest) {
           })
         : Promise.resolve([] as { unitCode: string; validFrom: Date | bigint }[]),
 
-      // Offline attendance records — DISTINCT (studentId, sessionId) to prevent inflation
-      // when a student has multiple OfflineAttendanceRecord rows for the same session
-      // (e.g. BLE + manual confirmation). Each unique (student, session) pair = 1 mark.
+      // Offline attendance records — DISTINCT (studentId, sessionId)
       normCodes.length > 0
         ? prisma.$queryRaw<{ unitCode: string }[]>(
             Prisma.sql`
@@ -247,9 +242,7 @@ export async function POST(req: NextRequest) {
           )
         : Promise.resolve([] as { unitCode: string }[]),
 
-      // Timetable entries for planned-session calculation — only needed when a
-      // date range was supplied. Fetch all non-cancelled entries for this lecturer
-      // across all resolved unit IDs.
+      // Timetable entries for planned-session calculation
       unitIds.length > 0 && parsedStart
         ? prisma.timetable.findMany({
             where: { lecturerId, unitId: { in: unitIds }, status: { not: "cancelled" } },
@@ -274,6 +267,61 @@ export async function POST(req: NextRequest) {
             _count: { id: true },
           })
         : Promise.resolve([] as { unitId: string; _count: { id: number } }[]),
+
+      // Per-student per-unit attended session count — for atRiskCount
+      normCodes.length > 0
+        ? prisma.$queryRaw<{ normCode: string; studentId: string; attended: bigint }[]>(
+            Prisma.sql`
+              WITH student_sessions AS (
+                SELECT
+                  UPPER(REPLACE(oas."unitCode", ' ', '')) AS "normCode",
+                  oar."studentId",
+                  oas."id" AS "sessionKey"
+                FROM "OnlineAttendanceRecord" oar
+                JOIN "OnlineAttendanceSession" oas ON oas."id" = oar."sessionId"
+                  AND oas."lecturerId" = ${lecturerId}
+                  AND oas."endedAt" IS NOT NULL
+                WHERE UPPER(REPLACE(oas."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+
+                UNION ALL
+
+                SELECT DISTINCT
+                  UPPER(REPLACE(cs."unitCode", ' ', '')) AS "normCode",
+                  oar."studentId",
+                  cs."id" AS "sessionKey"
+                FROM "OfflineAttendanceRecord" oar
+                JOIN "ConductedSession" cs
+                  ON  UPPER(REPLACE(cs."unitCode", ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
+                  AND cs."sessionStart" = oar."sessionStart"
+                  AND cs."lecturerId" = ${lecturerId}
+                  AND UPPER(cs."lectureRoom") != 'ONLINE'
+                WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+
+                UNION ALL
+
+                SELECT DISTINCT
+                  UPPER(REPLACE(d."unitCode", ' ', '')) AS "normCode",
+                  oar."studentId",
+                  d."id" AS "sessionKey"
+                FROM "OfflineAttendanceRecord" oar
+                JOIN "Delegation" d ON d."id" = oar."delegationId"
+                  AND d."createdBy" = ${lecturerId}
+                  AND d."used" = true
+                WHERE UPPER(REPLACE(d."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+                  AND NOT EXISTS (
+                    SELECT 1 FROM "ConductedSession" cs2
+                    WHERE UPPER(REPLACE(cs2."unitCode", ' ', '')) = UPPER(REPLACE(d."unitCode", ' ', ''))
+                      AND cs2."lecturerId" = ${lecturerId}
+                      AND UPPER(cs2."lectureRoom") != 'ONLINE'
+                      AND ABS(EXTRACT(EPOCH FROM cs2."sessionStart") * 1000 - d."validFrom"::float8) <= 300000
+                  )
+              )
+              SELECT "normCode", "studentId", COUNT(DISTINCT "sessionKey") AS "attended"
+              FROM student_sessions
+              GROUP BY "normCode", "studentId"
+            `
+          )
+        : Promise.resolve([] as { normCode: string; studentId: string; attended: bigint }[]),
     ]);
 
     // ── 3. Build lookup maps ───────────────────────────────────────────────
@@ -282,6 +330,14 @@ export async function POST(req: NextRequest) {
     );
     const assignMap = new Map(assignmentCounts.map((a) => [a.unitId, a._count.id]));
     const matMap = new Map(materialCounts.map((m) => [m.unitId, m._count.id]));
+
+    // Per-student map: normCode → (studentId → attended)
+    const perStudentMap = new Map<string, Map<string, number>>();
+    for (const row of perStudentAttendance) {
+      let m = perStudentMap.get(row.normCode);
+      if (!m) { m = new Map(); perStudentMap.set(row.normCode, m); }
+      m.set(row.studentId, Number(row.attended));
+    }
 
     // Build offline session-time map (for delegation dedup)
     const offlineTimeMap = new Map<string, number[]>();
@@ -311,7 +367,6 @@ export async function POST(req: NextRequest) {
     for (const s of offlineSessions) {
       stat(norm(s.unitCode)).conductedSessions += 1;
     }
-    // Delegation sessions not overlapping an offline session (±5 min)
     for (const d of delegationSessions) {
       const normCode = norm(d.unitCode);
       const offlineTimes = offlineTimeMap.get(normCode) ?? [];
@@ -320,18 +375,14 @@ export async function POST(req: NextRequest) {
         stat(normCode).conductedSessions += 1;
       }
     }
-    // Offline marks — no longer need validOfflineKeys since the INNER JOIN already
-    // scopes records to this lecturer's sessions
     for (const r of offlineRecords) {
       const normCode = norm(r.unitCode);
       stat(normCode).totalPresent += 1;
     }
 
-    // Build planned-session map: normCode → count of timetable occurrences in date range.
-    // Only populated when startDate/endDate were provided.
+    // Build planned-session map
     const plannedMap = new Map<string, number>();
     if (parsedStart && parsedEnd) {
-      // unitId → normCode reverse map
       const unitIdToNorm = new Map(units.map((u) => [u.id, norm(u.code)]));
       for (const entry of timetableEntries) {
         const normCode = unitIdToNorm.get(entry.unitId);
@@ -368,7 +419,20 @@ export async function POST(req: NextRequest) {
       const completionRate =
         plannedSessions !== null && plannedSessions > 0
           ? Math.min(Math.round((conductedSessions / plannedSessions) * 100), 100)
-          : plannedSessions === 0 ? null : null;
+          : null;
+
+      // atRiskCount: enrolled students with rate < 75%
+      const atRiskCount = (() => {
+        if (conductedSessions === 0) return 0;
+        const threshold = 0.75 * conductedSessions;
+        const studentMap = perStudentMap.get(normCode) ?? new Map<string, number>();
+        let low = 0;
+        for (const [, attended] of studentMap) {
+          if (attended < threshold) low++;
+        }
+        const zeroAttendance = Math.max(0, enrolledStudents - studentMap.size);
+        return zeroAttendance + low;
+      })();
 
       response[requestKey] = {
         students: enrolledStudents,
@@ -378,6 +442,7 @@ export async function POST(req: NextRequest) {
         avgAttended,
         attendanceRate: attendancePercent,
         attendancePercent,
+        atRiskCount,
         plannedSessions,
         completionRate,
         assignments,

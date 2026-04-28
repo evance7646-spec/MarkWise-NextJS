@@ -22,9 +22,6 @@ import { normalizeUnitCode } from "@/lib/unitCode";
 
 export const runtime = "nodejs";
 
-// Methods that indicate a student was present; excludes any 'absent'/'excused' concept.
-const PRESENT_METHODS = ["qr", "ble", "manual", "manual_lecturer", "proxy_leader", "GD"];
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
@@ -53,7 +50,6 @@ export async function GET(req: NextRequest) {
 
   try {
     // ── 1. Distinct units assigned to this lecturer ──────────────────────────
-    // Helper: strip all non-alphanumeric chars for normalization-tolerant comparisons.
     const normalizeCode = (c: string) => c.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
 
     const timetableUnits = await prisma.timetable.findMany({
@@ -79,7 +75,6 @@ export async function GET(req: NextRequest) {
     const normalisedUnitCodes = units.map((u) => normalizeUnitCode(u.code));
 
     // ── 3. Lecturer institution + enrolled students (StudentEnrollmentSnapshot) ──
-    // Primary enrollment source — consistent with /students and /attendance siblings.
     const lecturerRecord = await prisma.lecturer.findUnique({
       where: { id: lecturerId },
       select: { institutionId: true },
@@ -103,44 +98,104 @@ export async function GET(req: NextRequest) {
     const enrolledMap = new Map(enrollmentRows.map((r) => [r.normCode, Number(r.cnt)]));
 
     // ── 4. Session counts + attendance totals + assignment/material counts ─────
-    const [onlineSessions, offlineSessions, delegationSessions, assignmentCounts, materialCounts] =
-      await Promise.all([
-        // Online sessions (ended only) — stored with normalizeUnitCode() at creation
-        prisma.onlineAttendanceSession.findMany({
-          where: { lecturerId, unitCode: { in: normalisedUnitCodes }, endedAt: { not: null } },
-          select: { unitCode: true, _count: { select: { records: true } } },
-        }),
+    const [
+      onlineSessions,
+      offlineSessions,
+      delegationSessions,
+      assignmentCounts,
+      materialCounts,
+      perStudentAttendance,
+    ] = await Promise.all([
+      // Online sessions (ended only) — stored with normalizeUnitCode() at creation
+      prisma.onlineAttendanceSession.findMany({
+        where: { lecturerId, unitCode: { in: normalisedUnitCodes }, endedAt: { not: null } },
+        select: { unitCode: true, _count: { select: { records: true } } },
+      }),
 
-        // Offline sessions — space-tolerant raw query (manual sessions may store "SCH 2170",
-        // BLE sessions "SCH2170"; UPPER(REPLACE(...)) matches both).
-        // Exclude lectureRoom = 'ONLINE': already counted via OnlineAttendanceSession.
-        prisma.$queryRaw<{ normCode: string; sessionStart: Date }[]>(Prisma.sql`
-          SELECT UPPER(REPLACE("unitCode", ' ', '')) AS "normCode",
-                 "sessionStart"
-          FROM   "ConductedSession"
-          WHERE  "lecturerId" = ${lecturerId}
-            AND  UPPER(REPLACE("unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
-            AND  UPPER("lectureRoom") != 'ONLINE'
-        `),
+      // Offline sessions — space-tolerant raw query.
+      // Exclude lectureRoom = 'ONLINE': already counted via OnlineAttendanceSession.
+      prisma.$queryRaw<{ normCode: string; sessionStart: Date }[]>(Prisma.sql`
+        SELECT UPPER(REPLACE("unitCode", ' ', '')) AS "normCode",
+               "sessionStart"
+        FROM   "ConductedSession"
+        WHERE  "lecturerId" = ${lecturerId}
+          AND  UPPER(REPLACE("unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+          AND  UPPER("lectureRoom") != 'ONLINE'
+      `),
 
-        // Delegation sessions (used, created by this lecturer)
-        prisma.delegation.findMany({
-          where: { createdBy: lecturerId, unitCode: { in: unitCodes }, used: true },
-          select: { id: true, unitCode: true, validFrom: true },
-        }),
+      // Delegation sessions (used, created by this lecturer)
+      prisma.delegation.findMany({
+        where: { createdBy: lecturerId, unitCode: { in: unitCodes }, used: true },
+        select: { id: true, unitCode: true, validFrom: true },
+      }),
 
-        // Assignment and material counts per unit
-        prisma.assignment.groupBy({
-          by: ["unitId"],
-          where: { unitId: { in: unitIds } },
-          _count: { id: true },
-        }),
-        prisma.material.groupBy({
-          by: ["unitId"],
-          where: { unitId: { in: unitIds } },
-          _count: { id: true },
-        }),
-      ]);
+      // Assignment and material counts per unit
+      prisma.assignment.groupBy({
+        by: ["unitId"],
+        where: { unitId: { in: unitIds } },
+        _count: { id: true },
+      }),
+      prisma.material.groupBy({
+        by: ["unitId"],
+        where: { unitId: { in: unitIds } },
+        _count: { id: true },
+      }),
+
+      // Per-student per-unit attended session count — used to compute atRiskCount.
+      // Combines all three sources with delegation dedup (standalone only via NOT EXISTS).
+      prisma.$queryRaw<{ normCode: string; studentId: string; attended: bigint }[]>(
+        Prisma.sql`
+          WITH student_sessions AS (
+            SELECT
+              UPPER(REPLACE(oas."unitCode", ' ', '')) AS "normCode",
+              oar."studentId",
+              oas."id" AS "sessionKey"
+            FROM "OnlineAttendanceRecord" oar
+            JOIN "OnlineAttendanceSession" oas ON oas."id" = oar."sessionId"
+              AND oas."lecturerId" = ${lecturerId}
+              AND oas."endedAt" IS NOT NULL
+            WHERE UPPER(REPLACE(oas."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+
+            UNION ALL
+
+            SELECT DISTINCT
+              UPPER(REPLACE(cs."unitCode", ' ', '')) AS "normCode",
+              oar."studentId",
+              cs."id" AS "sessionKey"
+            FROM "OfflineAttendanceRecord" oar
+            JOIN "ConductedSession" cs
+              ON  UPPER(REPLACE(cs."unitCode", ' ', '')) = UPPER(REPLACE(oar."unitCode", ' ', ''))
+              AND cs."sessionStart" = oar."sessionStart"
+              AND cs."lecturerId" = ${lecturerId}
+              AND UPPER(cs."lectureRoom") != 'ONLINE'
+            WHERE UPPER(REPLACE(oar."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+
+            UNION ALL
+
+            SELECT DISTINCT
+              UPPER(REPLACE(d."unitCode", ' ', '')) AS "normCode",
+              oar."studentId",
+              d."id" AS "sessionKey"
+            FROM "OfflineAttendanceRecord" oar
+            JOIN "Delegation" d ON d."id" = oar."delegationId"
+              AND d."createdBy" = ${lecturerId}
+              AND d."used" = true
+            WHERE UPPER(REPLACE(d."unitCode", ' ', '')) IN (${Prisma.join(normCodes)})
+              AND NOT EXISTS (
+                SELECT 1 FROM "ConductedSession" cs2
+                WHERE UPPER(REPLACE(cs2."unitCode", ' ', '')) = UPPER(REPLACE(d."unitCode", ' ', ''))
+                  AND cs2."lecturerId" = ${lecturerId}
+                  AND UPPER(cs2."lectureRoom") != 'ONLINE'
+                  AND ABS(EXTRACT(EPOCH FROM cs2."sessionStart") * 1000 - d."validFrom"::float8) <= 300000
+              )
+          )
+          SELECT "normCode", "studentId", COUNT(DISTINCT "sessionKey") AS "attended"
+          FROM student_sessions
+          GROUP BY "normCode", "studentId"
+        `
+      ),
+    ]);
+
     const assignMap = new Map(assignmentCounts.map((a) => [a.unitId, a._count.id]));
     const matMap    = new Map(materialCounts.map((m)   => [m.unitId, m._count.id]));
 
@@ -167,8 +222,6 @@ export async function GET(req: NextRequest) {
     // ── 5. Aggregate per normCode ──────────────────────────────────────────────
     const FIVE_MIN_MS = 5 * 60 * 1000;
 
-    // Build map of normCode → array of offline session start times (ms)
-    // Used to dedup delegation sessions that share the same lecture window.
     const offlineSessionTimes = new Map<string, number[]>();
     for (const s of offlineSessions) {
       const times = offlineSessionTimes.get(s.normCode) ?? [];
@@ -192,11 +245,8 @@ export async function GET(req: NextRequest) {
       st.totalAttendances += s._count.records;
     }
     for (const s of offlineSessions) {
-      // offlineSessions comes from $queryRaw — normCode already normalised
       stat(s.normCode).conductedSessions += 1;
     }
-    // Add delegation sessions not already covered by a ConductedSession (±5 min window).
-    // standaloneDelMap tracks delegationId → normCode so we can look up attendance marks below.
     const standaloneDelMap = new Map<string, string>(); // delegationId → normCode
     for (const d of delegationSessions) {
       const key = normalizeCode(d.unitCode);
@@ -209,15 +259,9 @@ export async function GET(req: NextRequest) {
       }
     }
     for (const r of offlineRecords) {
-      // offlineRecords comes from $queryRaw — normCode + sessionStart already normalised.
-      // The query already scoped records to this lecturer's sessions via the INNER JOIN,
-      // so every row here is for a valid session. No extra validOfflineKeys check needed.
       stat(r.normCode).totalAttendances += 1;
     }
 
-    // Delegation attendance marks — students marked present via GD proxy-mark.
-    // Only standalone delegation sessions (not already covered by an offline session)
-    // are counted here, matching the conductedSessions deduplication logic above.
     const standaloneDelIds = [...standaloneDelMap.keys()];
     if (standaloneDelIds.length > 0) {
       const delegationAttendanceRecords = await prisma.offlineAttendanceRecord.findMany({
@@ -230,7 +274,16 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── 6. Build response ──────────────────────────────────────────────────────
+    // ── 6. Build per-student map for atRiskCount ───────────────────────────────
+    // normCode → (studentId → distinctSessionsAttended)
+    const perStudentMap = new Map<string, Map<string, number>>();
+    for (const row of perStudentAttendance) {
+      let m = perStudentMap.get(row.normCode);
+      if (!m) { m = new Map(); perStudentMap.set(row.normCode, m); }
+      m.set(row.studentId, Number(row.attended));
+    }
+
+    // ── 7. Build response ──────────────────────────────────────────────────────
     const result = units
       .map((unit) => {
         const nc = normalizeCode(unit.code);
@@ -246,6 +299,20 @@ export async function GET(req: NextRequest) {
               )
             : 0;
 
+        // atRiskCount: enrolled students with individualRate < 75%, including zero-attendance
+        const atRiskCount = (() => {
+          if (conductedSessions === 0) return 0;
+          const threshold = 0.75 * conductedSessions;
+          const studentMap = perStudentMap.get(nc) ?? new Map<string, number>();
+          let low = 0;
+          for (const [, attended] of studentMap) {
+            if (attended < threshold) low++;
+          }
+          // Students not in the map attended 0 sessions → all are at risk
+          const zeroAttendance = Math.max(0, enrolledStudents - studentMap.size);
+          return zeroAttendance + low;
+        })();
+
         return {
           unitCode:         nc,
           unitName:         unit.title,
@@ -253,6 +320,7 @@ export async function GET(req: NextRequest) {
           conductedSessions,
           totalPresent:     totalAttendances,
           attendancePercent,
+          atRiskCount,
           assignments:      assignMap.get(unit.id) ?? 0,
           materials:        matMap.get(unit.id)    ?? 0,
         };

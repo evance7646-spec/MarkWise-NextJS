@@ -706,20 +706,55 @@ model Notification {
 }
 
 model LecturerNotification {
-  id         String   @id @default(uuid())
-  lecturerId String
-  type       String
-  title      String
-  message    String
-  recipients String[]
-  category   String?
-  severity   String?
-  sentBy     String?
-  sentCount  Int      @default(0)
-  createdAt  DateTime @default(now())
+  id           String    @id @default(uuid())
+  lecturerId   String
+  type         String
+  priority     String    @default("normal")
+  title        String
+  message      String
+  recipients   String[]
+  category     String?
+  severity     String?
+  sentBy       String?
+  sentCount    Int       @default(0)
+  readCount    Int       @default(0)
+  clickedCount Int       @default(0)
+  status       String    @default("sent")
+  sentAt       DateTime?
+  scheduledFor DateTime?
+  createdAt    DateTime  @default(now())
 
   @@index([lecturerId])
+  @@index([lecturerId, status])
   @@map("LecturerNotification")
+}
+
+model AdminNotification {
+  id             String             @id @default(uuid())
+  type           String
+  title          String
+  body           String
+  priority       String             @default("normal")
+  targetRoles    String[]           @default([])
+  targetIds      String[]           @default([])
+  attachmentUrl  String?
+  actionRequired Boolean            @default(false)
+  createdAt      DateTime           @default(now())
+  reads          NotificationRead[]
+
+  @@index([createdAt])
+  @@map("AdminNotification")
+}
+
+model NotificationRead {
+  notificationId String
+  lecturerId     String
+  readAt         DateTime          @default(now())
+  notification   AdminNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@id([notificationId, lecturerId])
+  @@index([lecturerId])
+  @@map("NotificationRead")
 }
 
 model UnitsByCourseYearSemester {
