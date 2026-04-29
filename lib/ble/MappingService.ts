@@ -312,26 +312,9 @@ export class MappingService {
       return { mappingSet: newSet, needsFullSync: true };
     }
 
-    // Check live DB counts against the snapshot so we always detect
-    // rooms or units added/removed after the last save — for every institution.
-    const [liveUnitCount, liveRoomCount] = await Promise.all([
-      prisma.unit.count({
-        where: { department: { institutionId }, bleId: { not: null } }
-      }),
-      prisma.room.count({
-        where: { institutionId, bleId: { not: null } }
-      }),
-    ]);
-
-    const snapshotStale =
-      liveUnitCount !== latest.unitRanges.count ||
-      liveRoomCount !== latest.roomRanges.count;
-
-    if (snapshotStale) {
-      const newSet = await this.generateMappingSet(institutionId);
-      await this.saveMappingSet(institutionId, newSet);
-      return { mappingSet: newSet, needsFullSync: true };
-    }
+    // Write routes (POST /api/rooms, /api/units, /api/rooms/bulk, /api/curriculum) always
+    // call generateMappingSet + saveMappingSet immediately after any change, so the
+    // snapshot is always current. No live count queries needed here.
 
     if (!clientVersion || clientVersion !== latest.version) {
       return { mappingSet: latest, needsFullSync: true };
