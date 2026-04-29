@@ -101,6 +101,35 @@ function startOfDay(d = new Date()): Date {
   return dt;
 }
 
+function isoWeekKey(date = new Date()): string {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day); // anchor to Thursday of ISO week
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, "0")}`;
+}
+
+// ── Dept rank in-process cache ────────────────────────────────────────────────
+// Populated on first request per department each 15-minute window.
+interface DeptEntry { studentId: string; totalPoints: number }
+const deptCache = new Map<string, { entries: DeptEntry[]; expiresAt: number }>();
+const DEPT_CACHE_TTL = 15 * 60 * 1000;
+
+async function getDeptRanking(departmentId: string): Promise<DeptEntry[]> {
+  const hit = deptCache.get(departmentId);
+  if (hit && hit.expiresAt > Date.now()) return hit.entries;
+  const rows = await prisma.$queryRaw<DeptEntry[]>`
+    SELECT sp."studentId", sp."totalPoints"::int AS "totalPoints"
+    FROM   "StudentPoints" sp
+    JOIN   "Student" s ON s.id = sp."studentId"
+    WHERE  s."departmentId" = ${departmentId}
+    ORDER  BY sp."totalPoints" DESC
+  `;
+  deptCache.set(departmentId, { entries: rows, expiresAt: Date.now() + DEPT_CACHE_TTL });
+  return rows;
+}
+
 // ── Main handler ──────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
@@ -185,7 +214,7 @@ export async function GET(req: NextRequest) {
     // ── 5. Rank + totalStudents within same course ────────────────────────
     const student = await prisma.student.findUnique({
       where: { id: studentId },
-      select: { courseId: true, institutionId: true, points: { select: { statsJson: true } } },
+      select: { courseId: true, institutionId: true, departmentId: true, points: { select: { statsJson: true } } },
     });
     if (!student) return NextResponse.json({ error: 'Student not found' }, { status: 404, headers: corsHeaders });
 
@@ -223,6 +252,35 @@ export async function GET(req: NextRequest) {
     const prevStatsJson = (student.points?.statsJson as any) ?? {};
     const previousRank: number = prevStatsJson.previousRank ?? rank;
     const rankTrend = previousRank - rank; // positive = moved up
+
+    // Weekly rank change: diff current rank vs last ISO week's snapshot
+    const currentWeek = isoWeekKey();
+    const prevWeekDate = new Date(startOfWeek().getTime() - 7 * 86_400_000);
+    const prevWeek = isoWeekKey(prevWeekDate);
+    const weeklyRankHistory: Record<string, number> =
+      (prevStatsJson.weeklyRankHistory as Record<string, number> | undefined) ?? {};
+    const lastWeekRank: number = weeklyRankHistory[prevWeek] ?? rank;
+    const weeklyRankChange = lastWeekRank - rank; // positive = improved
+
+    // Rivals: adjacent students in the global course leaderboard
+    const rankIndex = allCoursePoints.findIndex((p) => p.studentId === studentId);
+    const rivalAboveEntry = rankIndex > 0 ? allCoursePoints[rankIndex - 1] : null;
+    const rivalBelowEntry =
+      rankIndex >= 0 && rankIndex < totalStudents - 1 ? allCoursePoints[rankIndex + 1] : null;
+    const rivalAbove = rivalAboveEntry
+      ? { id: rivalAboveEntry.studentId, name: rivalAboveEntry.student?.name ?? "Unknown", points: rivalAboveEntry.totalPoints }
+      : null;
+    const rivalBelow = rivalBelowEntry
+      ? { id: rivalBelowEntry.studentId, name: rivalBelowEntry.student?.name ?? "Unknown", points: rivalBelowEntry.totalPoints }
+      : null;
+
+    // Dept rank (cached per department, 15-min TTL)
+    const deptEntries = student.departmentId
+      ? await getDeptRanking(student.departmentId)
+      : [];
+    const deptTotal = deptEntries.length;
+    const deptRankIdx = deptEntries.findIndex((e) => e.studentId === studentId);
+    const deptRank = deptRankIdx >= 0 ? deptRankIdx + 1 : deptTotal;
 
     // ── 6. Leaderboard (top 10) ───────────────────────────────────────────
     const leaderboard = allCoursePoints.slice(0, 10).map((p, i) => {
@@ -268,6 +326,11 @@ export async function GET(req: NextRequest) {
           ...(cachedPoints?.statsJson as object ?? {}),
           earnedBadgeIds: currentEarnedIds,
           previousRank: rank,
+          // Snapshot rank at the start of each ISO week (first request of the week wins)
+          weeklyRankHistory: {
+            ...weeklyRankHistory,
+            ...(weeklyRankHistory[currentWeek] == null ? { [currentWeek]: rank } : {}),
+          },
         },
       },
     });
@@ -463,9 +526,15 @@ export async function GET(req: NextRequest) {
         rank: rank || totalStudents,
         totalStudents,
         rankTrend,
+        weeklyRankChange,
+        deptRank,
+        deptTotal,
+        rivalAbove,
+        rivalBelow,
         points: augmentedTotal,
         pointsToday,
         pointsExpiring: 0,
+        expiryDate: "",
         pointsTrend,
         newlyUnlockedBadge,
         leaderboard,
