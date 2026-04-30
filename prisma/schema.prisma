@@ -294,6 +294,7 @@ model Lecturer {
   passwordHash  String
   createdAt     DateTime      @default(now())
   institutionId String
+  fcmToken      String?       @map("fcm_token")
   bookings      Booking[]
   holds         BookingHold[]
   institution   Institution   @relation(fields: [institutionId], references: [id], onDelete: Cascade)

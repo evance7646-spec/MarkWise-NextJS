@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyLecturerAccessToken } from "@/lib/lecturerAuthJwt";
 import { normalizeUnitCode } from "@/lib/unitCode";
+import { buildPayloadsForStudents, sendPushNotificationBatch } from "@/lib/pushNotification";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -92,6 +93,34 @@ export async function POST(req: NextRequest) {
       message: message?.trim() || null,
     },
   });
+
+  // Fire-and-forget FCM push to enrolled students (lecturer is the sender — skip their token)
+  const displayName = lecturerName?.trim() || "Your lecturer";
+  const normalizedForEnrollment = unitCode;
+  ;(async () => {
+    try {
+      const enrollments = await prisma.enrollment.findMany({
+        where: { unit: { code: { equals: normalizedForEnrollment, mode: "insensitive" } } },
+        select: { studentId: true },
+      });
+      const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+      if (studentIds.length === 0) return;
+      const payloads = await buildPayloadsForStudents(studentIds, {
+        title: `${unitCode} - Meeting Invite`,
+        body: `${displayName} has shared a meeting link for ${unitCode}.`,
+        data: {
+          type: "meeting_invite",
+          unitCode,
+          lecturerName: displayName,
+          scheduledAt: scheduledAt ?? "",
+          meetingLink: meetingLink.trim(),
+        },
+      });
+      await sendPushNotificationBatch(payloads);
+    } catch (err) {
+      console.error("[meeting-invites/POST] push error:", err);
+    }
+  })();
 
   return NextResponse.json(invite, { status: 201, headers: corsHeaders });
 }

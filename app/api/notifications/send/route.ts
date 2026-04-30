@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { verifyLecturerAccessToken } from '@/lib/lecturerAuthJwt';
 import { prisma } from '@/lib/prisma';
-import { buildPayloadsForStudents, sendPushNotification } from '@/lib/pushNotification';
+import { buildPayloadForLecturer, buildPayloadsForStudents, sendPushNotification } from '@/lib/pushNotification';
 
 export const runtime = 'nodejs';
 
@@ -111,33 +111,34 @@ export async function POST(req: NextRequest) {
     }
 
     // ── 2. Send FCM push notifications ────────────────────────────────────────
-    const payloads = await buildPayloadsForStudents(studentIds, {
+    const sharedData: Record<string, string> = {
+      // Forward the entire meta payload so the mobile app receives all
+      // fields (e.g. mergedRoom, mergedDay, unitCode) for MERGED_LESSON.
+      ...(meta && typeof meta === 'object' ? meta : {}),
+      type,
+      category,
+      severity,
+      sentBy,
+      sentAt: new Date().toISOString(),
+    };
+
+    const studentPayloads = await buildPayloadsForStudents(studentIds, {
       title: title.trim(),
       body: message.trim(),
-      data: {
-        // Forward the entire meta payload so the mobile app receives all
-        // fields (e.g. mergedRoom, mergedDay, unitCode) for MERGED_LESSON.
-        ...(meta && typeof meta === 'object' ? meta : {}),
-        type,
-        category,
-        severity,
-        sentBy,
-        sentAt: new Date().toISOString(),
-      },
+      data: sharedData,
     });
 
-    // Override Android priority for urgent messages — buildPayloads doesn't support it natively.
-    // We send individually so we can track successes.
-    const highPriority = ['urgent', 'MERGED_LESSON', 'UNMERGED_LESSON', 'LESSON_CANCELLED', 'LESSON_RESCHEDULED', 'LESSON_ONLINE'];
-    const sendPromises = payloads.map(async (p) => {
-      return sendPushNotification({
-        ...p,
-        data: {
-          ...(p.data ?? {}),
-          priority: highPriority.includes(type) ? 'high' : 'normal',
-        },
-      });
+    // Also push to the lecturer who sent the notification (they may be on another device)
+    const lecturerPayload = await buildPayloadForLecturer(lecturerId, {
+      title: title.trim(),
+      body: message.trim(),
+      data: sharedData,
     });
+
+    const payloads = lecturerPayload ? [...studentPayloads, lecturerPayload] : studentPayloads;
+
+    // channelId is auto-resolved from data.type inside sendPushNotification
+    const sendPromises = payloads.map((p) => sendPushNotification(p));
 
     const results = await Promise.allSettled(sendPromises);
     const successCount = results.filter(

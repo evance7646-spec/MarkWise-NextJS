@@ -59,6 +59,7 @@ import { cancelTimetableBookings, createTimetableBookings, createNextOccurrenceB
 import { publishTimetableUpdatedEvent } from "@/lib/timetableEvents";
 import { normalizeUnitCode } from "@/lib/unitCode";
 import { bumpTimetableVersion } from "@/lib/timetableSyncStore";
+import { buildPayloadForLecturer, buildPayloadsForStudents, sendPushNotificationBatch } from "@/lib/pushNotification";
 
 export const runtime = "nodejs";
 
@@ -481,6 +482,51 @@ export async function PUT(request: Request, context: { params: Promise<{ id: str
           });
         })
         .catch((err) => console.error("[timetable/PUT] notification error:", err));
+    }
+
+    // ── FCM push to enrolled students + assigned lecturer ─────────────────────
+    const FCM_PUSH_STATUSES = ["Cancelled", "Rescheduled", "Online"] as const;
+    if (unitCode && FCM_PUSH_STATUSES.includes(status as typeof FCM_PUSH_STATUSES[number])) {
+      let fcmType = "";
+      let fcmTitle = "";
+      let fcmBody = "";
+      if (status === "Cancelled") {
+        fcmType  = "LESSON_CANCELLED";
+        fcmTitle = `${unitCode} — Lesson Cancelled`;
+        fcmBody  = `Your ${unitCode} class on ${updated.day} has been cancelled.${reason ? ` Reason: ${reason}` : ""}`;
+      } else if (status === "Rescheduled") {
+        fcmType  = "LESSON_RESCHEDULED";
+        fcmTitle = `${unitCode} — Lesson Rescheduled`;
+        fcmBody  = `Your ${unitCode} class has been rescheduled to ${updated.day} ${updated.startTime}–${updated.endTime}${reschedulePermanent ? " (permanent)" : ""}.`;
+      } else if (status === "Online") {
+        fcmType  = "LESSON_ONLINE";
+        fcmTitle = `${unitCode} — Class Moving Online`;
+        fcmBody  = `Your ${unitCode} class on ${updated.day} will be held online.`;
+      }
+
+      const msgPayload = {
+        title: fcmTitle,
+        body: fcmBody,
+        data: { type: fcmType, unitCode, entryId: updated.id, status },
+      };
+
+      ;(async () => {
+        try {
+          const enrollments = await prisma.enrollment.findMany({
+            where: { unitId: updated.unitId },
+            select: { studentId: true },
+          });
+          const studentIds = [...new Set(enrollments.map((e) => e.studentId))];
+          const [studentPayloads, lecturerPayload] = await Promise.all([
+            buildPayloadsForStudents(studentIds, msgPayload),
+            updated.lecturerId ? buildPayloadForLecturer(updated.lecturerId, msgPayload) : Promise.resolve(null),
+          ]);
+          const all = lecturerPayload ? [...studentPayloads, lecturerPayload] : studentPayloads;
+          await sendPushNotificationBatch(all);
+        } catch (err) {
+          console.error("[timetable/PUT] FCM push error:", err);
+        }
+      })();
     }
 
     return NextResponse.json(
