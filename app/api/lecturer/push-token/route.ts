@@ -35,16 +35,17 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ message: 'Unauthorized' }, { status: 401, headers: corsHeaders });
   }
 
-  let body: { fcmToken?: unknown };
+  let body: { token?: unknown; fcmToken?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ message: 'Invalid JSON body' }, { status: 400, headers: corsHeaders });
   }
 
-  const { fcmToken } = body;
+  // Accept both "token" (spec) and "fcmToken" (legacy) field names
+  const fcmToken = ((body.token ?? body.fcmToken) as string | undefined | null);
   if (!fcmToken || typeof fcmToken !== 'string' || !fcmToken.trim()) {
-    return NextResponse.json({ message: 'fcmToken is required' }, { status: 400, headers: corsHeaders });
+    return NextResponse.json({ error: 'token required' }, { status: 400, headers: corsHeaders });
   }
 
   try {

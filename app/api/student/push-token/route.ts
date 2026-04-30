@@ -36,16 +36,17 @@ export async function PATCH(req: NextRequest) {
   }
 
   // ── Body ──────────────────────────────────────────────────────────────────
-  let body: { fcmToken?: string; pushToken?: string };
+  let body: { token?: string; fcmToken?: string; pushToken?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400, headers: corsHeaders });
   }
 
-  const fcmToken = (body.fcmToken ?? body.pushToken ?? '').trim();
+  // Accept "token" (spec), "fcmToken", or legacy "pushToken"
+  const fcmToken = (body.token ?? body.fcmToken ?? body.pushToken ?? '').trim();
   if (!fcmToken) {
-    return NextResponse.json({ error: 'fcmToken is required' }, { status: 422, headers: corsHeaders });
+    return NextResponse.json({ error: 'token required' }, { status: 400, headers: corsHeaders });
   }
 
   // ── Verify student exists ─────────────────────────────────────────────────
@@ -67,6 +68,6 @@ export async function PATCH(req: NextRequest) {
     data: { pushToken: fcmToken },
   }).catch(() => {/* non-fatal */});
 
-  return NextResponse.json({}, { headers: corsHeaders });
+  return NextResponse.json({ success: true }, { headers: corsHeaders });
 }
 

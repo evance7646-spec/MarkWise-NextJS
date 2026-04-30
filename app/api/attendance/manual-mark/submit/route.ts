@@ -178,8 +178,8 @@ export async function POST(req: NextRequest) {
       if (code === "P2002") {
         // Unique constraint — student already marked for this session
         return NextResponse.json(
-          { message: "Student already marked present for this session" },
-          { status: 409, headers: corsHeaders },
+          { success: true, duplicate: true },
+          { status: 200, headers: corsHeaders },
         );
       }
       throw err;

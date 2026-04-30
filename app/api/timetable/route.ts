@@ -6,6 +6,7 @@ import { createTimetableBookings } from '@/lib/timetableBookingSync';
 import { resolveAdminScope } from '@/lib/adminScope';
 import { bumpTimetableVersion } from '@/lib/timetableSyncStore';
 import { normalizeUnitCode } from '@/lib/unitCode';
+import { sendFcmToTokens, getStudentTokensForUnit, getLecturerTokens } from '@/lib/fcm';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -397,6 +398,30 @@ export async function POST(req: NextRequest) {
     }).catch((err) =>
       console.error('[timetable/POST] booking sync failed:', err)
     );
+
+    // FCM push to enrolled students + assigned lecturer on new entry (fire-and-forget)
+    ;(async () => {
+      try {
+        const fcmUnitCode = normalisedUnitCode ?? '';
+        const fcmTitle = 'Timetable Updated';
+        const fcmBody = `New timetable entry: ${fcmUnitCode} ${entry.day} ${entry.startTime} in ${entry.venueName ?? 'TBA'}.`;
+        const [studentTokens, lecturerTokens] = await Promise.all([
+          getStudentTokensForUnit(entry.unitId),
+          entry.lecturerId ? getLecturerTokens(entry.lecturerId) : Promise.resolve([]),
+        ]);
+        const allTokens = [...studentTokens, ...lecturerTokens];
+        if (allTokens.length > 0) {
+          await sendFcmToTokens(allTokens, 'timetable', fcmTitle, fcmBody, {
+            unitCode: fcmUnitCode,
+            day: entry.day,
+            startTime: entry.startTime,
+            entryId: entry.id,
+          });
+        }
+      } catch (err) {
+        console.error('[timetable/POST] FCM push error:', err);
+      }
+    })();
 
     return NextResponse.json(entry, { status: 201, headers: corsHeaders });
   } catch (error) {

@@ -246,10 +246,9 @@ export async function POST(req: NextRequest) {
       select: { id: true },
     });
     if (existing) {
-      // 409 intentionally treated as success by the client (already synced)
       return NextResponse.json(
-        { message: "Already recorded", attendanceId: existing.id },
-        { status: 409, headers: corsHeaders }
+        { success: true, duplicate: true },
+        { status: 200, headers: corsHeaders }
       );
     }
 
@@ -286,6 +285,13 @@ export async function POST(req: NextRequest) {
       { status: 201, headers: corsHeaders }
     );
   } catch (err: unknown) {
+    const code = (err as { code?: string }).code;
+    if (code === "P2002") {
+      return NextResponse.json(
+        { success: true, duplicate: true },
+        { status: 200, headers: corsHeaders }
+      );
+    }
     console.error("Offline attendance submit error:", err);
     return NextResponse.json(
       { message: "Internal server error" },

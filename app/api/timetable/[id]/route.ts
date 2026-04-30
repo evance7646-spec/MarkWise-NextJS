@@ -60,6 +60,7 @@ import { publishTimetableUpdatedEvent } from "@/lib/timetableEvents";
 import { normalizeUnitCode } from "@/lib/unitCode";
 import { bumpTimetableVersion } from "@/lib/timetableSyncStore";
 import { buildPayloadForLecturer, buildPayloadsForStudents, sendPushNotificationBatch } from "@/lib/pushNotification";
+import { sendFcmToTokens, getStudentTokensForUnit, getLecturerTokens } from "@/lib/fcm";
 
 export const runtime = "nodejs";
 
@@ -548,10 +549,18 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
 
     const { id } = await context.params;
 
-    // Find the entry so we have courseId for version management
+    // Find the entry so we have courseId for version management and FCM data
     const entry = await prisma.timetable.findUnique({
       where: { id },
-      select: { id: true, courseId: true },
+      select: {
+        id: true,
+        courseId: true,
+        unitId: true,
+        lecturerId: true,
+        day: true,
+        startTime: true,
+        unit: { select: { code: true } },
+      },
     });
     if (!entry) {
       return NextResponse.json({ error: "Timetable entry not found." }, { status: 404, headers: corsHeaders });
@@ -563,6 +572,31 @@ export async function DELETE(_request: Request, context: { params: Promise<{ id:
       prisma.timetable.delete({ where: { id } }),
     ]);
     const versionRecord = await bumpTimetableVersion(entry.courseId);
+
+    // FCM push to enrolled students + assigned lecturer on entry removal (fire-and-forget)
+    ;(async () => {
+      try {
+        const unitCode = normalizeUnitCode(entry.unit?.code ?? '');
+        if (!unitCode) return;
+        const fcmTitle = 'Class Removed';
+        const fcmBody = `Your ${unitCode} class on ${entry.day} at ${entry.startTime} has been removed.`;
+        const [studentTokens, lecturerTokens] = await Promise.all([
+          getStudentTokensForUnit(entry.unitId),
+          entry.lecturerId ? getLecturerTokens(entry.lecturerId) : Promise.resolve([]),
+        ]);
+        const allTokens = [...studentTokens, ...lecturerTokens];
+        if (allTokens.length > 0) {
+          await sendFcmToTokens(allTokens, 'LESSON_CANCELLED', fcmTitle, fcmBody, {
+            unitCode,
+            day: entry.day,
+            startTime: entry.startTime,
+            entryId: id,
+          });
+        }
+      } catch (err) {
+        console.error('[timetable/DELETE] FCM push error:', err);
+      }
+    })();
 
     return NextResponse.json(
       { success: true, version: versionRecord.version, updatedAt: versionRecord.updatedAt },
